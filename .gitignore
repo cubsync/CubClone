@@ -20,3 +20,10 @@ keystore.properties
 
 # 本机环境
 local.properties
+
+# Shizuku 官方成品/原始包（不进库，构建只需要 api-classes.jar + provider-classes.jar + gen）
+app/libs/shizuku.apk
+app/libs/starter.so
+app/libs/*.aar
+app/libs/t/
+app/libs/tgen/

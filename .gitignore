@@ -27,3 +27,7 @@ app/libs/starter.so
 app/libs/*.aar
 app/libs/t/
 app/libs/tgen/
+
+# ⛔ 版权物（moto/一加 原版 APK、反编译产物）——本地参考，绝不进库
+docs/reference/apk/
+docs/reference/decoded/

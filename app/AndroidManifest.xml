@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.cubsync.cubclone"
-    android:versionCode="99"
-    android:versionName="6.48">
+    android:versionCode="100"
+    android:versionName="6.49">
 
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="33" />
 

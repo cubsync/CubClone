@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- 自绘标题栏：颜色完全由代码控制，跟着颜色模式走 -->
+    <LinearLayout
+        android:id="@+id/header"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="6dp">
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/app_name"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/btn_grid"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="9dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_grid"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/grid_view" />
+
+        <ImageButton
+            android:id="@+id/btn_search"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="9dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_search"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/search_hint" />
+
+        <ImageButton
+            android:id="@+id/btn_scope"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="9dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_filter"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/scope_show_all" />
+
+        <ImageButton
+            android:id="@+id/btn_refresh"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="9dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_refresh"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/refresh" />
+
+        <ImageButton
+            android:id="@+id/btn_theme"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="9dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_theme_auto"
+            android:scaleType="fitCenter"
+            android:contentDescription="颜色模式" />
+
+        <ImageButton
+            android:id="@+id/btn_settings"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="9dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_settings"
+            android:scaleType="fitCenter"
+            android:contentDescription="设置" />
+    </LinearLayout>
+
+    <!-- 搜索：默认隐藏，点顶栏放大镜才出现并弹键盘 -->
+    <LinearLayout
+        android:id="@+id/search_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:visibility="gone">
+
+        <EditText
+            android:id="@+id/search"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="@string/search_hint"
+            android:inputType="text"
+            android:singleLine="true"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <!-- 用户应用 / 系统应用 两个页签 -->
+    <LinearLayout
+        android:id="@+id/tab_row"
+        android:layout_width="match_parent"
+        android:layout_height="42dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:id="@+id/tab_user"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="?android:attr/selectableItemBackground">
+
+            <TextView
+                android:id="@+id/tab_user_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/tab_user"
+                android:textSize="15sp" />
+
+            <View
+                android:id="@+id/tab_user_line"
+                android:layout_width="28dp"
+                android:layout_height="2dp"
+                android:layout_marginTop="5dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/tab_sys"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="?android:attr/selectableItemBackground">
+
+            <TextView
+                android:id="@+id/tab_sys_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/tab_sys"
+                android:textSize="15sp" />
+
+            <View
+                android:id="@+id/tab_sys_line"
+                android:layout_width="28dp"
+                android:layout_height="2dp"
+                android:layout_marginTop="5dp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/list_wrap"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:id="@+id/clone_app_list"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="12dp" />
+    </ScrollView>
+
+    <!-- 启动器式网格：列表 ⇄ 网格切换后显示。
+         不用 GridView：它的 item 高度管理是黑盒（动态 LayoutParams 下第 1 格会被排成 0 高，
+         图标缩水、名字被裁、不可点击），改自绘——每行一个横向 LinearLayout，格子固定宽度左对齐 -->
+    <ScrollView
+        android:id="@+id/grid_wrap"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/grid_box"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="12dp" />
+    </ScrollView>
+
+    <LinearLayout
+        android:id="@+id/not_find_app"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/empty_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/no_clone_app_title"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/empty_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center"
+            android:paddingStart="40dp"
+            android:paddingEnd="40dp"
+            android:text="@string/no_clone_app_hint"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="10dp"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:id="@+id/multi_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone">
+
+        <Button
+            android:id="@+id/btn_select_all"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/select_all"
+            android:textAllCaps="false" />
+
+        <Button
+            android:id="@+id/btn_invert"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/select_invert"
+            android:textAllCaps="false" />
+
+        <TextView
+            android:id="@+id/multi_count"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btn_add"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/add_to_space"
+            android:textAllCaps="false" />
+    </LinearLayout>
+</LinearLayout>

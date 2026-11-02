@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 照抄 myui 应用分身：每个应用一张卡片，第一行是主身份那份 + 「创建分身」 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:minHeight="52dp"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp">
+
+    <CheckBox
+        android:id="@+id/base_check"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:clickable="false"
+        android:focusable="false" />
+
+    <ImageView
+        android:id="@+id/base_icon"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:scaleType="centerInside"
+        android:contentDescription="@null" />
+
+    <TextView
+        android:id="@+id/base_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:textSize="16sp"
+        android:ellipsize="end"
+        android:maxLines="1" />
+
+    <Button
+        android:id="@+id/action_add"
+        android:layout_width="wrap_content"
+        android:layout_height="40dp"
+        android:minWidth="0dp"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:background="@drawable/bg_clone_button"
+        android:text="@string/button_create_clone"
+        android:textColor="@color/clone_btn_text"
+        android:textAllCaps="false"
+        android:textSize="14sp" />
+</LinearLayout>

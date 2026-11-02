@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 启动器式网格：一个图标格（图标 + 名字），点开、长按出菜单 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="4dp">
+
+    <ImageView
+        android:id="@+id/grid_icon"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:scaleType="fitCenter"
+        android:contentDescription="@null" />
+
+    <TextView
+        android:id="@+id/grid_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:gravity="center"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:textSize="12sp" />
+</LinearLayout>

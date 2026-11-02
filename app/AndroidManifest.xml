@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.cubsync.cubclone"
+    android:versionCode="99"
+    android:versionName="6.48">
+
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="33" />
+
+    <!-- Shizuku 权限 -->
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+
+    <application
+        android:label="分身空间"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="false"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="分身空间">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 设置：颜色模式 / 提权状态 / 分身空间管理 -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="设置" />
+
+        <!-- 桌面快捷方式落地页：收到 uid/pkg 后直接启动分身里的应用 -->
+        <activity
+            android:name=".LaunchProxyActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Shizuku 必备：接收 binder -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="com.cubsync.cubclone.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+    </application>
+</manifest>

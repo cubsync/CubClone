@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 卡片与按钮（深色） -->
+    <color name="card_bg">#1E1F22</color>
+    <color name="clone_btn_bg">#1F3A5F</color>
+    <color name="clone_btn_text">#A8C7FA</color>
+</resources>

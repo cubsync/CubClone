@@ -1,0 +1,22 @@
+# 构建产物
+out/
+app/out/
+*.apk
+*.idsig
+
+# 设备端 jar（由 proto/build.sh 生成）
+app/assets/cubclone.jar
+proto/classes/
+proto/dexout/
+proto/*.jar
+
+# 签名凭据 —— ⛔绝不进仓库（clone 权限等于泄露）
+*.keystore
+*.jks
+signing*
+keystore.properties
+*signing*.properties
+*signing*.txt
+
+# 本机环境
+local.properties

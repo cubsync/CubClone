@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 照抄 myui 手机管家 res/drawable/ic_icon_app_clone_edit.xml -->
+<vector android:height="18dp" android:width="18dp"
+    android:viewportWidth="18.0" android:viewportHeight="18.0"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+    <path android:fillColor="#FF000000" android:pathData="M17.71,4.04L15.88,5.87L12.13,2.12L13.96,0.29C14.35,-0.1 14.981,-0.1 15.37,0.29L17.71,2.63C18.1,3.02 18.1,3.65 17.71,4.04L17.71,4.04ZM2.92,16L2,16L2,15.08L11.06,6.02L11.981,6.94L2.92,16ZM0,14.25L0,18L3.75,18L14.81,6.94L11.06,3.19L0,14.25Z" android:strokeColor="#00000000" android:strokeWidth="1.0" android:fillType="evenOdd" />
+</vector>

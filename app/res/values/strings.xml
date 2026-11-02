@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">分身空间</string>
+    <string name="clone_app_hint_title">应用创建分身以登录不同账号。为避免账号异常，使用分身时请遵循各应用使用规范。</string>
+    <string name="no_clone_app_title">还没有分身应用</string>
+    <string name="no_clone_app_hint">打开上面「显示全部可分身应用」，再给应用点「创建分身」。</string>
+    <string name="button_create_clone">创建分身</string>
+    <string name="edit_clone_name">重命名分身</string>
+    <string name="delete_clone">删除分身</string>
+
+    <string name="search_hint">搜索应用</string>
+    <string name="scope_show_all">显示全部可分身应用</string>
+    <string name="open_clone">打开</string>
+
+    <string name="settings_title">设置</string>
+    <string name="sec_look">外观</string>
+    <string name="label_theme">主题</string>
+    <string name="label_language">语言</string>
+    <string name="theme_auto">跟随系统</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
+    <string name="theme_black">黑色</string>
+    <string name="lang_auto">跟随系统</string>
+    <string name="lang_zh">简体中文</string>
+    <string name="lang_en">English</string>
+    <string name="lang_unsupported">本机系统不支持单独设置语言（需要 Android 13 及以上）</string>
+
+    <string name="sec_perm">权限</string>
+    <string name="btn_recheck">重新检测</string>
+    <string name="btn_ask_shizuku">请求 Shizuku 授权</string>
+    <string name="perm_checking">检测中…</string>
+    <string name="perm_root">root：%1$s</string>
+    <string name="perm_shizuku">Shizuku：%1$s</string>
+    <string name="perm_granted">已授权</string>
+    <string name="perm_unavailable">不可用</string>
+    <string name="perm_not_granted">服务在运行，未授权</string>
+    <string name="perm_not_running">未运行，先打开 Shizuku 启动服务</string>
+    <string name="perm_already">已经授权过了</string>
+    <string name="perm_denied_before">之前被拒绝过，请到 Shizuku 应用里手动授权</string>
+    <string name="need_perm">需要 root 或 Shizuku 授权</string>
+
+    <string name="sec_clone">分身</string>
+    <string name="label_show_all">显示全部可分身应用</string>
+    <string name="hint_show_all">关闭时只列已开过分身的应用</string>
+
+    <string name="space_title">分身空间</string>
+    <string name="btn_new_space">新建空间</string>
+    <string name="delete_space">删除</string>
+    <string name="space_used">已用 %1$d 个分身空间</string>
+    <string name="space_limit_one">空间已满，再建不出来了</string>
+    <string name="space_global">全局上限 %1$d 个</string>
+    <string name="space_row">空间 %1$d　uid %2$d　%3$d 个应用</string>
+    <string name="space_empty">还没有分身空间，点「新建空间」，或在主界面给应用创建分身</string>
+    <string name="space_created">空间已创建：uid %1$d</string>
+    <string name="space_limit_reached">分身空间已到上限（%1$s 个），先删一个再建</string>
+    <string name="space_deleted">已删除空间 uid %1$d</string>
+    <string name="delete_space_msg">删除空间 uid %1$d 会把里面所有分身应用的数据一起清掉，主身份那份不受影响。\n\n机主数据不会被触碰。</string>
+    <string name="new_space_name">空间名称（可留空）</string>
+    <string name="creating">正在创建空间…</string>
+    <string name="create_failed">创建失败：%1$s</string>
+    <string name="loading">读取中…</string>
+
+    <string name="sec_about">关于</string>
+    <string name="about_note">用 Android 原生的 clone profile 做分身，不 hook、不改包名、不注入进程，所以目标应用检测不到多开。\n分身与主身份共享相册和文件，数据各自独立。</string>
+    <string name="st_no_root">无 root，请授权 Shizuku</string>
+    <string name="shizuku_granted">Shizuku 已授权</string>
+    <string name="shizuku_denied">Shizuku 权限被拒绝</string>
+    <string name="shizuku_not_running">Shizuku 未运行：打开 Shizuku 并启动服务，或给本机 root</string>
+    <string name="shizuku_denied_before">Shizuku 曾被拒绝，请到 Shizuku 里手动授权</string>
+    <string name="shizuku_requesting">正在请求 Shizuku 权限…</string>
+    <string name="shizuku_unavailable">Shizuku 不可用：%1$s</string>
+    <string name="deploy_failed">组件释放失败，检查 root/Shizuku 授权</string>
+    <string name="ready_root">root 就绪</string>
+    <string name="ready_shizuku">Shizuku 就绪</string>
+    <string name="empty_no_match">没有匹配「%1$s」的应用</string>
+    <string name="empty_no_clone">还没有分身。
+打开上面「显示全部可分身应用」，再给应用点「创建分身」</string>
+    <string name="empty_no_app">没有可分身的三方应用</string>
+    <string name="creating_clone">正在为「%1$s」创建分身…</string>
+    <string name="clone_created">「%1$s」的分身已就绪（uid %2$d）</string>
+    <string name="clone_reused">本机空间已满，「%1$s」装进了已有空间（uid %2$d）</string>
+    <string name="clone_exists">本机只允许 1 个分身空间，「%1$s」已经有分身了，要再加只能先删掉那个</string>
+    <string name="opening">正在打开 %1$s 的分身</string>
+    <string name="launch_failed">启动失败：%1$s</string>
+    <string name="rename_title">修改分身后缀</string>
+    <string name="remove_clone_title">删除分身</string>
+    <string name="remove_clone_msg">删除「%1$s」的这个分身？
+只会把这个应用从分身空间里卸掉，分身的账号数据随之清空；主身份那份应用和空间里其它应用不受影响。</string>
+    <string name="removed_clone">已删除「%1$s」的分身</string>
+    <string name="removed_clone_empty">已删除「%1$s」的分身，所在空间已空</string>
+    <string name="recycle_title">回收空的空间</string>
+    <string name="recycle_msg">这个分身空间里已经没有应用了。
+回收它才能腾出分身名额。
+机主数据不受影响。</string>
+    <string name="recycle_btn">回收</string>
+    <string name="keep_btn">先留着</string>
+    <string name="recycled">已回收空间 %1$d</string>
+    <string name="not_clone">uid %1$d 不是分身，拒绝操作</string>
+    <string name="delete_clone_btn">删除</string>
+    <string name="pin_failed">加桌面图标失败：%1$s</string>
+
+    <string name="space_name">空间 %1$s</string>
+    <string name="pin_clone">添加到桌面</string>
+    <string name="label_auto_icon">建完弹出「添加图标」确认</string>
+
+    <string name="pin_confirm">在弹出的窗口点「添加」，图标就会放到桌面</string>
+    <string name="pin_unsupported">当前桌面不支持自动加图标，长按桌面手动添加吧</string>
+    <string name="label_amoled">纯黑背景（AMOLED）</string>
+
+    <string name="open_original">打开原应用</string>
+    <string name="space_full">分身空间用满了（本机最多 %1$s 个），删一个再建</string>
+    <string name="hint_auto_icon">系统要求桌面确认一次才能加图标，这个开关只是省掉手动点＋号</string>
+    <string name="install_failed">「%1$s」没装进分身：%2$s</string>
+    <string name="menu_prune">清理分身里多余的桌面图标</string>
+    <string name="pruning">正在清理分身空间里的系统应用…</string>
+    <string name="pruned">已清理 %1$s 个分身空间</string>
+    <string name="prune_failed">，还有 %1$s 个应用没清掉</string>
+    <string name="space_row2">%1$s · uid %2$d · %3$d 个分身</string>
+    <string name="space_row2_foreign">%1$s · uid %2$d</string>
+    <string name="space_deleted_reboot">已删除空间 uid %1$d，重启后彻底消失</string>
+    <string name="menu_restore">恢复分身里被清掉的系统应用</string>
+    <string name="prune_confirm">只会把这个分身用户里的系统应用卸掉，主身份和系统分区不动，随时能用下面那项装回来。继续？</string>
+    <string name="restore_confirm">会把系统应用重新装回每个分身空间，桌面上会再次出现一堆图标。继续？</string>
+    <string name="restoring">正在把系统应用装回分身空间…</string>
+    <string name="restored">已还原 %1$s 个分身空间</string>
+    <string name="refresh">刷新</string>
+    <string name="refreshing">正在刷新列表…</string>
+    <string name="label_keep_sys">分身里保留系统应用</string>
+    <string name="rename_space">重命名</string>
+    <string name="renaming_space">正在重命名…</string>
+    <string name="space_renamed">已重命名</string>
+    <string name="tab_user">用户应用</string>
+    <string name="tab_sys">系统应用</string>
+    <string name="clone_hidden">已禁用</string>
+    <string name="menu_enable">启用（恢复图标）</string>
+    <string name="menu_open">打开</string>
+    <string name="menu_remove">从空间移除</string>
+    <string name="clone_hidden_hint">这个分身被禁用了，长按可启用</string>
+    <string name="clone_enabled">已启用 %1$s</string>
+    <string name="opening_primary">正在打开 %1$s</string>
+    <string name="space_foreign">系统分身（只读）</string>
+    <string name="space_readonly">这是系统分身空间，只读，不能从这里移除</string>
+    <string name="uid_tag">(%1$d)</string>
+
+    <string name="select_all">全选</string>
+    <string name="select_invert">反选</string>
+    <string name="add_to_space">添加到空间</string>
+    <string name="selected_n">已选 %1$d 个</string>
+    <string name="pick_spaces_title">装到哪些空间</string>
+    <string name="new_space_option">＋ 新建一个空间</string>
+    <string name="batch_result">成功 %1$d · 跳过 %2$d · 失败 %3$d</string>
+    <string name="batch_none_selected">先勾选要分身的应用</string>
+
+    <string name="grid_view">网格视图</string>
+    <string name="list_view">列表视图</string>
+    <string name="label_grid_cols">网格列数</string>
+    <string name="label_grid_rows">网格行数</string>
+    <string name="label_grid_primary">网格显示主应用</string>
+    <string name="recent_opened">最近打开</string>
+    <string name="label_recent_show">显示最近打开</string>
+    <string name="label_recent_rows">最近打开行数</string>
+    <string name="label_recent_cols">最近打开列数</string>
+    <string name="recent_cols_follow">跟随网格列数</string>
+</resources>

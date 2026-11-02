@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CubClone</string>
+    <string name="clone_app_hint_title">Create clones to sign in with different accounts. Follow each app\'s terms of use to avoid account issues.</string>
+    <string name="no_clone_app_title">No cloned apps yet</string>
+    <string name="no_clone_app_hint">Turn on "Show all clonable apps" above, then tap "Create clone" on an app.</string>
+    <string name="button_create_clone">Create clone</string>
+    <string name="edit_clone_name">Rename clone</string>
+    <string name="delete_clone">Delete clone</string>
+
+    <string name="search_hint">Search apps</string>
+    <string name="scope_show_all">Show all clonable apps</string>
+    <string name="open_clone">Open</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="sec_look">Appearance</string>
+    <string name="label_theme">Theme</string>
+    <string name="label_language">Language</string>
+    <string name="theme_auto">System default</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_black">Black</string>
+    <string name="lang_auto">System default</string>
+    <string name="lang_zh">简体中文</string>
+    <string name="lang_en">English</string>
+    <string name="lang_unsupported">Per-app language needs Android 13 or later</string>
+
+    <string name="sec_perm">Permissions</string>
+    <string name="btn_recheck">Re-check</string>
+    <string name="btn_ask_shizuku">Request Shizuku</string>
+    <string name="perm_checking">Checking…</string>
+    <string name="perm_root">root: %1$s</string>
+    <string name="perm_shizuku">Shizuku: %1$s</string>
+    <string name="perm_granted">granted</string>
+    <string name="perm_unavailable">not available</string>
+    <string name="perm_not_granted">service running, not granted</string>
+    <string name="perm_not_running">not running, open Shizuku and start the service</string>
+    <string name="perm_already">Already granted</string>
+    <string name="perm_denied_before">Denied before, please grant it inside the Shizuku app</string>
+    <string name="need_perm">root or Shizuku permission required</string>
+
+    <string name="sec_clone">Clones</string>
+    <string name="label_show_all">Show all clonable apps</string>
+    <string name="hint_show_all">Off: only apps that already have clones</string>
+
+    <string name="space_title">Clone spaces</string>
+    <string name="btn_new_space">New space</string>
+    <string name="delete_space">Delete</string>
+    <string name="space_used">%1$d clone space(s) in use</string>
+    <string name="space_limit_one">No more spaces can be created on this device</string>
+    <string name="space_global">Global limit %1$d</string>
+    <string name="space_row">Space %1$d　uid %2$d　%3$d app(s)</string>
+    <string name="space_empty">No clone space yet. Tap "New space" or create a clone from the main screen.</string>
+    <string name="space_created">Space created: uid %1$d</string>
+    <string name="space_limit_reached">Clone space limit reached (%1$s), delete one first</string>
+    <string name="space_deleted">Deleted space uid %1$d</string>
+    <string name="delete_space_msg">Deleting space uid %1$d removes all cloned apps and their data inside it. The main copy of each app is not affected.\n\nOwner data is never touched.</string>
+    <string name="new_space_name">Space name (optional)</string>
+    <string name="creating">Creating space…</string>
+    <string name="create_failed">Failed: %1$s</string>
+    <string name="loading">Loading…</string>
+
+    <string name="sec_about">About</string>
+    <string name="about_note">Clones are Android\'s native clone profiles: no hooking, no repackaging, no code injection, so apps cannot detect them. Clones share photos and files with the owner but keep their own data.</string>
+    <string name="st_no_root">No root. Grant Shizuku permission</string>
+    <string name="shizuku_granted">Shizuku granted</string>
+    <string name="shizuku_denied">Shizuku permission denied</string>
+    <string name="shizuku_not_running">Shizuku is not running: open it and start the service, or grant root</string>
+    <string name="shizuku_denied_before">Denied before, please grant it inside the Shizuku app</string>
+    <string name="shizuku_requesting">Requesting Shizuku permission…</string>
+    <string name="shizuku_unavailable">Shizuku unavailable: %1$s</string>
+    <string name="deploy_failed">Failed to deploy helper, check root/Shizuku permission</string>
+    <string name="ready_root">root ready</string>
+    <string name="ready_shizuku">Shizuku ready</string>
+    <string name="empty_no_match">No app matches "%1$s"</string>
+    <string name="empty_no_clone">No clones yet.
+Turn on "Show all clonable apps" above, then tap "Create clone".</string>
+    <string name="empty_no_app">No third-party app to clone</string>
+    <string name="creating_clone">Creating a clone for %1$s…</string>
+    <string name="clone_created">Clone of %1$s is ready (uid %2$d)</string>
+    <string name="clone_reused">Space is full, %1$s was installed into the existing space (uid %2$d)</string>
+    <string name="clone_exists">Only 1 clone space is allowed, %1$s already has a clone. Delete it first.</string>
+    <string name="opening">Opening the clone of %1$s</string>
+    <string name="launch_failed">Failed to open %1$s</string>
+    <string name="rename_title">Rename clone</string>
+    <string name="remove_clone_title">Delete clone</string>
+    <string name="remove_clone_msg">Delete this clone of "%1$s"?
+Only this app is removed from the clone space and its cloned data is cleared. The main app and other clones are not affected.</string>
+    <string name="removed_clone">Deleted the clone of %1$s</string>
+    <string name="removed_clone_empty">Deleted the clone of %1$s; its space is now empty</string>
+    <string name="recycle_title">Recycle empty space</string>
+    <string name="recycle_msg">This clone space has no apps left.
+Recycle it to free a clone slot.
+Owner data is not touched.</string>
+    <string name="recycle_btn">Recycle</string>
+    <string name="keep_btn">Keep it</string>
+    <string name="recycled">Recycled space %1$d</string>
+    <string name="not_clone">uid %1$d is not a clone, refused</string>
+    <string name="delete_clone_btn">Delete</string>
+    <string name="pin_failed">Failed to add home shortcut: %1$s</string>
+
+    <string name="space_name">Clone</string>
+    <string name="pin_clone">Add to Home screen</string>
+    <string name="label_auto_icon">Show add-icon prompt after creating</string>
+
+    <string name="pin_confirm">Tap Add in the popup to put the icon on your home screen</string>
+    <string name="pin_unsupported">This launcher cannot add icons automatically; add one manually from the home screen</string>
+    <string name="label_amoled">Pure black (AMOLED)</string>
+
+    <string name="open_original">Open the original app</string>
+    <string name="space_full">No free space left (this device allows %1$s), delete one first</string>
+    <string name="hint_auto_icon">Android requires a launcher confirmation once; this only saves you the + tap</string>
+    <string name="install_failed">Could not install %1$s into the clone: %2$s</string>
+    <string name="menu_prune">Remove extra Home icons in clones</string>
+    <string name="pruning">Cleaning system apps out of the clones…</string>
+    <string name="pruned">Cleaned %1$s clone spaces</string>
+    <string name="prune_failed">; %1$s app(s) could not be cleaned</string>
+    <string name="space_row2">%1$s · uid %2$d · %3$d clones</string>
+    <string name="space_deleted_reboot">Deleted space uid %1$d; disappears after reboot</string>
+    <string name="menu_restore">Restore system apps inside clones</string>
+    <string name="prune_confirm">Only removes system apps from the clone user; your main user and the system partition are untouched, and the next menu item installs them back. Continue?</string>
+    <string name="restore_confirm">This installs system apps back into every clone space and the extra icons will return. Continue?</string>
+    <string name="restoring">Restoring system apps into the clones…</string>
+    <string name="restored">Restored %1$s clone spaces</string>
+    <string name="refresh">Refresh</string>
+    <string name="refreshing">Refreshing…</string>
+    <string name="label_keep_sys">Keep system apps inside clones</string>
+    <string name="rename_space">Rename</string>
+    <string name="renaming_space">Renaming…</string>
+    <string name="space_renamed">Renamed</string>
+    <string name="tab_user">User apps</string>
+    <string name="tab_sys">System apps</string>
+    <string name="clone_hidden">disabled</string>
+    <string name="menu_enable">Enable (restore icon)</string>
+    <string name="menu_open">Open</string>
+    <string name="menu_remove">Remove from space</string>
+    <string name="clone_hidden_hint">This clone is disabled; long-press to enable</string>
+    <string name="clone_enabled">Enabled %1$s</string>
+    <string name="opening_primary">Opening %1$s</string>
+    <string name="space_foreign">system clone (read-only)</string>
+    <string name="space_readonly">System clone space is read-only here</string>
+    <string name="uid_tag">uid %1$d</string>
+
+    <string name="select_all">All</string>
+    <string name="select_invert">Invert</string>
+    <string name="add_to_space">Add to space</string>
+    <string name="selected_n">%1$d selected</string>
+    <string name="pick_spaces_title">Add to spaces</string>
+    <string name="new_space_option">+ New space</string>
+    <string name="batch_result">Done %1$d · skipped %2$d · failed %3$d</string>
+    <string name="batch_none_selected">Pick apps first</string>
+
+    <string name="grid_view">Grid view</string>
+    <string name="list_view">List view</string>
+    <string name="label_grid_cols">Grid columns</string>
+    <string name="label_grid_rows">Grid rows</string>
+    <string name="label_grid_primary">Show primary apps in grid</string>
+    <string name="recent_opened">Recent</string>
+    <string name="label_recent_show">Show recent</string>
+    <string name="label_recent_rows">Recent rows</string>
+    <string name="label_recent_cols">Recent columns</string>
+    <string name="recent_cols_follow">Follow grid columns</string>
+</resources>

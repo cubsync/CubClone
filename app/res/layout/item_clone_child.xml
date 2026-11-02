@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 照抄 myui 应用分身：卡片里的分身行（图标带角标 + 名字 N + 改名 + 删除） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:minHeight="52dp"
+    android:paddingStart="16dp"
+    android:paddingEnd="8dp">
+
+    <ImageView
+        android:id="@+id/clone_icon"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:scaleType="centerInside"
+        android:contentDescription="@null" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="8dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/clone_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxWidth="150dp"
+            android:textSize="16sp"
+            android:ellipsize="marquee"
+            android:marqueeRepeatLimit="marquee_forever"
+            android:scrollHorizontally="true"
+            android:focusable="false"
+            android:focusableInTouchMode="false"
+            android:maxLines="1" />
+
+        <!-- 空间 uid 单独一个控件，不混进名字串 -->
+        <TextView
+            android:id="@+id/clone_uid"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="2dp"
+            android:textSize="11sp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:maxLines="1" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/clone_pin"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:padding="10dp"
+        android:src="@drawable/ic_pin"
+        android:tint="?android:attr/textColorSecondary"
+        android:scaleType="centerInside"
+        android:contentDescription="@string/pin_clone" />
+
+    <ImageView
+        android:id="@+id/clone_open"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:padding="10dp"
+        android:src="@drawable/ic_open"
+        android:tint="?android:attr/textColorSecondary"
+        android:scaleType="centerInside"
+        android:contentDescription="@string/open_clone" />
+
+    <ImageView
+        android:id="@+id/clone_rename"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:padding="11dp"
+        android:src="@drawable/ic_icon_app_clone_edit"
+        android:tint="?android:attr/textColorSecondary"
+        android:scaleType="centerInside"
+        android:contentDescription="@string/edit_clone_name" />
+
+    <ImageView
+        android:id="@+id/clone_delete"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:padding="9dp"
+        android:src="@drawable/ic_app_clone_delete"
+        android:tint="?android:attr/textColorSecondary"
+        android:scaleType="centerInside"
+        android:contentDescription="@string/delete_clone" />
+</LinearLayout>

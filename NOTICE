@@ -1,0 +1,9 @@
+CubClone
+Copyright 2026 cubsync
+
+This product includes software developed as part of the cubsync project.
+
+This application depends on Shizuku (https://shizuku.rikka.app/),
+Copyright (c) RikkaApps, licensed under the Apache License, Version 2.0.
+Prebuilt Shizuku API classes are vendored under app/libs/ for the
+gradle-free build; see README.md for provenance.

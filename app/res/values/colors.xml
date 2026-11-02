@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="clone_icon_tint">#000000</color>
+    <color name="list_divider">#1F888888</color>
+
+    <!-- 卡片与按钮（浅色） -->
+    <color name="card_bg">#F3F3F6</color>
+    <color name="clone_btn_bg">#D3E3FD</color>
+    <color name="clone_btn_text">#0B57D0</color>
+    <color name="ic_launcher_bg">#FFFFFF</color>
+</resources>

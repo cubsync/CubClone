@@ -20,28 +20,35 @@ WHITE  = (0xFF, 0xFF, 0xFF)
 SS = 8                        # 与 org.py 同款超采样
 CANVAS = 120.0
 
-# G6-2 几何（120 格，与候选页逐值一致）
-#   青绿空心块 (34,30) 44x44 rx10 + 内孔 (47.5,43.5) 17x17 rx4（挖穿）
-#   靛蓝实心块 (50,46) 44x44 rx10
+# G6-1 几何（120 格，与候选页逐值一致）
+#   青绿圆 (52,48) r22 + 孔 r8.5（挖穿，组织幼体 5/13 比例）
+#   靛蓝圆 (68,64) r22 实心
 SHAPES = [
-    ("rect", 34.0, 30.0, 44.0, 44.0, 10.0, TEAL),        # 青绿底
-    ("rect", 47.5, 43.5, 17.0, 17.0, 4.0, (0, 0, 0, 0)), # 挖孔（真写透明，覆盖写）
-    ("rect", 50.0, 46.0, 44.0, 44.0, 10.0, INDIGO),      # 靛蓝前块
+    ("circ", 52.0, 48.0, 22.0, TEAL),        # 青绿底圆
+    ("circ", 52.0, 48.0, 8.5, (0, 0, 0, 0)), # 挖孔（真写透明，覆盖写）
+    ("circ", 68.0, 64.0, 22.0, INDIGO),      # 靛蓝前圆
 ]
-BBOX = (34.0, 30.0, 97.0, 93.0)   # 图形紧密包围盒（63x63）
+BBOX = (30.0, 26.0, 90.0, 86.0)   # 图形紧密包围盒（60x60）
+HOLE = (52.0, 48.0, 8.5)           # 孔（心 x,y,r）—— 最终画布上矢量级重画，杜绝重采样残影
 FILL = 48.0 / 108.0               # 内容占 108dp 画布比例（与 G5 定稿口径一致，远小于 66 安全区）
 
 DENS = {"mdpi": 108, "hdpi": 162, "xhdpi": 216, "xxhdpi": 324, "xxxhdpi": 432}
 
 
 def render_mark(k):
-    """120 格画布 × k 倍超采样渲染 G6-3，返回 RGBA。"""
+    """120 格画布 × k 倍超采样渲染，返回 RGBA。支持 rect / circ。"""
     img = Image.new("RGBA", (int(CANVAS * k), int(CANVAS * k)), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     for shape in SHAPES:
-        _, x, y, w, h, r, c = shape
-        d.rounded_rectangle([x * k, y * k, (x + w) * k, (y + h) * k],
-                            radius=r * k, fill=c)
+        kind = shape[0]
+        if kind == "rect":
+            _, x, y, w, h, r, c = shape
+            d.rounded_rectangle([x * k, y * k, (x + w) * k, (y + h) * k],
+                                radius=r * k, fill=c)
+        else:  # circ
+            _, x, y, r, c = shape
+            d.ellipse([(x - r) * k, (y - r) * k, (x + r) * k, (y + r) * k],
+                      fill=c)
     return img
 
 
@@ -56,7 +63,17 @@ def render_fg(size):
     img = Image.new("RGBA", (px, px), (0, 0, 0, 0))
     ox = oy = (px - content_px) // 2
     img.paste(hi, (ox, oy), hi)
-    return img.resize((size, size), Image.LANCZOS)
+    img = img.resize((size, size), Image.LANCZOS)
+    # 矢量级重画孔：在最终画布上硬写透明，消除 LANCZOS 振铃残影
+    span = max(x1 - x0, y1 - y0)
+    scale = size * FILL / span
+    off = (size - span * scale) / 2.0
+    hx = off + (HOLE[0] - x0) * scale
+    hy = off + (HOLE[1] - y0) * scale
+    hr = HOLE[2] * scale
+    d2 = ImageDraw.Draw(img)
+    d2.ellipse([hx - hr, hy - hr, hx + hr, hy + hr], fill=(0, 0, 0, 0))
+    return img
 
 
 def selfcheck(img):
@@ -64,13 +81,15 @@ def selfcheck(img):
     W = img.width
     s = FILL * W
     ox = (W - s) / 2.0
-    k = s / 63.0
+    x0, y0, x1, y1 = BBOX
+    span = max(x1 - x0, y1 - y0)
+    k = s / span
     def probe(x, y):                      # 120 格坐标 -> 画布像素
-        return img.getpixel((int(ox + (x - 34) * k), int(ox + (y - 30) * k)))
+        return img.getpixel((int(ox + (x - x0) * k), int(ox + (y - y0) * k)))
     ok = True
     cases = [
-        ("孔内(50,46) 透明", probe(50, 46), (0, 0, 0, 0)),
-        ("青绿(56,36) 纯青绿", probe(56, 36), TEAL + (255,)),
+        ("孔内(52,48) 透明", probe(52, 48), (0, 0, 0, 0)),
+        ("青绿(36,40) 纯青绿", probe(36, 40), TEAL + (255,)),
         ("靛蓝(75,71) 纯靛蓝", probe(75, 71), INDIGO + (255,)),
     ]
     for name, got, want in cases:

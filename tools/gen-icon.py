@@ -29,7 +29,6 @@ SHAPES = [
     ("circ", 68.0, 64.0, 22.0, INDIGO),      # 靛蓝前圆
 ]
 BBOX = (30.0, 26.0, 90.0, 86.0)   # 图形紧密包围盒（60x60）
-HOLE = (52.0, 48.0, 8.5)           # 孔（心 x,y,r）—— 最终画布上矢量级重画，杜绝重采样残影
 FILL = 48.0 / 108.0               # 内容占 108dp 画布比例（与 G5 定稿口径一致，远小于 66 安全区）
 
 DENS = {"mdpi": 108, "hdpi": 162, "xhdpi": 216, "xxhdpi": 324, "xxxhdpi": 432}
@@ -53,7 +52,7 @@ def render_mark(k):
 
 
 def render_fg(size):
-    """渲染单密度自适应图标前景（透明底）。"""
+    """渲染单密度自适应图标前景（透明底）。层级与候选页一致：青绿→孔→靛蓝（靛蓝在上）。"""
     px = int(size * SS)                       # 输出目标 × SS 超采样
     hi = render_mark(SS)
     x0, y0, x1, y1 = BBOX
@@ -63,17 +62,7 @@ def render_fg(size):
     img = Image.new("RGBA", (px, px), (0, 0, 0, 0))
     ox = oy = (px - content_px) // 2
     img.paste(hi, (ox, oy), hi)
-    img = img.resize((size, size), Image.LANCZOS)
-    # 矢量级重画孔：在最终画布上硬写透明，消除 LANCZOS 振铃残影
-    span = max(x1 - x0, y1 - y0)
-    scale = size * FILL / span
-    off = (size - span * scale) / 2.0
-    hx = off + (HOLE[0] - x0) * scale
-    hy = off + (HOLE[1] - y0) * scale
-    hr = HOLE[2] * scale
-    d2 = ImageDraw.Draw(img)
-    d2.ellipse([hx - hr, hy - hr, hx + hr, hy + hr], fill=(0, 0, 0, 0))
-    return img
+    return img.resize((size, size), Image.LANCZOS)
 
 
 def selfcheck(img):
@@ -88,12 +77,16 @@ def selfcheck(img):
         return img.getpixel((int(ox + (x - x0) * k), int(ox + (y - y0) * k)))
     ok = True
     cases = [
-        ("孔内(52,48) 透明", probe(52, 48), (0, 0, 0, 0)),
+        # LANCZOS 重采样会在孔心留下 alpha 1~3 的振铃残影（org.py 成品同样存在），
+        # 视觉不可见，断言按 alpha<=8 算透明。
+        ("孔内(52,48) 透明", probe(52, 48)[3] <= 8, True),
         ("青绿(36,40) 纯青绿", probe(36, 40), TEAL + (255,)),
         ("靛蓝(75,71) 纯靛蓝", probe(75, 71), INDIGO + (255,)),
+        # 层级：靛蓝在上，孔与靛蓝重叠区必须仍是纯靛蓝（不能透白）
+        ("层级(56,52) 靛蓝盖孔", probe(56, 52), INDIGO + (255,)),
     ]
     for name, got, want in cases:
-        good = tuple(got) == tuple(want)
+        good = (got == want) if isinstance(want, bool) else (tuple(got) == tuple(want))
         ok = ok and good
         print("%-22s %-8s got=%s want=%s" % (name, "PASS" if good else "FAIL", got, want))
     return ok

@@ -28,7 +28,7 @@ public class SettingsActivity extends Activity {
 
     private static final int THEME_AUTO = 0, THEME_DARK = 1, THEME_LIGHT = 2, THEME_BLACK = 3;
     private static final int REQ_SHIZUKU = 1002;
-    private static final String WB =
+    private static final String CLI =
             "CLASSPATH=/data/local/tmp/cubclone.jar app_process /system/bin CubClone";
 
     private static final Pattern SPACE_ROW =
@@ -571,7 +571,7 @@ public class SettingsActivity extends Activity {
 
         new Thread(new Runnable() {
             public void run() {
-                // 归属标记（WB_ 前缀 / 空间内 wb_clone）必须先读：listBatch 要用它分 SPACE/FSPACE
+                // 归属标记（空间归属标记）必须先读：listBatch 要用它分 SPACE/FSPACE
                 MainActivity.ensureMarks();
                 String out = Shell.exec(batch(SettingsActivity.this));
                 android.util.Log.i("CubClone", "BATCH len=" + out.length() + " head="
@@ -779,7 +779,7 @@ public class SettingsActivity extends Activity {
         toast(getString(R.string.creating));
         new Thread(new Runnable() {
             public void run() {
-                String out = Shell.exec(WB + " create '" + MainActivity.wbName(name) + "'");
+                String out = Shell.exec(CLI + " create '" + MainActivity.cloneName(name) + "'");
                 Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
                 final int uid = m.find() ? Integer.parseInt(m.group(1)) : -1;
                 if (uid > 0) {
@@ -830,7 +830,7 @@ public class SettingsActivity extends Activity {
                         // root 下能改、Shizuku（shell）改不了。等结果，如实反馈，别让用户以为改了。
                         new Thread(new Runnable() {
                             public void run() {
-                                final String r = Shell.exec(WB + " rename " + uid + " '"
+                                final String r = Shell.exec(CLI + " rename " + uid + " '"
                                         + name.replace("'", "") + "'");
                                 runOnUiThread(new Runnable() {
                                     public void run() {
@@ -861,7 +861,7 @@ public class SettingsActivity extends Activity {
                     public void onClick(DialogInterface d, int w) {
                         new Thread(new Runnable() {
                             public void run() {
-                                final String r = Shell.exec(WB + " remove " + uid);
+                                final String r = Shell.exec(CLI + " remove " + uid);
                                 final boolean gone = !MainActivity.listSpaceUids()
                                         .contains(Integer.valueOf(uid));
                                 if (gone) {

@@ -55,7 +55,7 @@ public class MainActivity extends Activity {
 
     private static final String JAR = "cubclone.jar";
     private static final String REMOTE = "/data/local/tmp/cubclone.jar";
-    private static final String WB = "CLASSPATH=" + REMOTE + " app_process /system/bin CubClone";
+    private static final String CLI = "CLASSPATH=" + REMOTE + " app_process /system/bin CubClone";
     private static final int REQ_SHIZUKU = 1001;
     private static final Pattern ROW =
             Pattern.compile("CLONE\\s+UserInfo\\{(\\d+):([^:]*):");
@@ -671,8 +671,10 @@ public class MainActivity extends Activity {
     private volatile boolean refreshing;
     /** 上一次 render 用的深浅色，用来判断 onResume 要不要重建列表 */
     private boolean lastDark, lastBlack;
-    /** 我们建的空间在系统里的用户名前缀：跨 ROM 唯一可靠的归属标志 */
-    static final String TAG = "WB_";
+    /** 空间归属标记：写在该空间自己的 settings 里（cubclone_owned=1），随空间一起删 */
+    static final String OWNED = "cubclone_owned";
+    /** 旧版归属标记 key（wb_clone），loadMarks 兜底读它做迁移，不再新写 */
+    private static final String OWNED_LEGACY = "wb_clone";
 
     /** 归属判据要用 Context 读本地登记；两个入口 Activity 的 onCreate 都会调 attach() */
     static Context appCtx;
@@ -685,8 +687,7 @@ public class MainActivity extends Activity {
      * 归属判据只认「跟着空间走」的标记，不认 uid。
      * ⚠uid 会被系统复用：删掉 15 号空间后，系统的分身或别的空间可能又拿到 15 ⇒
      * 以前按 uid 登记就会把别人的空间当成自己建的（ESP 上就这么误判过）。
-     * 现在用两条：① 建空间时用户名带 WB_ 前缀（改不掉、不复用）；
-     * ② 建完往该空间自己的 settings 里写 wb_clone=1（存的是这个用户的库，随空间一起删）。
+     * 判据：建完往该空间自己的 settings 里写 cubclone_owned=1（存这个用户的库，随空间一起删）。
      */
     private static final Set<Integer> MARKED = new HashSet<Integer>();
     private static boolean marksLoaded;
@@ -717,7 +718,8 @@ public class MainActivity extends Activity {
                 "for u in $(cmd user list --all -v 2>/dev/null | grep 'type=profile[.]CLONE'"
                 + " | sed -n 's/^[0-9]*: id=\\([0-9]*\\),.*/\\1/p'); do "
                 + "echo \"CSPACE $u\"; "
-                + "m=$(settings get --user $u secure wb_clone 2>/dev/null); "
+                + "m=$(settings get --user $u secure " + OWNED + " 2>/dev/null); "
+                + "[ -z \"$m\" ] && m=$(settings get --user $u secure " + OWNED_LEGACY + " 2>/dev/null); "
                 + "case \"$m\" in 1*) echo \"MARK $u\";; esac; done; ");
         Set<Integer> now = new HashSet<Integer>();
         List<Integer> all = new ArrayList<Integer>();
@@ -746,7 +748,8 @@ public class MainActivity extends Activity {
         synchronized (MARKED) {
             MARKED.add(Integer.valueOf(uid));
         }
-        Shell.exec("settings put --user " + uid + " secure wb_clone 1");
+        Shell.exec("settings put --user " + uid + " secure " + OWNED + " 1");
+        Shell.exec("settings delete --user " + uid + " secure " + OWNED_LEGACY);
         // 立刻把它排进序号表，否则新建的空间要等下一次扫描才会显示成「空间 N」，
         // 中间这段会退回到系统名/id（用户看到的就是「又变成空间 20」）。
         java.util.List<Integer> ord = new ArrayList<Integer>(SPACE_ORDER);
@@ -760,18 +763,18 @@ public class MainActivity extends Activity {
         synchronized (MARKED) {
             MARKED.remove(Integer.valueOf(uid));
         }
-        Shell.exec("settings delete --user " + uid + " secure wb_clone");
+        Shell.exec("settings delete --user " + uid + " secure " + OWNED);
+        Shell.exec("settings delete --user " + uid + " secure " + OWNED_LEGACY);
     }
 
-    /** 建空间用的系统用户名：直接写用户起的名字（不带 WB_ 前缀，第三方可见、可区分） */
-    static String wbName(String base) {
+    /** 建空间用的系统用户名：直接写用户起的名字（第三方可见、可区分） */
+    static String cloneName(String base) {
         String b = base == null ? "" : base.replace("'", "").trim();
-        if (b.startsWith(TAG)) b = b.substring(TAG.length()).trim();
         if (b.length() > 20) b = b.substring(0, 20);
         return b.isEmpty() ? "space" : b;
     }
 
-    /** 这个 CLONE 空间是不是我们建的：只认空间里写的 wb_clone 标记，不再靠名字前缀猜 */
+    /** 这个 CLONE 空间是不是我们建的：只认空间里写的归属标记，不再靠名字前缀猜 */
     static boolean isOurs(String sysName, int uid) {
         return marked(uid);
     }
@@ -814,7 +817,7 @@ public class MainActivity extends Activity {
         dirty = false;
         new Thread(new Runnable() {
             public void run() {
-                // 先读一遍空间归属标记（WB_ 前缀 + 空间内 wb_clone）：不读就等于把所有空间当外人
+                // 先读一遍空间归属标记（空间归属标记）：不读就等于把所有空间当外人
                 ensureMarks();
                 // onResume 可能比 onCreate 的后台加载跑得还早，没元信息就什么都匹配不上
                 if (metaDirty || userApps.isEmpty() || labelCache.isEmpty()) {
@@ -1414,7 +1417,7 @@ public class MainActivity extends Activity {
                 final List<Integer> t = new ArrayList<Integer>(targets);
                 String newErr = null;
                 if (wantNew) {
-                    String out = Shell.exec(WB + " create '" + wbName(name) + "'");
+                    String out = Shell.exec(CLI + " create '" + cloneName(name) + "'");
                     Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
                     int got = -1;
                     if (m.find()) got = Integer.parseInt(m.group(1));
@@ -1525,14 +1528,14 @@ public class MainActivity extends Activity {
                     });
                     return;
                 }
-                // 新建空间前让用户起名：名字进系统用户名（WB_ 前缀），第三方可见、可区分
+                // 新建空间前让用户起名：名字进系统用户名，第三方可见、可区分
                 runOnUiThread(new Runnable() {
                     public void run() {
                         askSpaceName(new NameCb() {
                             public void onName(final String name) {
                                 new Thread(new Runnable() {
                                     public void run() {
-                                        String out = Shell.exec(WB + " create '" + wbName(name) + "'");
+                                        String out = Shell.exec(CLI + " create '" + cloneName(name) + "'");
                                         Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
                                         int uid = m.find() ? Integer.parseInt(m.group(1)) : -1;
                                         if (uid <= 0) {
@@ -1553,7 +1556,7 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    /** 弹框给新空间起名；确定后回调名字（可能为空，空则系统名回落 WB_space）；取消回调 onCancel（可空） */
+    /** 弹框给新空间起名；确定后回调名字（可能为空，空则系统名回落 space）；取消回调 onCancel（可空） */
     private void askSpaceName(final NameCb cb, final Runnable onCancel) {
         final EditText et = new EditText(this);
         et.setHint(R.string.new_space_name);
@@ -1938,11 +1941,9 @@ public class MainActivity extends Activity {
         }
         if (sys != null && sys.trim().length() > 0) {
             String t2 = sys.trim();
-            // 老空间的 WB_ 前缀只是历史归属标志，不在界面上露出来
-            if (t2.startsWith(TAG)) t2 = t2.substring(TAG.length()).trim();
             if (t2.length() > 0 && !t2.equalsIgnoreCase("space")) return t2;
         }
-        // 兜底（老空间 WB_space / 读不到系统名）：按建号顺序显示「空间 N」
+        // 兜底（系统名是 space / 读不到）：按建号顺序显示「空间 N」
         int ord = SPACE_ORDER.indexOf(Integer.valueOf(uid));
         if (ord >= 0) return c.getString(R.string.space_name, String.valueOf(ord + 1));
         return c.getString(R.string.space_name, String.valueOf(uid));
@@ -1991,9 +1992,9 @@ public class MainActivity extends Activity {
                 String nm = e > n ? t.substring(n + 5, e).trim() : "";
                 if (!Launcher.safe(uid)) continue;
                 // 名字无条件记下来：isOurs(null, uid) 的调用方（删分身、回收空间）
-                // 要靠它认出「名字带 WB_」的空间，不然会把我们自己的空间判成只读
+                // 要靠它认出「名字带前缀」的空间，不然会把我们自己的空间判成只读
                 if (nm.length() > 0) names.put(Integer.valueOf(uid), nm);
-                // 归属只看「名字里的 WB_ 前缀」或「空间内 wb_clone 标记」，
+                // 归属只看「名字前缀」或「归属标记」，
                 // 不再用 flags 猜 —— flags 是系统的实现细节，ROM 自带分身也长一个样。
                 if (isOurs(nm, uid)) {
                     ids.add(Integer.valueOf(uid));
@@ -2419,7 +2420,7 @@ public class MainActivity extends Activity {
                     public void onClick(DialogInterface d, int w) {
                         new Thread(new Runnable() {
                             public void run() {
-                                final String r = Shell.exec(WB + " remove " + uid);
+                                final String r = Shell.exec(CLI + " remove " + uid);
                                 if (!listSpaceUids().contains(Integer.valueOf(uid))) {
                                     // 空间没了，登记表 / 归属登记一起删
                                     getSharedPreferences("clone", MODE_PRIVATE)

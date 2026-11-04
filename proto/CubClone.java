@@ -7,7 +7,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 
 /**
- * wbclone —— 应用分身 CLI（AOSP clone profile）
+ * CubClone —— 应用分身 CLI（AOSP clone profile）
  *
  * 用法（shell/root 均可，需 MANAGE_USERS）：
  *   app_process ... CubClone list

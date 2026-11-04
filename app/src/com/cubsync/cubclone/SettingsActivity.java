@@ -49,7 +49,7 @@ public class SettingsActivity extends Activity {
     private TextView btnRecheck, btnShizuku, btnNewSpace;
     private LinearLayout spaceList;
     private View divider, lineLook;
-    private Switch swAll, swIcon, swAmoled, swKeepSys;
+    private Switch swAll, swIcon, swAmoled, swKeepSys, swManageForeign;
     /** 程序里刷开关状态时别再触发监听，否则会把用户的选择写没 */
     private boolean updatingAmoled;
     private TextView amoledLabel;
@@ -101,6 +101,7 @@ public class SettingsActivity extends Activity {
         swAll = findViewById(R.id.sw_all);
         swIcon = findViewById(R.id.sw_icon);
         swKeepSys = findViewById(R.id.sw_keep_sys);
+        swManageForeign = findViewById(R.id.sw_manage_foreign);
         swAmoled = findViewById(R.id.sw_amoled);
         amoledLabel = findViewById(R.id.amoled_label);
         btnBack = findViewById(R.id.btn_back);
@@ -186,6 +187,14 @@ public class SettingsActivity extends Activity {
         swKeepSys.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(android.widget.CompoundButton v, boolean checked) {
                 sp().edit().putBoolean("keep_sys", checked).apply();
+                MainActivity.dirty = true;
+            }
+        });
+
+        swManageForeign.setChecked(sp().getBoolean("manage_foreign", false));
+        swManageForeign.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(android.widget.CompoundButton v, boolean checked) {
+                sp().edit().putBoolean("manage_foreign", checked).apply();
                 MainActivity.dirty = true;
             }
         });

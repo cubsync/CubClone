@@ -126,6 +126,8 @@
     <string name="refresh">刷新</string>
     <string name="refreshing">正在刷新列表…</string>
     <string name="label_keep_sys">分身里保留系统应用</string>
+    <string name="label_manage_foreign">管理非自建空间</string>
+    <string name="hint_manage_foreign">开启后，系统自带空间（如 MultiApp 等非 CubClone 建的空间）里的应用也可以移除/禁用；默认关闭</string>
     <string name="rename_space">重命名</string>
     <string name="renaming_space">正在重命名…</string>
     <string name="space_renamed">已重命名</string>

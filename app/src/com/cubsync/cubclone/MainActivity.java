@@ -1290,6 +1290,11 @@ public class MainActivity extends Activity {
                     }
                 });
                 final int idx = i;
+                // 非自建空间（MultiApp 等）：默认只读，不给改名/移除；开了「管理非自建空间」才放开
+                if (c.foreign && !sp().getBoolean("manage_foreign", false)) {
+                    row.findViewById(R.id.clone_rename).setVisibility(View.GONE);
+                    row.findViewById(R.id.clone_delete).setVisibility(View.GONE);
+                }
                 int iconTint = dark ? 0xFF9AA0A6 : 0xFF5F6368;
                 for (int rid : new int[]{R.id.clone_pin, R.id.clone_open,
                         R.id.clone_rename, R.id.clone_delete}) {
@@ -2050,9 +2055,10 @@ public class MainActivity extends Activity {
     private void cloneMenu(final Clone c, final Group g) {
         final java.util.List<String> items = new java.util.ArrayList<String>();
         final java.util.List<Integer> acts = new java.util.ArrayList<Integer>();
-        if (c.off) { items.add(getString(R.string.menu_enable)); acts.add(1); }
+        boolean ro = c.foreign && !sp().getBoolean("manage_foreign", false);
+        if (c.off && !ro) { items.add(getString(R.string.menu_enable)); acts.add(1); }
         items.add(getString(R.string.menu_open)); acts.add(2);
-        items.add(getString(R.string.menu_remove)); acts.add(3);
+        if (!ro) { items.add(getString(R.string.menu_remove)); acts.add(3); }
         new android.app.AlertDialog.Builder(this)
                 .setTitle(g.label + suffixOf(c.uid, g.pkg, 0))
                 .setItems(items.toArray(new String[0]),
@@ -2308,8 +2314,9 @@ public class MainActivity extends Activity {
             say(getString(R.string.not_clone, c.uid));
             return;
         }
-        // 不是我们建的空间（一加 MultiApp 之类）：只读，绝不从这里卸人家的应用
-        if (!isOurs(null, c.uid)) {
+        // 不是我们建的空间（一加 MultiApp 之类）：默认只读，绝不从这里卸人家的应用；
+        // 用户开了「管理非自建空间」才放开
+        if (!isOurs(null, c.uid) && !sp().getBoolean("manage_foreign", false)) {
             say(getString(R.string.space_readonly));
             return;
         }

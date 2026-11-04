@@ -1399,17 +1399,39 @@ public class MainActivity extends Activity {
             final boolean wantNew) {
         say("正在批量创建分身…");
         multiBar.setEnabled(false);
+        if (wantNew) {
+            askSpaceName(new NameCb() {
+                public void onName(String name) {
+                    doBatchInner(pkgs, targets, true, name);
+                }
+            }, new Runnable() {
+                public void run() {
+                    multiBar.setEnabled(true);
+                    multi = false;
+                    selected.clear();
+                    multiBar.setVisibility(View.GONE);
+                    render();
+                }
+            });
+        } else {
+            doBatchInner(pkgs, targets, false, "");
+        }
+    }
+
+    private void doBatchInner(final List<String> pkgs, final List<Integer> targets,
+            final boolean wantNew, final String name) {
         new Thread(new Runnable() {
             public void run() {
                 final List<Integer> t = new ArrayList<Integer>(targets);
                 String newErr = null;
                 if (wantNew) {
-                    String out = Shell.exec(WB + " create '" + wbName("") + "'");
+                    String out = Shell.exec(WB + " create '" + wbName(name) + "'");
                     Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
                     int got = -1;
                     if (m.find()) got = Integer.parseInt(m.group(1));
                     if (got > 0) {
                         markOurs(got);
+                        if (!name.isEmpty()) setLabel(MainActivity.this, got, name);
                         Launcher.hideSelfFrom(got);
                         t.add(Integer.valueOf(got));
                         if (!keepSys()) pruneSpace(MainActivity.this, got, true);
@@ -1489,6 +1511,8 @@ public class MainActivity extends Activity {
      * 建不出来（红米/LOS 上 perParent=1，已经占满）就复用已有的分身空间，
      * 把应用装进去 —— 一个空间装多个应用，这是 AOSP 允许的做法。
      */
+    private interface NameCb { void onName(String name); }
+
     private void createClone(final Group g) {
         if (!Shell.ready()) {
             say(getString(R.string.need_perm));
@@ -1499,82 +1523,115 @@ public class MainActivity extends Activity {
             public void run() {
                 // 先把应用塞进已有空间里还没装它的那个（红米/LOS 只允许 1 个空间，只能这样）
                 int spare = pickReusableSpace(MainActivity.this, g.pkg);
-                int uid = -1;
-                boolean reused = false;
-                String err = null;
                 if (spare > 0) {
-                    uid = spare;
-                    reused = true;
-                } else {
-                    // 每个空间里都已经有它了（想要再开一份），才新建一个空间
-                    int per = maxPerParent();
-                    int have = countSpaces();
-                    if (per > 0 && have >= per) {
-                        final String msg = getString(R.string.space_full, String.valueOf(per));
-                        runOnUiThread(new Runnable() {
-                            public void run() { say(msg); }
-                        });
-                        return;
-                    }
-                    // 空间名不再取应用名：只有 1 个空间的机器上，名字会永远停在「第一个建它的
-                    // 那个应用」上，之后建别的分身看着就像名字乱了。统一叫「分身」，用户可在设置里改。
-                    String out = Shell.exec(WB + " create '" + wbName("") + "'");
-                    Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
-                    if (m.find()) uid = Integer.parseInt(m.group(1));
-                    if (uid <= 0) err = out.trim();
+                    installIntoClone(g, spare, true, "");
+                    return;
                 }
-                if (uid <= 0) {
-                    final String msg = failMsg(err);
+                // 每个空间里都已经有它了（想要再开一份），才新建一个空间
+                int per = maxPerParent();
+                int have = countSpaces();
+                if (per > 0 && have >= per) {
+                    final String msg = getString(R.string.space_full, String.valueOf(per));
                     runOnUiThread(new Runnable() {
                         public void run() { say(msg); }
                     });
                     return;
                 }
-
-                markOurs(uid);          // 归属登记：以后靠它 + 名字前缀认自己人
-                // 不主动 start：建号时系统已经把档案拉起来了，这里再 start 只会让桌面
-                // 把「刚灌进来还没删的那批应用」bind 一遍
-                Launcher.hideSelfFrom(uid);
-                final String ir = Launcher.installExisting(uid, g.pkg);
-                // ⚠pm install-existing 成功时输出 "Package X installed for user: N"，没有 success 字样。
-                // 以前只认 success ⇒ 每次创建都被当成失败：不登记、不清理、界面还报「没装进分身」
-                final String low = ir.toLowerCase();
-                final boolean installed = low.contains("installed") || low.contains("success");
-                // 登记：这个空间里「该有」的包。清理只认这张表，不再靠「三方还是系统」猜
-                if (installed) markKept(MainActivity.this, uid, g.pkg);
-                // 新空间会被系统灌进主身份里的全部应用（OP12 上 25 个三方全来了、红米 184 个包），
-                // 一加桌面会把它们整个摆出来 ⇒ 建完立刻按登记表清掉，只留刚装进去的这个
-                int left = 0;
-                if (!reused && installed && !keepSys()) {
-                    left = pruneSpace(MainActivity.this, uid, true);
-                }
-                final int fu = uid;
-                final boolean fre = reused;
-                final int fleft = left;
+                // 新建空间前让用户起名：名字进系统用户名（WB_ 前缀），第三方可见、可区分
                 runOnUiThread(new Runnable() {
                     public void run() {
-                        if (!installed) say(getString(R.string.install_failed,
-                                g.label, ir.trim()));
-                        else {
-                            String msg = fre
-                                    ? getString(R.string.clone_reused, g.label, fu)
-                                    : getString(R.string.clone_created, g.label, fu);
-                            if (fleft > 0) {
-                                // 删不掉就照实说，别让用户以为清干净了
-                                msg += getString(R.string.prune_failed, String.valueOf(fleft));
+                        askSpaceName(new NameCb() {
+                            public void onName(final String name) {
+                                new Thread(new Runnable() {
+                                    public void run() {
+                                        String out = Shell.exec(WB + " create '" + wbName(name) + "'");
+                                        Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
+                                        int uid = m.find() ? Integer.parseInt(m.group(1)) : -1;
+                                        if (uid <= 0) {
+                                            final String msg = failMsg(out.trim());
+                                            runOnUiThread(new Runnable() {
+                                                public void run() { say(msg); }
+                                            });
+                                            return;
+                                        }
+                                        installIntoClone(g, uid, false, name);
+                                    }
+                                }).start();
                             }
-                            say(msg);
-                        }
-                        refresh();
-                        if (autoIcon()) {
-                            pinShortcut(MainActivity.this, fu, g.pkg,
-                                    g.label + suffixOf(fu, g.pkg, g.clones.size()),
-                                    g.icon, nameOf(MainActivity.this, fu));
-                        }
+                        }, null);
                     }
                 });
             }
         }).start();
+    }
+
+    /** 弹框给新空间起名；确定后回调名字（可能为空，空则系统名回落 WB_space）；取消回调 onCancel（可空） */
+    private void askSpaceName(final NameCb cb, final Runnable onCancel) {
+        final EditText et = new EditText(this);
+        et.setHint(R.string.new_space_name);
+        et.setSingleLine(true);
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.btn_new_space)
+                .setView(et)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        cb.onName(et.getText().toString().trim());
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        if (onCancel != null) onCancel.run();
+                    }
+                })
+                .show();
+    }
+
+    /** 拿到空间 uid 后：登记归属 → 装应用 → 精简 → 反馈 */
+    private void installIntoClone(final Group g, final int uid, final boolean reused,
+            final String name) {
+        markOurs(uid);          // 归属登记：以后靠它 + 名字前缀认自己人
+        if (!name.isEmpty()) setLabel(MainActivity.this, uid, name);
+        // 不主动 start：建号时系统已经把档案拉起来了，这里再 start 只会让桌面
+        // 把「刚灌进来还没删的那批应用」bind 一遍
+        Launcher.hideSelfFrom(uid);
+        final String ir = Launcher.installExisting(uid, g.pkg);
+        // ⚠pm install-existing 成功时输出 "Package X installed for user: N"，没有 success 字样。
+        // 以前只认 success ⇒ 每次创建都被当成失败：不登记、不清理、界面还报「没装进分身」
+        final String low = ir.toLowerCase();
+        final boolean installed = low.contains("installed") || low.contains("success");
+        // 登记：这个空间里「该有」的包。清理只认这张表，不再靠「三方还是系统」猜
+        if (installed) markKept(MainActivity.this, uid, g.pkg);
+        // 新空间会被系统灌进主身份里的全部应用（OP12 上 25 个三方全来了、红米 184 个包），
+        // 一加桌面会把它们整个摆出来 ⇒ 建完立刻按登记表清掉，只留刚装进去的这个
+        int left = 0;
+        if (!reused && installed && !keepSys()) {
+            left = pruneSpace(MainActivity.this, uid, true);
+        }
+        final int fu = uid;
+        final boolean fre = reused;
+        final int fleft = left;
+        runOnUiThread(new Runnable() {
+            public void run() {
+                if (!installed) say(getString(R.string.install_failed,
+                        g.label, ir.trim()));
+                else {
+                    String msg = fre
+                            ? getString(R.string.clone_reused, g.label, fu)
+                            : getString(R.string.clone_created, g.label, fu);
+                    if (fleft > 0) {
+                        // 删不掉就照实说，别让用户以为清干净了
+                        msg += getString(R.string.prune_failed, String.valueOf(fleft));
+                    }
+                    say(msg);
+                }
+                refresh();
+                if (autoIcon()) {
+                    pinShortcut(MainActivity.this, fu, g.pkg,
+                            g.label + suffixOf(fu, g.pkg, g.clones.size()),
+                            g.icon, nameOf(MainActivity.this, fu));
+                }
+            }
+        });
     }
 
     // ---------------- 分身空间登记表 ----------------

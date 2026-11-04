@@ -771,12 +771,8 @@ public class MainActivity extends Activity {
         return b.isEmpty() ? "space" : b;
     }
 
-    /** 这个 CLONE 空间是不是我们建的 */
+    /** 这个 CLONE 空间是不是我们建的：只认空间里写的 wb_clone 标记，不再靠名字前缀猜 */
     static boolean isOurs(String sysName, int uid) {
-        // 传 null 的调用方（删分身、回收空间等）用扫描时缓存下来的系统用户名兜底，
-        // 只看标记会把「名字带 WB_ 但我们没来得及写 settings」的空间当成别人的（变只读）
-        if (sysName == null) sysName = SPACE_NAMES.get(Integer.valueOf(uid));
-        if (sysName != null && sysName.startsWith(TAG)) return true;
         return marked(uid);
     }
 
@@ -840,17 +836,6 @@ public class MainActivity extends Activity {
                 for (Integer u : alive) {
                     keptBySpace.put(u, keptPkgs(MainActivity.this, u.intValue()));
                 }
-                Map<Integer, Set<String>> iconBySpace = new HashMap<Integer, Set<String>>();
-                for (String line : out.split("\\n")) {
-                    String t = line.trim();
-                    if (!t.startsWith("ICO ")) continue;
-                    String[] pp = t.split("\\s+");
-                    if (pp.length < 3) continue;
-                    Integer uid = Integer.valueOf(pp[1]);
-                    Set<String> ic = iconBySpace.get(uid);
-                    if (ic == null) { ic = new HashSet<String>(); iconBySpace.put(uid, ic); }
-                    ic.add(pp[2]);
-                }
                 allClones.clear();
                 for (String line : out.split("\\n")) {
                     String t = line.trim();
@@ -881,16 +866,10 @@ public class MainActivity extends Activity {
                         continue;
                     }
                     Set<String> kept = keptBySpace.get(uid);
-                    boolean inKept = kept != null && kept.contains(pkg);
-                    if (off) {
-                        // disabled 的包：只显示登记表里的（用户主动隐藏的）；系统复制进来
-                        // 又被精简掉的那批不显示，免得刷屏。
-                        if (!inKept) continue;
-                    } else {
-                        // enabled 的包：登记表里的 + 第三方都显示——第三方「数据备份」恢复
-                        // 或手动装进来的应用不在登记表、也可能没桌面图标（如 cubdesk），必须显示。
-                        if (!inKept && !THIRD.contains(pkg)) continue;
-                    }
+                    // disabled 的包只显示登记表里的（用户主动隐藏的）；系统复制进来又被精简
+                    // 掉的那批不显示，免得刷屏。enabled 的包全部保留，交给后面的 scope
+                    // （用户/系统页签）过滤——不再靠登记表/第三方/图标去猜。
+                    if (off && (kept == null || !kept.contains(pkg))) continue;
                     Clone c = new Clone();
                     c.uid = uid.intValue();
                     c.profile = "space";
@@ -1351,14 +1330,24 @@ public class MainActivity extends Activity {
         new Thread(new Runnable() {
             public void run() {
                 final List<Integer> spaces = listSpaceUids();
+                // 每个空间里 enabled 的三方应用数（和主页显示一致，不再用登记表猜）
+                final java.util.Map<Integer, Integer> counts = new java.util.HashMap<Integer, Integer>();
+                for (Integer u : spaces) {
+                    int n = 0;
+                    String out = Shell.exec("pm list packages -3 -e --user " + u.intValue());
+                    for (String line : out.split("\n")) {
+                        if (line.trim().startsWith("package:")) n++;
+                    }
+                    counts.put(u, Integer.valueOf(n));
+                }
                 runOnUiThread(new Runnable() {
                     public void run() {
                         final String[] items = new String[spaces.size() + 1];
                         for (int i = 0; i < spaces.size(); i++) {
                             int u = spaces.get(i).intValue();
-                            Set<String> k = keptPkgs(MainActivity.this, u);
+                            Integer n = counts.get(Integer.valueOf(u));
                             items[i] = nameOf(MainActivity.this, u) + " · "
-                                    + (k == null ? 0 : k.size()) + " 个分身";
+                                    + (n == null ? 0 : n.intValue()) + " 个分身";
                         }
                         items[spaces.size()] = getString(R.string.new_space_option);
                         final boolean[] checked = new boolean[items.length];

@@ -594,18 +594,21 @@ public class SettingsActivity extends Activity {
                             foreign.add(Boolean.valueOf(ln.startsWith("FSPACE ")));
                         } catch (Throwable ignored) {
                         }
-                    } else if (ln.startsWith("PKG ") || ln.startsWith("OFF ")
-                            || ln.startsWith("EXT ")) {
+                    } else if (ln.startsWith("PKG ")) {
                         String[] pp = ln.split("\\s+");
                         if (pp.length < 3) continue;
                         if (pp[2].equals(getPackageName())) continue;
                         int idx = uids.indexOf(Integer.valueOf(pp[1]));
                         if (idx < 0) continue;
-                        // 空间里真在的包（登记表要和它求交：残留登记不能算成分身）
                         live.get(idx).add(pp[2]);
-                        // 只数三方：新建空间时系统会灌进 180 多个包，全算就是「180 个应用」那种离谱数字
-                        if (!MainActivity.THIRD.contains(pp[2])) continue;
-                        counts.get(idx).add(pp[2]);
+                        // 计数＝enabled 的三方；系统复制的包建号时已被 disable，落在 OFF，不计
+                        if (MainActivity.THIRD.contains(pp[2])) counts.get(idx).add(pp[2]);
+                    } else if (ln.startsWith("OFF ") || ln.startsWith("EXT ")) {
+                        String[] pp = ln.split("\\s+");
+                        if (pp.length < 3) continue;
+                        int idx = uids.indexOf(Integer.valueOf(pp[1]));
+                        if (idx < 0) continue;
+                        live.get(idx).add(pp[2]);
                     } else if (ln.startsWith("mMaxAllowedPerParent:")) {
                         perParent = num(ln);
                     } else if (ln.startsWith("mMaxAllowed:")) {
@@ -695,15 +698,7 @@ public class SettingsActivity extends Activity {
             row.setPadding(0, dp(8), 0, dp(8));
 
             TextView tv = new TextView(this);
-            // 有登记表就用它（精确＝我们给这个空间装了几个分身）；没有（老空间）退回三方包数。
-            // ⚠登记表要和空间里真在的包求交：删分身没清登记的残留会让数字虚高。
-            java.util.Set<String> kept = MainActivity.keptPkgs(this, uid);
-            if (kept != null && !kept.isEmpty()) {
-                int c = 0;
-                java.util.Set<String> lv = live.get(i);
-                for (String p : kept) if (lv.contains(p)) c++;
-                n = c;
-            }
+            // 计数＝空间里 enabled 的三方数，和主页显示一致，不再靠登记表求交。
             tv.setText(getString(R.string.space_row2,
                     MainActivity.nameOf(this, uid), uid, n));
             tv.setTextSize(14);

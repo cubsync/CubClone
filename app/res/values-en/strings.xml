@@ -125,8 +125,8 @@ Owner data is not touched.</string>
     <string name="refresh">Refresh</string>
     <string name="refreshing">Refreshing…</string>
     <string name="label_keep_sys">Keep system apps inside clones</string>
-    <string name="label_manage_foreign">Manage non-CubClone spaces</string>
-    <string name="hint_manage_foreign">When on, apps inside system clone spaces (e.g. MultiApp) can be removed/disabled; off by default</string>
+    <string name="label_manage_foreign">Manage other clone spaces</string>
+    <string name="hint_manage_foreign">When on, apps inside clone spaces not created by this app can be removed/disabled; off by default</string>
     <string name="space_renamed_synced">Renamed; system name synced</string>
     <string name="space_renamed_label_only">Label updated; root needed to sync system name</string>
     <string name="rename_space">Rename</string>

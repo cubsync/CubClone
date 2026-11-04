@@ -42,36 +42,18 @@ public final class Locales {
         }
     }
 
-    /** 真实系统语言：优先取系统设置里的 system_locales，避开 per-app 覆盖 */
-    private static LocaleList systemLocales(Context ctx) {
-        try {
-            String s = Settings.System.getString(ctx.getContentResolver(), "system_locales");
-            if (s != null && !s.trim().isEmpty()) {
-                LocaleList l = LocaleList.forLanguageTags(s.replace('_', '-'));
-                if (!l.isEmpty()) return l;
-            }
-        } catch (Throwable ignored) {
-        }
-        try {
-            LocaleList l = android.content.res.Resources.getSystem()
-                    .getConfiguration().getLocales();
-            if (!l.isEmpty()) return l;
-        } catch (Throwable ignored) {
-        }
-        return LocaleList.getDefault();
-    }
-
     public static Context wrap(Context base) {
         clearSystemOverride(base);
         String tag = tag(base);
-        Configuration c = new Configuration(base.getResources().getConfiguration());
         if (tag == null) {
-            c.setLocales(systemLocales(base));
-        } else {
-            Locale loc = tag.startsWith("en") ? Locale.ENGLISH : Locale.SIMPLIFIED_CHINESE;
-            c.setLocale(loc);
-            c.setLayoutDirection(loc);
+            // 跟随系统：不手动设 locale，直接用系统默认（per-app 覆盖已在上面抹掉）。
+            // 手动 setLocales 反而会因 system_locales 解析差异导致「系统中文却出英文」。
+            return base;
         }
+        Configuration c = new Configuration(base.getResources().getConfiguration());
+        Locale loc = tag.startsWith("en") ? Locale.ENGLISH : Locale.SIMPLIFIED_CHINESE;
+        c.setLocale(loc);
+        c.setLayoutDirection(loc);
         return base.createConfigurationContext(c);
     }
 }

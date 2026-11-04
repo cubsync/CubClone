@@ -507,6 +507,7 @@
                         android:layout_height="34dp"
                         android:paddingStart="14dp"
                         android:paddingEnd="14dp"
+                        android:layout_marginEnd="8dp"
                         android:gravity="center"
                         android:background="@drawable/bg_clone_button"
                         android:text="@string/refresh"

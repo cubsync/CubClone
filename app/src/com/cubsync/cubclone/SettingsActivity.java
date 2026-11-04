@@ -721,6 +721,18 @@ public class SettingsActivity extends Activity {
                 ro.setPadding(dp(12), dp(6), dp(4), dp(6));
                 ro.setTextColor(secColor);
                 row.addView(ro);
+                // 「管理非自建空间」开启后：非自建空间也给出删除入口（带确认）
+                if (sp().getBoolean("manage_foreign", false)) {
+                    TextView del = new TextView(this);
+                    del.setText(R.string.delete_space);
+                    del.setTextSize(14);
+                    del.setPadding(dp(12), dp(6), dp(4), dp(6));
+                    del.setTextColor(dark ? 0xFFF28B82 : 0xFFC5221F);
+                    del.setOnClickListener(new View.OnClickListener() {
+                        public void onClick(View v) { confirmRemoveSpace(uid); }
+                    });
+                    row.addView(del);
+                }
                 spaceList.addView(row);
                 continue;
             }

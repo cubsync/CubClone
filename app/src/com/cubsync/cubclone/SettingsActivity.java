@@ -46,7 +46,7 @@ public class SettingsActivity extends Activity {
     private Switch swGridPrimary, swRecent;
     private TextView permRoot, permShizuku, allLabel, allHint, iconLabel, iconHint;
     private TextView spaceTitle, spaceLimit, aboutVer, aboutNote;
-    private TextView btnRecheck, btnShizuku, btnNewSpace;
+    private TextView btnRecheck, btnShizuku, btnNewSpace, btnRefreshSpace;
     private LinearLayout spaceList;
     private View divider, lineLook;
     private Switch swAll, swIcon, swAmoled, swKeepSys, swManageForeign;
@@ -95,6 +95,7 @@ public class SettingsActivity extends Activity {
         btnRecheck = findViewById(R.id.btn_recheck);
         btnShizuku = findViewById(R.id.btn_shizuku);
         btnNewSpace = findViewById(R.id.btn_new_space);
+        btnRefreshSpace = findViewById(R.id.btn_refresh_space);
         spaceList = findViewById(R.id.space_list);
         divider = findViewById(R.id.divider);
         lineLook = findViewById(R.id.line_look);
@@ -159,6 +160,9 @@ public class SettingsActivity extends Activity {
         });
         btnNewSpace.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { askNewSpace(); }
+        });
+        btnRefreshSpace.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { loadSpaces(); }
         });
 
         swAll.setChecked(sp().getBoolean("show_all", false));

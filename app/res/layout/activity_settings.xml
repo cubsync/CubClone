@@ -502,6 +502,17 @@
                         android:textSize="15sp" />
 
                     <TextView
+                        android:id="@+id/btn_refresh_space"
+                        android:layout_width="wrap_content"
+                        android:layout_height="34dp"
+                        android:paddingStart="14dp"
+                        android:paddingEnd="14dp"
+                        android:gravity="center"
+                        android:background="@drawable/bg_clone_button"
+                        android:text="@string/refresh"
+                        android:textSize="13sp" />
+
+                    <TextView
                         android:id="@+id/btn_new_space"
                         android:layout_width="wrap_content"
                         android:layout_height="34dp"

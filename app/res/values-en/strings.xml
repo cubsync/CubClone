@@ -55,6 +55,7 @@
     <string name="space_limit_reached">Clone space limit reached (%1$s), delete one first</string>
     <string name="space_deleted">Deleted space uid %1$d</string>
     <string name="delete_space_msg">Deleting space uid %1$d removes all cloned apps and their data inside it. The main copy of each app is not affected.\n\nOwner data is never touched.</string>
+    <string name="delete_space_msg_foreign">⚠️ This is a system clone space, not created by this app. Deleting it removes all apps and their data inside, and cannot be undone.\n\nDelete space uid %1$d?</string>
     <string name="new_space_name">Space name (optional)</string>
     <string name="creating">Creating space…</string>
     <string name="create_failed">Failed: %1$s</string>

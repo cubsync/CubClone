@@ -200,6 +200,7 @@ public class SettingsActivity extends Activity {
             public void onCheckedChanged(android.widget.CompoundButton v, boolean checked) {
                 sp().edit().putBoolean("manage_foreign", checked).apply();
                 MainActivity.dirty = true;
+                loadSpaces();   // 开关影响「非自建空间是否出删除按钮」，立即刷新列表
             }
         });
 
@@ -267,6 +268,14 @@ public class SettingsActivity extends Activity {
                 gridColsLabel, gridRowsLabel, gridPrimaryLabel,
                 recentRowsLabel, recentColsLabel};
         for (TextView t : mains) if (t != null) t.setTextColor(fgColor);
+        // 开关旁边的文字（recent/keep_sys/manage_foreign）也要跟主题色，否则默认灰色
+        for (int id : new int[]{R.id.recent_show_label, R.id.sys_keep_label,
+                R.id.manage_foreign_label}) {
+            TextView t = findViewById(id);
+            if (t != null) t.setTextColor(fgColor);
+        }
+        TextView mfh = findViewById(R.id.manage_foreign_hint);
+        if (mfh != null) mfh.setTextColor(secColor);
 
         divider.setBackgroundColor(line);
         lineLook.setBackgroundColor(line);
@@ -285,7 +294,7 @@ public class SettingsActivity extends Activity {
     private void renderButtons() {
         int bg = isBlack() ? 0xFF16283D : (dark ? 0xFF1F3A5F : 0xFFD3E3FD);
         int fg = dark ? 0xFFA8C7FA : 0xFF0B57D0;
-        for (TextView t : new TextView[]{btnRecheck, btnShizuku, btnNewSpace}) {
+        for (TextView t : new TextView[]{btnRecheck, btnShizuku, btnNewSpace, btnRefreshSpace}) {
             if (t.getBackground() != null) t.getBackground().setTint(bg);
             t.setTextColor(fg);
         }
@@ -844,9 +853,10 @@ public class SettingsActivity extends Activity {
                             public void run() {
                                 final String r = Shell.exec(CLI + " rename " + uid + " '"
                                         + name.replace("'", "") + "'");
+                                final boolean synced = r.contains("renamed");
+                                if (synced) MainActivity.listSpaceUids(); // 后台刷新系统名缓存
                                 runOnUiThread(new Runnable() {
                                     public void run() {
-                                        boolean synced = r.contains("renamed");
                                         toast(getString(synced
                                                 ? R.string.space_renamed_synced
                                                 : R.string.space_renamed_label_only));
@@ -868,7 +878,10 @@ public class SettingsActivity extends Activity {
         }
         new AlertDialog.Builder(this)
                 .setTitle(R.string.delete_space)
-                .setMessage(getString(R.string.delete_space_msg, uid))
+                .setMessage(getString(
+                        MainActivity.isOurs(null, uid)
+                                ? R.string.delete_space_msg
+                                : R.string.delete_space_msg_foreign, uid))
                 .setPositiveButton(R.string.delete_space, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int w) {
                         new Thread(new Runnable() {

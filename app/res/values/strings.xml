@@ -55,6 +55,7 @@
     <string name="space_limit_reached">分身空间已到上限（%1$s 个），先删一个再建</string>
     <string name="space_deleted">已删除空间 uid %1$d</string>
     <string name="delete_space_msg">删除空间 uid %1$d 会把里面所有分身应用的数据一起清掉，主身份那份不受影响。\n\n机主数据不会被触碰。</string>
+    <string name="delete_space_msg_foreign">⚠️ 这是系统自带的克隆空间，不是本应用创建的。删除会清掉里面所有应用及其数据，无法恢复。\n\n确认删除空间 uid %1$d？</string>
     <string name="new_space_name">空间名称（可留空）</string>
     <string name="creating">正在创建空间…</string>
     <string name="create_failed">创建失败：%1$s</string>

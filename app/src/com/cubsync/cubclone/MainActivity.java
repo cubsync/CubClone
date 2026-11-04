@@ -763,12 +763,12 @@ public class MainActivity extends Activity {
         Shell.exec("settings delete --user " + uid + " secure wb_clone");
     }
 
-    /** 建空间用的系统用户名：WB_ 前缀 + 用户起的名字（系统名建完改不了，所以一次就要带上） */
+    /** 建空间用的系统用户名：直接写用户起的名字（不带 WB_ 前缀，第三方可见、可区分） */
     static String wbName(String base) {
         String b = base == null ? "" : base.replace("'", "").trim();
         if (b.startsWith(TAG)) b = b.substring(TAG.length()).trim();
         if (b.length() > 20) b = b.substring(0, 20);
-        return TAG + (b.isEmpty() ? "space" : b);
+        return b.isEmpty() ? "space" : b;
     }
 
     /** 这个 CLONE 空间是不是我们建的 */

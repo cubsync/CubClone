@@ -881,13 +881,15 @@ public class MainActivity extends Activity {
                         continue;
                     }
                     Set<String> kept = keptBySpace.get(uid);
-                    // 谁算「这个空间里真有这个分身」：登记表里的算；不在登记表但「第三方
-                    // 且有桌面图标」的也算——第三方「数据备份」恢复进来的应用不在登记表，
-                    // 但确实在空间里，必须显示（否则恢复的微信在首页看不到）。
-                    if (kept == null || !kept.contains(pkg)) {
-                        if (!THIRD.contains(pkg)) continue;
-                        Set<String> ic = iconBySpace.get(uid);
-                        if (ic == null || !ic.contains(pkg)) continue;
+                    boolean inKept = kept != null && kept.contains(pkg);
+                    if (off) {
+                        // disabled 的包：只显示登记表里的（用户主动隐藏的）；系统复制进来
+                        // 又被精简掉的那批不显示，免得刷屏。
+                        if (!inKept) continue;
+                    } else {
+                        // enabled 的包：登记表里的 + 第三方都显示——第三方「数据备份」恢复
+                        // 或手动装进来的应用不在登记表、也可能没桌面图标（如 cubdesk），必须显示。
+                        if (!inKept && !THIRD.contains(pkg)) continue;
                     }
                     Clone c = new Clone();
                     c.uid = uid.intValue();

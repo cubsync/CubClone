@@ -131,6 +131,8 @@
     <string name="rename_space">重命名</string>
     <string name="renaming_space">正在重命名…</string>
     <string name="space_renamed">已重命名</string>
+    <string name="space_renamed_synced">已重命名，系统名已同步</string>
+    <string name="space_renamed_label_only">界面名已改；系统名需 root 才能同步</string>
     <string name="tab_user">用户应用</string>
     <string name="tab_sys">系统应用</string>
     <string name="clone_hidden">已禁用</string>

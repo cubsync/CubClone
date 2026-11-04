@@ -881,12 +881,10 @@ public class MainActivity extends Activity {
                         continue;
                     }
                     Set<String> kept = keptBySpace.get(uid);
-                    // 谁算「这个空间里真有这个分身」：有登记表只认登记表；老空间没登记表就只认有桌面图标的包
-                    if (kept != null && !kept.isEmpty()) {
-                        if (!kept.contains(pkg)) continue;
-                    } else {
-                        // 老空间没有登记表：只认「带图标的三方包」。系统建空间时会把自己的
-                        // 输入法之类也塞进去并带图标，不过滤就会冒出一个只有包名的条目。
+                    // 谁算「这个空间里真有这个分身」：登记表里的算；不在登记表但「第三方
+                    // 且有桌面图标」的也算——第三方「数据备份」恢复进来的应用不在登记表，
+                    // 但确实在空间里，必须显示（否则恢复的微信在首页看不到）。
+                    if (kept == null || !kept.contains(pkg)) {
                         if (!THIRD.contains(pkg)) continue;
                         Set<String> ic = iconBySpace.get(uid);
                         if (ic == null || !ic.contains(pkg)) continue;

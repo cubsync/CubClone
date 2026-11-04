@@ -827,17 +827,24 @@ public class SettingsActivity extends Activity {
                     public void onClick(DialogInterface d, int w) {
                         final String name = et.getText().toString().trim();
                         if (name.isEmpty()) return;
-                        // 系统名改不了：setUserName 要 MANAGE_USERS，shell 身份必被拒
-                        // （实测 RemoteException: checkManageUsersPermission）。所以名字存在本 App 里，
-                        // 同时后台再试一次系统改名，成功更好、失败不打扰用户。
                         MainActivity.setLabel(SettingsActivity.this, uid, name);
                         MainActivity.dirty = true;
-                        toast(getString(R.string.space_renamed));
                         loadSpaces();
+                        // 系统名（LSP 管理器里看到的那个名字）：setUserName 要 MANAGE_USERS，
+                        // root 下能改、Shizuku（shell）改不了。等结果，如实反馈，别让用户以为改了。
                         new Thread(new Runnable() {
                             public void run() {
-                                Shell.exec(WB + " rename " + uid + " '"
+                                final String r = Shell.exec(WB + " rename " + uid + " '"
                                         + name.replace("'", "") + "'");
+                                runOnUiThread(new Runnable() {
+                                    public void run() {
+                                        boolean synced = r.contains("renamed");
+                                        toast(getString(synced
+                                                ? R.string.space_renamed_synced
+                                                : R.string.space_renamed_label_only));
+                                        loadSpaces();
+                                    }
+                                });
                             }
                         }).start();
                     }

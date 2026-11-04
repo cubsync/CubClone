@@ -666,8 +666,6 @@ public class MainActivity extends Activity {
 
     /** 数据只在真正改过之后重读；平时进出页面直接用缓存，不再每次都起 shell */
     static volatile boolean dirty = true;
-    /** 上一次「打开 App 顺手清理」的时间，免得反复清 */
-    private static long lastAutoClean;
     /** 应用清单（图标/名称/第三方还是系统）需要重读 */
     static volatile boolean metaDirty = false;
     private volatile boolean refreshing;
@@ -853,7 +851,6 @@ public class MainActivity extends Activity {
                     if (ic == null) { ic = new HashSet<String>(); iconBySpace.put(uid, ic); }
                     ic.add(pp[2]);
                 }
-                Map<Integer, Set<String>> installedBySpace = new HashMap<Integer, Set<String>>();
                 allClones.clear();
                 for (String line : out.split("\\n")) {
                     String t = line.trim();
@@ -901,11 +898,6 @@ public class MainActivity extends Activity {
                     // 最近打开要反查「任何页签」的分身，所以先记全量，再按页签过滤进列表
                     allClones.put(uid + ":" + pkg, c);
                     if (!scope.contains(pkg)) continue;
-                    if (!off) {
-                        Set<String> ins = installedBySpace.get(uid);
-                        if (ins == null) { ins = new HashSet<String>(); installedBySpace.put(uid, ins); }
-                        ins.add(pkg);
-                    }
                     List<Clone> l = map.get(pkg);
                     if (l == null) { l = new ArrayList<Clone>(); map.put(pkg, l); }
                     l.add(c);
@@ -939,29 +931,6 @@ public class MainActivity extends Activity {
                     }
                 });
 
-                // 系统会把主身份新装的应用顺手装进各个分身（adb 装更是装给所有用户），
-                // 打开 App 时体检一次：已登记的空间里冒出没登记的桌面图标 ⇒ 清掉
-                final List<Integer> autoClean = new ArrayList<Integer>();
-                if (System.currentTimeMillis() - lastAutoClean > 60000) {
-                    for (Map.Entry<Integer, Set<String>> e : installedBySpace.entrySet()) {
-                        Set<String> kept = keptBySpace.get(e.getKey());
-                        Set<String> safe = new HashSet<String>();
-                        if (kept == null || kept.isEmpty()) {
-                            // 老空间没登记表：只认「空间同名应用 + 输入法 / GMS / 解析器」，
-                            // 其余有桌面图标的包照样收拾（隐藏，不是删，长按能启用）
-                            safe.addAll(mustKeep(MainActivity.this));
-                            safe.addAll(sameNamePkgs(MainActivity.this, e.getKey().intValue()));
-                            safe.addAll(resolverPkgs(MainActivity.this));
-                        }
-                        for (String p : e.getValue()) {
-                            if (kept != null && kept.contains(p)) continue;
-                            if (safe.contains(p) || !labelCache.containsKey(p)) continue;
-                            if (isEssentialPkg(p)) continue;
-                            autoClean.add(e.getKey());
-                            break;
-                        }
-                    }
-                }
                 runOnUiThread(new Runnable() {
                     public void run() {
                         groups.clear();
@@ -969,20 +938,7 @@ public class MainActivity extends Activity {
                         render();
                         cleanStaleShortcuts(MainActivity.this);
                         refreshing = false;
-                        if (!autoClean.isEmpty()) {
-                            lastAutoClean = System.currentTimeMillis();
-                            new Thread(new Runnable() {
-                                public void run() {
-                                    for (Integer u : autoClean) {
-                                        pruneSpace(MainActivity.this, u.intValue(), false);
-                                    }
-                                    dirty = true;
-                                    runOnUiThread(new Runnable() {
-                                        public void run() { refresh(); }
-                                    });
-                                }
-                            }).start();
-                        } else if (dirty) refresh();
+                        if (dirty) refresh();
                     }
                 });
             }

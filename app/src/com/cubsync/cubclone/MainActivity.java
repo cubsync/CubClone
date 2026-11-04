@@ -1429,7 +1429,6 @@ public class MainActivity extends Activity {
                     if (m.find()) got = Integer.parseInt(m.group(1));
                     if (got > 0) {
                         markOurs(got);
-                        if (!name.isEmpty()) setLabel(MainActivity.this, got, name);
                         Launcher.hideSelfFrom(got);
                         t.add(Integer.valueOf(got));
                         if (!keepSys()) pruneSpace(MainActivity.this, got, true);
@@ -1588,7 +1587,6 @@ public class MainActivity extends Activity {
     private void installIntoClone(final Group g, final int uid, final boolean reused,
             final String name) {
         markOurs(uid);          // 归属登记：以后靠它 + 名字前缀认自己人
-        if (!name.isEmpty()) setLabel(MainActivity.this, uid, name);
         // 不主动 start：建号时系统已经把档案拉起来了，这里再 start 只会让桌面
         // 把「刚灌进来还没删的那批应用」bind 一遍
         Launcher.hideSelfFrom(uid);
@@ -1942,32 +1940,23 @@ public class MainActivity extends Activity {
      * 所以「重命名」改的是本 App 的标签，不再假装能改系统名）。
      */
     static String nameOf(Context c, int uid) {
-        String mine = c.getSharedPreferences("clone", Context.MODE_PRIVATE)
-                .getString("space_label_" + uid, null);
-        // 6.33 自动写过「空间 <系统id>」，那是内部号不是给人看的，忽略掉按序号重算
-        if (mine != null && mine.trim().equals("空间 " + uid)) mine = null;
-        if (mine != null && mine.trim().length() > 0) return mine.trim();
-        // 没自定义名：按「我们建的空间」的先后显示 空间 1 / 空间 2，跟系统 id 无关
-        int ord = SPACE_ORDER.indexOf(Integer.valueOf(uid));
-        if (ord >= 0) return c.getString(R.string.space_name, String.valueOf(ord + 1));
+        // 空间名就是系统名（LSP 管理器里看到的那个），一套名字，不再另存「界面名」。
         String sys = SPACE_NAMES.get(Integer.valueOf(uid));
         if (sys == null || sys.trim().length() == 0) {
             sys = spaceName(uid);          // 外部空间（一加 999）不在缓存里，现查一次
         }
         if (sys != null && sys.trim().length() > 0) {
             String t2 = sys.trim();
-            // 前缀只是归属标志，不该出现在界面上
+            // 老空间的 WB_ 前缀只是历史归属标志，不在界面上露出来
             if (t2.startsWith(TAG)) t2 = t2.substring(TAG.length()).trim();
-            // 系统名是 ASCII 兜底值（space）：界面上别露出来，统一显示「空间 N」
             if (t2.length() > 0 && !t2.equalsIgnoreCase("space")) return t2;
         }
+        // 兜底（老空间 WB_space / 读不到系统名）：按建号顺序显示「空间 N」
+        int ord = SPACE_ORDER.indexOf(Integer.valueOf(uid));
+        if (ord >= 0) return c.getString(R.string.space_name, String.valueOf(ord + 1));
         return c.getString(R.string.space_name, String.valueOf(uid));
     }
 
-    static void setLabel(Context c, int uid, String label) {
-        c.getSharedPreferences("clone", Context.MODE_PRIVATE)
-                .edit().putString("space_label_" + uid, label).apply();
-    }
 
     /**
      * 分身空间 uid 列表。
@@ -2269,7 +2258,7 @@ public class MainActivity extends Activity {
             item.setPadding(dp(6), dp(4), dp(6), 0);
             ImageView iv = new ImageView(this);
             Drawable ic = iconCache.get(pkg);
-            if (ic != null) iv.setImageDrawable(ic);
+            if (ic != null) iv.setImageBitmap(badge(ic, cloneIndex(pkg, uid)));
             iv.setLayoutParams(new LinearLayout.LayoutParams(dp(40), dp(40)));
             if (c.off) iv.setAlpha(0.4f);
             item.addView(iv);
@@ -2295,6 +2284,21 @@ public class MainActivity extends Activity {
             line.addView(item);
         }
         return true;
+    }
+
+    /** 这个包在这个 uid 下的分身序号（按 uid 升序），用来和列表/网格的角标颜色对齐 */
+    private int cloneIndex(String pkg, int uid) {
+        java.util.List<Integer> uids = new java.util.ArrayList<Integer>();
+        for (java.util.Map.Entry<String, Clone> e : allClones.entrySet()) {
+            String k = e.getKey();
+            int sep = k.indexOf(':');
+            if (sep < 0) continue;
+            if (!k.substring(sep + 1).equals(pkg)) continue;
+            uids.add(Integer.valueOf(e.getValue().uid));
+        }
+        java.util.Collections.sort(uids);
+        int i = uids.indexOf(Integer.valueOf(uid));
+        return i < 0 ? 0 : i;
     }
 
     /** 最近记录变了：重刷内容；挂载状态变了（该挂没挂/该摘没摘）就整体重排一次 */

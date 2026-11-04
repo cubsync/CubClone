@@ -787,8 +787,6 @@ public class SettingsActivity extends Activity {
                     MainActivity.markOurs(uid);
                     // 不主动 start：档案由系统在建号时就拉起了，这里再 start 只会让桌面
                     // 把「刚被灌进来还没删的那批应用」bind 一遍，用户就看见一堆图标闪一下
-                    MainActivity.setLabel(SettingsActivity.this, uid,
-                            name.isEmpty() ? "" : name);
                     if (!sp().getBoolean("keep_sys", false)) {
                         MainActivity.pruneSpace(SettingsActivity.this, uid, true);
                     }
@@ -827,7 +825,6 @@ public class SettingsActivity extends Activity {
                     public void onClick(DialogInterface d, int w) {
                         final String name = et.getText().toString().trim();
                         if (name.isEmpty()) return;
-                        MainActivity.setLabel(SettingsActivity.this, uid, name);
                         MainActivity.dirty = true;
                         loadSpaces();
                         // 系统名（LSP 管理器里看到的那个名字）：setUserName 要 MANAGE_USERS，

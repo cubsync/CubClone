@@ -767,11 +767,12 @@ public class MainActivity extends Activity {
         Shell.exec("settings delete --user " + uid + " secure " + OWNED_LEGACY);
     }
 
-    /** 建空间用的系统用户名：直接写用户起的名字（第三方可见、可区分） */
+    /** 建空间用的系统用户名：直接写用户起的名字；没起名则默认「空间 N」，和界面序号一致 */
     static String cloneName(String base) {
         String b = base == null ? "" : base.replace("'", "").trim();
         if (b.length() > 20) b = b.substring(0, 20);
-        return b.isEmpty() ? "space" : b;
+        if (b.isEmpty()) b = "空间 " + (listSpaceUids().size() + 1);
+        return b;
     }
 
     /** 这个 CLONE 空间是不是我们建的：只认空间里写的归属标记，不再靠名字前缀猜 */

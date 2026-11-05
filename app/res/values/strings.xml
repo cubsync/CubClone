@@ -42,6 +42,8 @@
     <string name="sec_clone">分身</string>
     <string name="label_show_all">显示全部可分身应用</string>
     <string name="hint_show_all">关闭时只列已开过分身的应用</string>
+    <string name="label_show_disabled">显示已禁用应用</string>
+    <string name="hint_show_disabled">显示被禁用的分身应用，灰显、长按可启用</string>
 
     <string name="space_title">分身空间</string>
     <string name="btn_new_space">新建空间</string>
@@ -49,20 +51,19 @@
     <string name="space_used">已用 %1$d 个分身空间</string>
     <string name="space_limit_one">空间已满，再建不出来了</string>
     <string name="space_global">全局上限 %1$d 个</string>
-    <string name="space_row">空间 %1$d　uid %2$d　%3$d 个应用</string>
     <string name="space_empty">还没有分身空间，点「新建空间」，或在主界面给应用创建分身</string>
     <string name="space_created">空间已创建：uid %1$d</string>
     <string name="space_limit_reached">分身空间已到上限（%1$s 个），先删一个再建</string>
     <string name="space_deleted">已删除空间 uid %1$d</string>
-    <string name="delete_space_msg">删除空间 uid %1$d 会把里面所有分身应用的数据一起清掉，主身份那份不受影响。\n\n机主数据不会被触碰。</string>
+    <string name="delete_space_msg">删除空间 uid %1$d 会把里面所有分身应用的数据一起清掉，主空间那份不受影响。\n\n机主数据不会被触碰。</string>
     <string name="delete_space_msg_foreign">⚠️ 这是系统自带的克隆空间，不是本应用创建的。删除会清掉里面所有应用及其数据，无法恢复。\n\n确认删除空间 uid %1$d？</string>
     <string name="new_space_name">空间名称（可留空）</string>
-    <string name="creating">正在创建空间…</string>
+    <string name="creating">正在创建空间并预处理系统应用，可能要等一会儿…</string>
     <string name="create_failed">创建失败：%1$s</string>
     <string name="loading">读取中…</string>
 
     <string name="sec_about">关于</string>
-    <string name="about_note">用 Android 原生的 clone profile 做分身，不 hook、不改包名、不注入进程，所以目标应用检测不到多开。\n分身与主身份共享相册和文件，数据各自独立。</string>
+    <string name="about_note">用 Android 原生的 clone profile 做分身，不 hook、不改包名、不注入进程，所以目标应用检测不到多开。\n分身与主空间共享相册和文件，数据各自独立。</string>
     <string name="st_no_root">无 root，请授权 Shizuku</string>
     <string name="shizuku_granted">Shizuku 已授权</string>
     <string name="shizuku_denied">Shizuku 权限被拒绝</string>
@@ -86,7 +87,7 @@
     <string name="rename_title">修改分身后缀</string>
     <string name="remove_clone_title">删除分身</string>
     <string name="remove_clone_msg">删除「%1$s」的这个分身？
-只会把这个应用从分身空间里卸掉，分身的账号数据随之清空；主身份那份应用和空间里其它应用不受影响。</string>
+只会把这个应用从分身空间里卸掉，分身的账号数据随之清空；主空间那份应用和空间里其它应用不受影响。</string>
     <string name="removed_clone">已删除「%1$s」的分身</string>
     <string name="removed_clone_empty">已删除「%1$s」的分身，所在空间已空</string>
     <string name="recycle_title">回收空的空间</string>
@@ -102,7 +103,9 @@
 
     <string name="space_name">空间 %1$s</string>
     <string name="pin_clone">添加到桌面</string>
-    <string name="label_auto_icon">建完弹出「添加图标」确认</string>
+    <string name="label_auto_icon">创建后弹出添加图标</string>
+    <string name="label_space_badge">图标显示空间序号</string>
+    <string name="hint_space_badge">分身图标右下角显示所属空间序号，一眼区分归属</string>
 
     <string name="pin_confirm">在弹出的窗口点「添加」，图标就会放到桌面</string>
     <string name="pin_unsupported">当前桌面不支持自动加图标，长按桌面手动添加吧</string>
@@ -112,36 +115,56 @@
     <string name="space_full">分身空间用满了（本机最多 %1$s 个），删一个再建</string>
     <string name="hint_auto_icon">系统要求桌面确认一次才能加图标，这个开关只是省掉手动点＋号</string>
     <string name="install_failed">「%1$s」没装进分身：%2$s</string>
-    <string name="menu_prune">清理分身里多余的桌面图标</string>
-    <string name="pruning">正在清理分身空间里的系统应用…</string>
-    <string name="pruned">已清理 %1$s 个分身空间</string>
     <string name="prune_failed">，还有 %1$s 个应用没清掉</string>
-    <string name="space_row2">%1$s · uid %2$d · %3$d 个分身</string>
+    <string name="space_row2">%1$s · uid %2$d · %3$d 个分身应用</string>
     <string name="space_row2_foreign">%1$s · uid %2$d</string>
     <string name="space_deleted_reboot">已删除空间 uid %1$d，重启后彻底消失</string>
-    <string name="menu_restore">恢复分身里被清掉的系统应用</string>
-    <string name="prune_confirm">只会把这个分身用户里的系统应用卸掉，主身份和系统分区不动，随时能用下面那项装回来。继续？</string>
-    <string name="restore_confirm">会把系统应用重新装回每个分身空间，桌面上会再次出现一堆图标。继续？</string>
-    <string name="restoring">正在把系统应用装回分身空间…</string>
-    <string name="restored">已还原 %1$s 个分身空间</string>
     <string name="refresh">刷新</string>
     <string name="refreshing">正在刷新列表…</string>
-    <string name="label_keep_sys">分身里保留系统应用</string>
+    <string name="label_keep_sys">新建空间预处理系统应用</string>
+    <string name="hint_keep_sys">总开关：新建空间时按卸载、禁用、隐藏三个清单预处理系统应用；关闭则三个清单都不执行</string>
+    <string name="keep_extra_title">禁用清单</string>
+    <string name="keep_extra_hint">禁用清单里的应用建空间后禁用（不可用）；可随时启用装回</string>
+    <string name="keep_extra_essential">必需 · 不可禁用（%1$d 个，保证分身可用）</string>
+    <string name="keep_extra_optional">可选 · 勾选禁用</string>
+    <string name="search_sys_app">搜索系统应用</string>
+    <string name="select_all_optional">全选可选</string>
+    <string name="uninstall_extra_title">卸载清单</string>
+    <string name="uninstall_extra_hint">卸载清单里的应用建空间后直接卸载（比禁用更彻底）；可随时恢复装回</string>
+    <string name="hidden_sys_title">隐藏清单</string>
+    <string name="hidden_sys_hint">隐藏清单里的应用建空间后隐藏（保持启用、只不显示）；下次建空间生效</string>
+    <string name="hidden_sys_dialog_tip">勾选 = 建空间后隐藏（保持启用、只不显示）</string>
+    <string name="uninstall_optional">可选 · 勾选彻底卸载</string>
+    <string name="save">保存</string>
     <string name="label_manage_foreign">管理非自建空间</string>
     <string name="hint_manage_foreign">开启后，非本应用创建的克隆空间里的应用也可移除/禁用；默认关闭</string>
     <string name="rename_space">重命名</string>
     <string name="renaming_space">正在重命名…</string>
     <string name="space_renamed">已重命名</string>
     <string name="space_renamed_synced">已重命名，系统名已同步</string>
-    <string name="space_renamed_label_only">界面名已改；系统名需 root 才能同步</string>
+    <string name="space_renamed_label_only">改名需要 root 权限</string>
     <string name="tab_user">用户应用</string>
     <string name="tab_sys">系统应用</string>
     <string name="clone_hidden">已禁用</string>
-    <string name="menu_enable">启用（恢复图标）</string>
+    <string name="menu_enable">启用</string>
+    <string name="menu_disable">禁用</string>
+    <string name="menu_hide">隐藏</string>
     <string name="menu_open">打开</string>
     <string name="menu_remove">从空间移除</string>
     <string name="clone_hidden_hint">这个分身被禁用了，长按可启用</string>
     <string name="clone_enabled">已启用 %1$s</string>
+    <string name="clone_disabled">已禁用 %1$s</string>
+    <string name="clone_hidden_ok">已隐藏 %1$s（设置里可恢复）</string>
+    <string name="hidden_title">已隐藏的分身应用（%1$d）</string>
+    <string name="sec_hidden">已隐藏的分身应用</string>
+    <string name="hidden_restore">恢复</string>
+    <string name="hidden_restore_all">全部恢复</string>
+    <string name="hidden_restore_all_confirm">将恢复全部隐藏的分身，确定？</string>
+    <string name="hidden_restored">已恢复 %1$d 个</string>
+    <string name="hidden_empty">没有隐藏的分身应用</string>
+    <string name="search_hidden">搜索隐藏的应用</string>
+    <string name="select_all_space">全选</string>
+    <string name="invert_space">反选</string>
     <string name="opening_primary">正在打开 %1$s</string>
     <string name="space_foreign">系统分身（只读）</string>
     <string name="space_readonly">这是系统分身空间，只读，不能从这里移除</string>
@@ -160,7 +183,7 @@
     <string name="list_view">列表视图</string>
     <string name="label_grid_cols">网格列数</string>
     <string name="label_grid_rows">网格行数</string>
-    <string name="label_grid_primary">网格显示主应用</string>
+    <string name="label_grid_primary">显示主空间应用</string>
     <string name="recent_opened">最近打开</string>
     <string name="label_recent_show">显示最近打开</string>
     <string name="label_recent_rows">最近打开行数</string>

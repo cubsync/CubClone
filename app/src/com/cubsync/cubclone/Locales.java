@@ -42,16 +42,33 @@ public final class Locales {
         }
     }
 
+    /** 跟随系统时的实际语言：标准 Settings 键 system_locales 取首语言，通用不挑 ROM */
+    private static Locale systemLocale(Context ctx) {
+        try {
+            String s = Settings.System.getString(ctx.getContentResolver(), "system_locales");
+            if (s != null && !s.trim().isEmpty()) {
+                return Locale.forLanguageTag(s.split(",")[0].trim());
+            }
+        } catch (Throwable ignored) {
+        }
+        LocaleList ll = LocaleList.getDefault();
+        return ll.isEmpty() ? Locale.getDefault() : ll.get(0);
+    }
+
     public static Context wrap(Context base) {
         clearSystemOverride(base);
         String tag = tag(base);
+        Locale loc;
         if (tag == null) {
-            // 跟随系统：不手动设 locale，直接用系统默认（per-app 覆盖已在上面抹掉）。
-            // 手动 setLocales 反而会因 system_locales 解析差异导致「系统中文却出英文」。
-            return base;
+            // 跟随系统：必须显式 setLocale，不能裸 return base ——
+            // 一加 ColorOS 实测不写 persist.sys.locale（三个 locale 属性全空），
+            // 应用进程默认 locale 被框架 fallback 成 en，系统明明 zh-CN 却整页英文。
+            // 改读标准 Settings 键 system_locales（各 ROM 都写且值正确）。
+            loc = systemLocale(base);
+        } else {
+            loc = tag.startsWith("en") ? Locale.ENGLISH : Locale.SIMPLIFIED_CHINESE;
         }
         Configuration c = new Configuration(base.getResources().getConfiguration());
-        Locale loc = tag.startsWith("en") ? Locale.ENGLISH : Locale.SIMPLIFIED_CHINESE;
         c.setLocale(loc);
         c.setLayoutDirection(loc);
         return base.createConfigurationContext(c);

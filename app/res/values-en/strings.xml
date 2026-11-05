@@ -42,6 +42,8 @@
     <string name="sec_clone">Clones</string>
     <string name="label_show_all">Show all clonable apps</string>
     <string name="hint_show_all">Off: only apps that already have clones</string>
+    <string name="label_show_disabled">Show disabled apps</string>
+    <string name="hint_show_disabled">Also list disabled apps, greyed out; long-press to enable</string>
 
     <string name="space_title">Clone spaces</string>
     <string name="btn_new_space">New space</string>
@@ -49,20 +51,19 @@
     <string name="space_used">%1$d clone space(s) in use</string>
     <string name="space_limit_one">No more spaces can be created on this device</string>
     <string name="space_global">Global limit %1$d</string>
-    <string name="space_row">Space %1$d　uid %2$d　%3$d app(s)</string>
     <string name="space_empty">No clone space yet. Tap "New space" or create a clone from the main screen.</string>
     <string name="space_created">Space created: uid %1$d</string>
     <string name="space_limit_reached">Clone space limit reached (%1$s), delete one first</string>
     <string name="space_deleted">Deleted space uid %1$d</string>
-    <string name="delete_space_msg">Deleting space uid %1$d removes all cloned apps and their data inside it. The main copy of each app is not affected.\n\nOwner data is never touched.</string>
+    <string name="delete_space_msg">Deleting space uid %1$d removes all cloned apps and their data inside it. The copy in the primary space is not affected.\n\nOwner data is never touched.</string>
     <string name="delete_space_msg_foreign">⚠️ This is a system clone space, not created by this app. Deleting it removes all apps and their data inside, and cannot be undone.\n\nDelete space uid %1$d?</string>
     <string name="new_space_name">Space name (optional)</string>
-    <string name="creating">Creating space…</string>
+    <string name="creating">Creating space and preprocessing system apps, this may take a while…</string>
     <string name="create_failed">Failed: %1$s</string>
     <string name="loading">Loading…</string>
 
     <string name="sec_about">About</string>
-    <string name="about_note">Clones are Android\'s native clone profiles: no hooking, no repackaging, no code injection, so apps cannot detect them. Clones share photos and files with the owner but keep their own data.</string>
+    <string name="about_note">Clones are Android\'s native clone profiles: no hooking, no repackaging, no code injection, so apps cannot detect them. Clones share photos and files with the primary space but keep their own data.</string>
     <string name="st_no_root">No root. Grant Shizuku permission</string>
     <string name="shizuku_granted">Shizuku granted</string>
     <string name="shizuku_denied">Shizuku permission denied</string>
@@ -86,7 +87,7 @@ Turn on "Show all clonable apps" above, then tap "Create clone".</string>
     <string name="rename_title">Rename clone</string>
     <string name="remove_clone_title">Delete clone</string>
     <string name="remove_clone_msg">Delete this clone of "%1$s"?
-Only this app is removed from the clone space and its cloned data is cleared. The main app and other clones are not affected.</string>
+Only this app is removed from the clone space and its cloned data is cleared. The app in the primary space and other clones are not affected.</string>
     <string name="removed_clone">Deleted the clone of %1$s</string>
     <string name="removed_clone_empty">Deleted the clone of %1$s; its space is now empty</string>
     <string name="recycle_title">Recycle empty space</string>
@@ -100,9 +101,11 @@ Owner data is not touched.</string>
     <string name="delete_clone_btn">Delete</string>
     <string name="pin_failed">Failed to add home shortcut: %1$s</string>
 
-    <string name="space_name">Clone</string>
+    <string name="space_name">Clone %1$s</string>
     <string name="pin_clone">Add to Home screen</string>
-    <string name="label_auto_icon">Show add-icon prompt after creating</string>
+    <string name="label_auto_icon">Prompt to add icon after creating</string>
+    <string name="label_space_badge">Show space number on icon</string>
+    <string name="hint_space_badge">Show the space number on the bottom-right of clone icons</string>
 
     <string name="pin_confirm">Tap Add in the popup to put the icon on your home screen</string>
     <string name="pin_unsupported">This launcher cannot add icons automatically; add one manually from the home screen</string>
@@ -112,35 +115,55 @@ Owner data is not touched.</string>
     <string name="space_full">No free space left (this device allows %1$s), delete one first</string>
     <string name="hint_auto_icon">Android requires a launcher confirmation once; this only saves you the + tap</string>
     <string name="install_failed">Could not install %1$s into the clone: %2$s</string>
-    <string name="menu_prune">Remove extra Home icons in clones</string>
-    <string name="pruning">Cleaning system apps out of the clones…</string>
-    <string name="pruned">Cleaned %1$s clone spaces</string>
     <string name="prune_failed">; %1$s app(s) could not be cleaned</string>
-    <string name="space_row2">%1$s · uid %2$d · %3$d clones</string>
+    <string name="space_row2">%1$s · uid %2$d · %3$d clone apps</string>
     <string name="space_deleted_reboot">Deleted space uid %1$d; disappears after reboot</string>
-    <string name="menu_restore">Restore system apps inside clones</string>
-    <string name="prune_confirm">Only removes system apps from the clone user; your main user and the system partition are untouched, and the next menu item installs them back. Continue?</string>
-    <string name="restore_confirm">This installs system apps back into every clone space and the extra icons will return. Continue?</string>
-    <string name="restoring">Restoring system apps into the clones…</string>
-    <string name="restored">Restored %1$s clone spaces</string>
     <string name="refresh">Refresh</string>
     <string name="refreshing">Refreshing…</string>
-    <string name="label_keep_sys">Keep system apps inside clones</string>
+    <string name="label_keep_sys">Preprocess system apps for new spaces</string>
+    <string name="hint_keep_sys">Master switch: when creating a space, preprocess system apps by the uninstall, disable and hide lists; turn off to skip all three</string>
+    <string name="keep_extra_title">Disable list</string>
+    <string name="keep_extra_hint">Apps in the disable list are disabled when creating a space; can be enabled anytime</string>
+    <string name="keep_extra_essential">Essential · cannot be disabled (%1$d)</string>
+    <string name="keep_extra_optional">Optional · check to disable</string>
+    <string name="search_sys_app">Search system apps</string>
+    <string name="select_all_optional">Select all optional</string>
+    <string name="uninstall_extra_title">Uninstall list</string>
+    <string name="uninstall_extra_hint">Apps in the uninstall list are removed when creating a space; can be restored anytime</string>
+    <string name="hidden_sys_title">Hide list</string>
+    <string name="hidden_sys_hint">Apps in the hide list are hidden when creating a space (stay enabled, just hidden); applies on next space</string>
+    <string name="hidden_sys_dialog_tip">Check = hide when creating a space</string>
+    <string name="uninstall_optional">Optional · check to uninstall</string>
+    <string name="save">Save</string>
     <string name="label_manage_foreign">Manage other clone spaces</string>
     <string name="hint_manage_foreign">When on, apps inside clone spaces not created by this app can be removed/disabled; off by default</string>
     <string name="space_renamed_synced">Renamed; system name synced</string>
-    <string name="space_renamed_label_only">Label updated; root needed to sync system name</string>
+    <string name="space_renamed_label_only">Root required to rename space</string>
     <string name="rename_space">Rename</string>
     <string name="renaming_space">Renaming…</string>
     <string name="space_renamed">Renamed</string>
     <string name="tab_user">User apps</string>
     <string name="tab_sys">System apps</string>
     <string name="clone_hidden">disabled</string>
-    <string name="menu_enable">Enable (restore icon)</string>
+    <string name="menu_enable">Enable</string>
+    <string name="menu_disable">Disable</string>
+    <string name="menu_hide">Hide</string>
     <string name="menu_open">Open</string>
     <string name="menu_remove">Remove from space</string>
     <string name="clone_hidden_hint">This clone is disabled; long-press to enable</string>
     <string name="clone_enabled">Enabled %1$s</string>
+    <string name="clone_disabled">Disabled %1$s</string>
+    <string name="clone_hidden_ok">Hidden %1$s (restore in settings)</string>
+    <string name="hidden_title">Hidden clone apps (%1$d)</string>
+    <string name="sec_hidden">Hidden clone apps</string>
+    <string name="hidden_restore">Restore</string>
+    <string name="hidden_restore_all">Restore all</string>
+    <string name="hidden_restore_all_confirm">Restore all hidden clones?</string>
+    <string name="hidden_restored">Restored %1$d</string>
+    <string name="hidden_empty">No hidden clone apps</string>
+    <string name="search_hidden">Search hidden apps</string>
+    <string name="select_all_space">Select all</string>
+    <string name="invert_space">Invert</string>
     <string name="opening_primary">Opening %1$s</string>
     <string name="space_foreign">system clone (read-only)</string>
     <string name="space_readonly">System clone space is read-only here</string>
@@ -159,7 +182,7 @@ Owner data is not touched.</string>
     <string name="list_view">List view</string>
     <string name="label_grid_cols">Grid columns</string>
     <string name="label_grid_rows">Grid rows</string>
-    <string name="label_grid_primary">Show primary apps in grid</string>
+    <string name="label_grid_primary">Show primary space apps</string>
     <string name="recent_opened">Recent</string>
     <string name="label_recent_show">Show recent</string>
     <string name="label_recent_rows">Recent rows</string>

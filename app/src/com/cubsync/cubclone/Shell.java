@@ -31,6 +31,15 @@ public final class Shell {
         return rootOk;
     }
 
+    /**
+     * 只有 root 能做的操作（改名 setUserName 要 MANAGE_USERS，shell 身份必被拒）：
+     * 执行前实时探一次 root，有就用，没有如实返回失败。不做轮询/节流。
+     */
+    public static String execWithRoot(String cmd) {
+        if (checkRoot()) return raw("su", "-c", cmd);
+        return "ERR 需要 root";
+    }
+
     private static String shizuku(String cmd) {
         StringBuilder sb = new StringBuilder();
         try {

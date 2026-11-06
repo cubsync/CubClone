@@ -134,6 +134,8 @@ Owner data is not touched.</string>
     <string name="hidden_sys_hint">Apps in the hide list are hidden when creating a space (stay enabled, just hidden); applies on next space</string>
     <string name="hidden_sys_dialog_tip">Check = hide when creating a space</string>
     <string name="uninstall_optional">Optional · check to uninstall</string>
+    <string name="in_uninstall_list">In uninstall list</string>
+    <string name="in_disable_list">In disable list</string>
     <string name="save">Save</string>
     <string name="label_manage_foreign">Manage other clone spaces</string>
     <string name="hint_manage_foreign">When on, apps inside clone spaces not created by this app can be removed/disabled; off by default</string>
@@ -154,13 +156,13 @@ Owner data is not touched.</string>
     <string name="clone_enabled">Enabled %1$s</string>
     <string name="clone_disabled">Disabled %1$s</string>
     <string name="clone_hidden_ok">Hidden %1$s (restore in settings)</string>
-    <string name="hidden_title">Hidden clone apps (%1$d)</string>
-    <string name="sec_hidden">Hidden clone apps</string>
+    <string name="hidden_title">Hidden apps (%1$d)</string>
+    <string name="sec_hidden">Hidden apps</string>
     <string name="hidden_restore">Restore</string>
     <string name="hidden_restore_all">Restore all</string>
-    <string name="hidden_restore_all_confirm">Restore all hidden clones?</string>
+    <string name="hidden_restore_all_confirm">Restore all hidden apps?</string>
     <string name="hidden_restored">Restored %1$d</string>
-    <string name="hidden_empty">No hidden clone apps</string>
+    <string name="hidden_empty">No hidden apps</string>
     <string name="search_hidden">Search hidden apps</string>
     <string name="select_all_space">Select all</string>
     <string name="invert_space">Invert</string>

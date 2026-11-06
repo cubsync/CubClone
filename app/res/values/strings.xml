@@ -135,6 +135,8 @@
     <string name="hidden_sys_hint">隐藏清单里的应用建空间后隐藏（保持启用、只不显示）；下次建空间生效</string>
     <string name="hidden_sys_dialog_tip">勾选 = 建空间后隐藏（保持启用、只不显示）</string>
     <string name="uninstall_optional">可选 · 勾选彻底卸载</string>
+    <string name="in_uninstall_list">已在卸载清单</string>
+    <string name="in_disable_list">已在禁用清单</string>
     <string name="save">保存</string>
     <string name="label_manage_foreign">管理非自建空间</string>
     <string name="hint_manage_foreign">开启后，非本应用创建的克隆空间里的应用也可移除/禁用；默认关闭</string>
@@ -155,13 +157,13 @@
     <string name="clone_enabled">已启用 %1$s</string>
     <string name="clone_disabled">已禁用 %1$s</string>
     <string name="clone_hidden_ok">已隐藏 %1$s（设置里可恢复）</string>
-    <string name="hidden_title">已隐藏的分身应用（%1$d）</string>
-    <string name="sec_hidden">已隐藏的分身应用</string>
+    <string name="hidden_title">已隐藏的应用（%1$d）</string>
+    <string name="sec_hidden">已隐藏的应用</string>
     <string name="hidden_restore">恢复</string>
     <string name="hidden_restore_all">全部恢复</string>
-    <string name="hidden_restore_all_confirm">将恢复全部隐藏的分身，确定？</string>
+    <string name="hidden_restore_all_confirm">将恢复全部隐藏的应用，确定？</string>
     <string name="hidden_restored">已恢复 %1$d 个</string>
-    <string name="hidden_empty">没有隐藏的分身应用</string>
+    <string name="hidden_empty">没有隐藏的应用</string>
     <string name="search_hidden">搜索隐藏的应用</string>
     <string name="select_all_space">全选</string>
     <string name="invert_space">反选</string>

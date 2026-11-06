@@ -935,13 +935,27 @@ public class SettingsActivity extends Activity {
         final LinearLayout optBox = new LinearLayout(this);
         optBox.setOrientation(LinearLayout.VERTICAL);
         final Map<String, CheckBox> optChecks = new HashMap<String, CheckBox>();
+        final Set<String> inUninstall = CloneStore.extraUninstall(this);
         for (String p : optional) {
+            if (inUninstall.contains(p)) continue;   // 卸载优先：已在卸载清单的项排到末尾置灰
             CheckBox cb = new CheckBox(this);
             String lb = labels.get(p);
             cb.setText(lb == null ? p : lb);
             cb.setTextSize(14);
             cb.setTextColor(fgColor);
             cb.setChecked(checked.contains(p));
+            optChecks.put(p, cb);
+            optBox.addView(cb);
+        }
+        for (String p : optional) {
+            if (!inUninstall.contains(p)) continue;
+            CheckBox cb = new CheckBox(this);
+            String lb = labels.get(p);
+            cb.setText((lb == null ? p : lb) + "（" + getString(R.string.in_uninstall_list) + "）");
+            cb.setTextSize(14);
+            cb.setTextColor(secColor);
+            cb.setEnabled(false);
+            cb.setChecked(false);
             optChecks.put(p, cb);
             optBox.addView(cb);
         }
@@ -1183,13 +1197,31 @@ public class SettingsActivity extends Activity {
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         final Map<String, CheckBox> checks = new HashMap<String, CheckBox>();
+        final Set<String> inUninstall = CloneStore.extraUninstall(this);
+        final Set<String> inDisable = CloneStore.extraDisable(this);
         for (String p : sysPkgs) {
+            if (inUninstall.contains(p) || inDisable.contains(p)) continue;   // 已进更高优先级清单 → 末尾置灰
             CheckBox cb = new CheckBox(this);
             String lb = labels.get(p);
             cb.setText(lb == null ? p : lb);
             cb.setTextSize(14);
             cb.setTextColor(fgColor);
             cb.setChecked(checked.contains(p));
+            checks.put(p, cb);
+            list.addView(cb);
+        }
+        for (String p : sysPkgs) {
+            boolean u = inUninstall.contains(p);
+            boolean d = !u && inDisable.contains(p);
+            if (!u && !d) continue;
+            CheckBox cb = new CheckBox(this);
+            String lb = labels.get(p);
+            cb.setText((lb == null ? p : lb) + "（"
+                    + getString(u ? R.string.in_uninstall_list : R.string.in_disable_list) + "）");
+            cb.setTextSize(14);
+            cb.setTextColor(secColor);
+            cb.setEnabled(false);
+            cb.setChecked(false);
             checks.put(p, cb);
             list.addView(cb);
         }
@@ -1245,36 +1277,69 @@ public class SettingsActivity extends Activity {
         });
     }
 
-    /** 「已隐藏的分身应用」入口行：右侧显示已隐藏分身数量（无则空），点击进管理 */
+    /** 「已隐藏的应用」入口行：右侧显示已隐藏数量（用户应用 + 系统应用，无则空），点击进管理 */
     private void renderHiddenCard() {
         if (hiddenCount == null) return;
-        int n = CloneStore.hiddenClones().size();
+        int n = CloneStore.hiddenClones().size() + CloneStore.hiddenSys().size();
         hiddenCount.setText(n == 0 ? "" : String.valueOf(n));
         hiddenCount.setTextColor(n == 0 ? secColor : fgColor);
     }
 
-    /** 已隐藏的分身管理：按空间分组，勾选恢复 / 全部恢复 */
+    /** 已隐藏的应用：顶部「用户应用/系统应用」分类开关并列，统一列表，系统应用红字。勾选=恢复。 */
     private void showHiddenManager() {
-        final Set<String> hidden = CloneStore.hiddenClones();
-        if (hidden.isEmpty()) {
+        final Set<String> hiddenClones = CloneStore.hiddenClones();
+        final Set<String> hiddenSys = CloneStore.hiddenSys();
+        if (hiddenClones.isEmpty() && hiddenSys.isEmpty()) {
             toast(getString(R.string.hidden_empty));
             return;
         }
-        final int total = hidden.size();
+        final int total = hiddenClones.size() + hiddenSys.size();
         final PackageManager pm = getPackageManager();
         final int accent = dark ? 0xFFA8C7FA : 0xFF0B57D0;
+        final int sysRed = 0xFFE53935;
         final AlertDialog[] holder = new AlertDialog[1];
+
+        final List<CheckBox> userChecks = new ArrayList<CheckBox>();
+        final List<Integer> userUids = new ArrayList<Integer>();
+        final List<String> userPkgs = new ArrayList<String>();
+        final List<CheckBox> sysChecks = new ArrayList<CheckBox>();
+        final List<String> sysPkgs = new ArrayList<String>();
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(16), dp(8), dp(16), 0);
 
-        // ==== 已隐藏的分身，勾选=恢复 ====
-        final LinearLayout cloneTab = new LinearLayout(this);
-        cloneTab.setOrientation(LinearLayout.VERTICAL);
+        // ==== 顶部两个分类开关并列：勾=启用恢复，空=保持隐藏 ====
+        final CheckBox swUser = new CheckBox(this);
+        swUser.setText(R.string.tab_user);
+        swUser.setTextSize(14);
+        swUser.setTextColor(fgColor);
+        swUser.setChecked(true);
+        final CheckBox swSys = new CheckBox(this);
+        swSys.setText(R.string.tab_sys);
+        swSys.setTextSize(14);
+        swSys.setTextColor(fgColor);
+        swSys.setChecked(false);
+        LinearLayout swRow = new LinearLayout(this);
+        swRow.setOrientation(LinearLayout.HORIZONTAL);
+        swRow.setPadding(0, dp(4), 0, dp(10));
+        swUser.setPadding(0, 0, dp(24), 0);
+        swRow.addView(swUser);
+        swRow.addView(swSys);
+        root.addView(swRow);
 
+        final EditText search = makeSearchBox(R.string.search_hidden);
+        root.addView(search);
+
+        ScrollView sv = new ScrollView(this);
+        sv.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(300)));
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+
+        // ==== 用户应用（已隐藏的分身）：按空间分组，组头▾+计数，组内全选/反选，默认勾选 ====
         final Map<Integer, List<String[]>> byUid = new java.util.LinkedHashMap<Integer, List<String[]>>();
-        for (String h : hidden) {
+        for (String h : hiddenClones) {
             int sep = h.indexOf(':');
             if (sep < 0) continue;
             final int uid;
@@ -1286,22 +1351,10 @@ public class SettingsActivity extends Activity {
                 ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
                 label = String.valueOf(ai.loadLabel(pm));
             } catch (Throwable ignored) { }
-            List<String[]> list = byUid.get(Integer.valueOf(uid));
-            if (list == null) { list = new ArrayList<String[]>(); byUid.put(Integer.valueOf(uid), list); }
-            list.add(new String[]{pkg, label});
+            List<String[]> g = byUid.get(Integer.valueOf(uid));
+            if (g == null) { g = new ArrayList<String[]>(); byUid.put(Integer.valueOf(uid), g); }
+            g.add(new String[]{pkg, label});
         }
-
-        final EditText searchClone = makeSearchBox(R.string.search_hidden);
-        cloneTab.addView(searchClone);
-
-        ScrollView svClone = new ScrollView(this);
-        svClone.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(300)));
-        LinearLayout groups = new LinearLayout(this);
-        groups.setOrientation(LinearLayout.VERTICAL);
-        final List<CheckBox> allChecks = new ArrayList<CheckBox>();
-        final List<Integer> allUids = new ArrayList<Integer>();
-        final List<String> allPkgs = new ArrayList<String>();
 
         for (Map.Entry<Integer, List<String[]>> e : byUid.entrySet()) {
             final int uid = e.getKey().intValue();
@@ -1379,21 +1432,56 @@ public class SettingsActivity extends Activity {
                 cb.setText(item[1]);
                 cb.setTextSize(14);
                 cb.setTextColor(fgColor);
+                cb.setChecked(true);   // 用户应用默认勾选=恢复
                 spaceChecks.add(cb);
-                allChecks.add(cb);
-                allUids.add(Integer.valueOf(uid));
-                allPkgs.add(item[0]);
+                userChecks.add(cb);
+                userUids.add(Integer.valueOf(uid));
+                userPkgs.add(item[0]);
                 body.addView(cb);
             }
-            groups.addView(head);
-            groups.addView(body);
+            list.addView(head);
+            list.addView(body);
         }
-        svClone.addView(groups);
-        cloneTab.addView(svClone);
 
-        LinearLayout cloneBtns = new LinearLayout(this);
-        cloneBtns.setOrientation(LinearLayout.HORIZONTAL);
-        cloneBtns.setPadding(0, dp(8), 0, dp(4));
+        // ==== 系统应用（已隐藏的主空间系统应用）：平铺，默认不勾选，红字 ====
+        List<String> sysOrdered = new ArrayList<String>(hiddenSys);
+        Collections.sort(sysOrdered);
+        for (String p : sysOrdered) {
+            String lb = p;
+            try {
+                ApplicationInfo ai = pm.getApplicationInfo(p, 0);
+                lb = String.valueOf(ai.loadLabel(pm));
+            } catch (Throwable ignored) { }
+            CheckBox cb = new CheckBox(this);
+            cb.setText(lb);
+            cb.setTextSize(14);
+            cb.setTextColor(sysRed);
+            cb.setChecked(false);   // 系统应用默认不勾选=保持隐藏
+            sysChecks.add(cb);
+            sysPkgs.add(p);
+            list.addView(cb);
+        }
+        sv.addView(list);
+        root.addView(sv);
+
+        // ==== 分类开关：一键全勾/全空该类 ====
+        swUser.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                boolean on = swUser.isChecked();
+                for (CheckBox cb : userChecks) cb.setChecked(on);
+            }
+        });
+        swSys.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                boolean on = swSys.isChecked();
+                for (CheckBox cb : sysChecks) cb.setChecked(on);
+            }
+        });
+
+        // ==== 底部：恢复所选 / 全部恢复 ====
+        LinearLayout btns = new LinearLayout(this);
+        btns.setOrientation(LinearLayout.HORIZONTAL);
+        btns.setPadding(0, dp(8), 0, dp(4));
         TextView restoreSel = new TextView(this);
         restoreSel.setText(R.string.hidden_restore);
         restoreSel.setTextSize(14);
@@ -1402,10 +1490,15 @@ public class SettingsActivity extends Activity {
         restoreSel.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 int n = 0;
-                for (int i = 0; i < allChecks.size(); i++) {
-                    if (!allChecks.get(i).isChecked()) continue;
+                for (int i = 0; i < userChecks.size(); i++) {
+                    if (!userChecks.get(i).isChecked()) continue;
                     CloneStore.unhideClone(SettingsActivity.this,
-                            allUids.get(i).intValue(), allPkgs.get(i));
+                            userUids.get(i).intValue(), userPkgs.get(i));
+                    n++;
+                }
+                for (int i = 0; i < sysChecks.size(); i++) {
+                    if (!sysChecks.get(i).isChecked()) continue;
+                    CloneStore.unhideSys(SettingsActivity.this, sysPkgs.get(i));
                     n++;
                 }
                 if (n > 0) {
@@ -1416,7 +1509,7 @@ public class SettingsActivity extends Activity {
                 loadSpaces();
             }
         });
-        cloneBtns.addView(restoreSel);
+        btns.addView(restoreSel);
         TextView restoreAll = new TextView(this);
         restoreAll.setText(R.string.hidden_restore_all);
         restoreAll.setTextSize(14);
@@ -1430,13 +1523,16 @@ public class SettingsActivity extends Activity {
                         .setPositiveButton(R.string.hidden_restore_all,
                                 new DialogInterface.OnClickListener() {
                             public void onClick(DialogInterface d, int w) {
-                                for (int i = 0; i < allPkgs.size(); i++) {
+                                for (int i = 0; i < userPkgs.size(); i++) {
                                     CloneStore.unhideClone(SettingsActivity.this,
-                                            allUids.get(i).intValue(), allPkgs.get(i));
+                                            userUids.get(i).intValue(), userPkgs.get(i));
                                 }
-                                if (!allPkgs.isEmpty()) {
+                                for (String p : sysPkgs) {
+                                    CloneStore.unhideSys(SettingsActivity.this, p);
+                                }
+                                if (total > 0) {
                                     CloneStore.dirty = true;
-                                    toast(getString(R.string.hidden_restored, allPkgs.size()));
+                                    toast(getString(R.string.hidden_restored, total));
                                 }
                                 if (holder[0] != null) holder[0].dismiss();
                                 loadSpaces();
@@ -1446,9 +1542,8 @@ public class SettingsActivity extends Activity {
                         .show();
             }
         });
-        cloneBtns.addView(restoreAll);
-        cloneTab.addView(cloneBtns);
-        root.addView(cloneTab);
+        btns.addView(restoreAll);
+        root.addView(btns);
 
         holder[0] = new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.hidden_title, total))
@@ -1457,12 +1552,18 @@ public class SettingsActivity extends Activity {
                 .create();
         holder[0].show();
 
-        searchClone.addTextChangedListener(new android.text.TextWatcher() {
+        search.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s, int a, int b2, int c) {}
             public void onTextChanged(CharSequence s, int a, int b2, int c) {}
             public void afterTextChanged(android.text.Editable e) {
                 String kw = e.toString().trim().toLowerCase();
-                for (CheckBox cb : allChecks) {
+                for (CheckBox cb : userChecks) {
+                    CharSequence t = cb.getText();
+                    boolean match = kw.isEmpty()
+                            || (t != null && t.toString().toLowerCase().contains(kw));
+                    cb.setVisibility(match ? View.VISIBLE : View.GONE);
+                }
+                for (CheckBox cb : sysChecks) {
                     CharSequence t = cb.getText();
                     boolean match = kw.isEmpty()
                             || (t != null && t.toString().toLowerCase().contains(kw));
@@ -1514,6 +1615,7 @@ public class SettingsActivity extends Activity {
                     // 再 start 让存储就绪（/data/user/N、/data/media/N）——createProfileForUser
                     // 只建号不建存储，不 start 的话备份还原会报「目录不存在」。
                     CloneStore.startSpace(uid);
+                    CloneStore.syncIme(uid);   // 复用主空间输入法（MyUI/ColorOS 同款）
                     if (CloneStore.pruneSys(SettingsActivity.this)) {
                         CloneStore.pruneSpace(SettingsActivity.this, uid, true);
                     }

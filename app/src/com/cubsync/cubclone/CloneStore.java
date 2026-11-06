@@ -591,6 +591,37 @@ public final class CloneStore {
     }
 
     /**
+     * 建空间后同步主空间的输入法到分身，达到 MyUI/ColorOS「自动分身」同款效果：
+     * 分身直接复用主空间默认输入法，而不是原生 clone profile 的英文 LatinIME。
+     * ① 先把主空间已启用的输入法装进分身（wetype/qqpinyin 这类第三方输入法可能
+     *    在建空间后才装、或在老空间里被早期 prune 清掉，光同步设置没用）；
+     * ② 再复制 default_input_method + enabled_input_methods 两个设置。
+     */
+    static void syncIme(int uid) {
+        String q = String.valueOf((char) 34);
+        String def = Shell.exec("settings get secure default_input_method").trim();
+        String en = Shell.exec("settings get secure enabled_input_methods").trim();
+        Set<String> imes = new HashSet<String>();
+        addIme(imes, def);
+        if (!en.isEmpty() && !en.equals("null")) {
+            for (String s : en.split(":")) addIme(imes, s);
+        }
+        for (String p : imes) {
+            Shell.exec("pm install-existing --user " + uid + " " + p
+                    + " >/dev/null 2>&1; pm enable --user " + uid + " " + p
+                    + " >/dev/null 2>&1");
+        }
+        if (!def.isEmpty() && !def.equals("null")) {
+            Shell.exec("settings put --user " + uid + " secure default_input_method "
+                    + q + def + q);
+        }
+        if (!en.isEmpty() && !en.equals("null")) {
+            Shell.exec("settings put --user " + uid + " secure enabled_input_methods "
+                    + q + en + q);
+        }
+    }
+
+    /**
      * 分身空间 uid 列表。
      * `cmd user list --all -v` 约 0.2s；以前用 app_process 起 JVM 要 2.1s，每次刷新都白等。
      */

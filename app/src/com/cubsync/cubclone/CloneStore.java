@@ -590,35 +590,159 @@ public final class CloneStore {
         }
     }
 
+    /** ensureIme 的结果：imes＝分身里真正可用的输入法个数，def＝写进去的默认输入法 */
+    static final class ImeResult {
+        final int imes;
+        final String def;
+        final String err;
+
+        ImeResult(int imes, String def, String err) {
+            this.imes = imes;
+            this.def = def;
+            this.err = err;
+        }
+
+        boolean ok() {
+            return err == null;
+        }
+    }
+
     /**
-     * 建空间后同步主空间的输入法到分身，达到 MyUI/ColorOS「自动分身」同款效果：
-     * 分身直接复用主空间默认输入法，而不是原生 clone profile 的英文 LatinIME。
-     * ① 先把主空间已启用的输入法装进分身（wetype/qqpinyin 这类第三方输入法可能
-     *    在建空间后才装、或在老空间里被早期 prune 清掉，光同步设置没用）；
-     * ② 再复制 default_input_method + enabled_input_methods 两个设置。
+     * 让分身有能用的输入法：把主空间在用的输入法装进分身，再把主空间的输入法设置抄过去。
+     *
+     * clone profile 是原生多用户，系统给每个用户各跑一个输入法实例 —— 所以这里能同步的
+     * 只有**设置**（默认是谁、启用了哪些、上次用的子类型），词库/账号/皮肤这些数据
+     * 各空间一份，不共享。想真正共享主空间那一个实例，只能改 system_server（LSPosed 或
+     * ROM 补丁），普通应用包括 Shizuku 都做不到。
+     *
+     * 与旧版 syncIme 的区别：幂等（可反复调）、按分身**实际装着**的输入法过滤启用列表
+     * （旧版直接抄，主空间有、分身没有的包会留下指向空包的僵尸项）、连子类型设置一起抄、
+     * 写完回读校验、失败有原因。
+     *
+     * @return 结果；失败时 err 非空
      */
-    static void syncIme(int uid) {
+    static ImeResult ensureIme(int uid) {
+        if (!Shell.ready()) return new ImeResult(0, "", "需要 root 或 Shizuku");
+        if (!Launcher.safe(uid)) return new ImeResult(0, "", "uid " + uid);
         String q = String.valueOf((char) 34);
-        String def = Shell.exec("settings get secure default_input_method").trim();
-        String en = Shell.exec("settings get secure enabled_input_methods").trim();
-        Set<String> imes = new HashSet<String>();
-        addIme(imes, def);
-        if (!en.isEmpty() && !en.equals("null")) {
-            for (String s : en.split(":")) addIme(imes, s);
+        // ① 主空间（user 0）当前的四项输入法设置，一次取回
+        String a = Shell.exec("echo D:$(settings get --user 0 secure default_input_method); "
+                + "echo E:$(settings get --user 0 secure enabled_input_methods); "
+                + "echo S:$(settings get --user 0 secure selected_input_method_subtype); "
+                + "echo H:$(settings get --user 0 secure input_methods_subtype_history)");
+        if (a.trim().startsWith("ERR")) return new ImeResult(0, "", a.trim());
+        String def = tag(a, "D:");
+        String en = tag(a, "E:");
+        String sub = tag(a, "S:");
+        String hist = tag(a, "H:");
+        List<String> want = new ArrayList<String>();
+        addComp(want, def);
+        if (!isNull(en)) {
+            for (String s : en.split(":")) addComp(want, s);
         }
-        for (String p : imes) {
-            Shell.exec("pm install-existing --user " + uid + " " + p
-                    + " >/dev/null 2>&1; pm enable --user " + uid + " " + p
-                    + " >/dev/null 2>&1");
+        if (want.isEmpty()) return new ImeResult(0, "", "主空间没有可用输入法");
+        // ② 装进分身并启用（install-existing 幂等），最后一次列出分身里真正可用的包
+        StringBuilder sb = new StringBuilder();
+        List<String> pkgs = new ArrayList<String>();
+        for (String comp : want) {
+            String p = pkgOf(comp);
+            if (p == null || pkgs.contains(p)) continue;
+            pkgs.add(p);
+            sb.append("pm install-existing --user ").append(uid).append(' ').append(p)
+                    .append(" >/dev/null 2>&1; ")
+                    .append("pm enable --user ").append(uid).append(' ').append(p)
+                    .append(" >/dev/null 2>&1; ");
         }
-        if (!def.isEmpty() && !def.equals("null")) {
-            Shell.exec("settings put --user " + uid + " secure default_input_method "
-                    + q + def + q);
+        sb.append("echo A:$(pm list packages --user ").append(uid)
+                .append(" -e | sed 's/^package://' | tr '\\n' ' ')");
+        Set<String> avail = new HashSet<String>();
+        for (String s : tag(Shell.exec(sb.toString()), "A:").trim().split("\\s+")) {
+            if (s.length() > 0) avail.add(s);
         }
-        if (!en.isEmpty() && !en.equals("null")) {
-            Shell.exec("settings put --user " + uid + " secure enabled_input_methods "
-                    + q + en + q);
+        // ③ 启用列表只留分身里真有的组件（顺序照主空间，重复去掉）
+        StringBuilder enOut = new StringBuilder();
+        List<String> keep = new ArrayList<String>();
+        for (String comp : want) {
+            String p = pkgOf(comp);
+            if (p == null || !avail.contains(p) || keep.contains(comp)) continue;
+            keep.add(comp);
+            if (enOut.length() > 0) enOut.append(':');
+            enOut.append(comp);
         }
+        if (keep.isEmpty()) return new ImeResult(0, "", "分身里装不上输入法");
+        // 默认项必须也在启用列表里，否则系统会说「没有可用输入法」直接回落到英文键盘
+        String useDef;
+        if (!isNull(def) && avail.contains(pkgOf(def))) {
+            useDef = def;
+            if (!keep.contains(def)) {
+                if (enOut.length() > 0) enOut.append(':');
+                enOut.append(def);
+                keep.add(def);
+            }
+        } else {
+            useDef = keep.get(0);
+        }
+        if (!isNull(en) && en.endsWith(":")) enOut.append(':');   // 老版本设置带尾冒号，原样保留
+        // ④ 子类型历史同样只留分身里有的包（格式 "包/类;子类型id"，冒号分隔）
+        StringBuilder hOut = new StringBuilder();
+        if (!isNull(hist)) {
+            for (String e : hist.split(":")) {
+                if (e.trim().length() == 0) continue;
+                int i = e.indexOf(';');
+                String p = pkgOf(i > 0 ? e.substring(0, i) : e);
+                if (p == null || !avail.contains(p)) continue;
+                if (hOut.length() > 0) hOut.append(':');
+                hOut.append(e);
+            }
+        }
+        // ⑤ 写入并回读校验
+        StringBuilder w = new StringBuilder();
+        w.append("settings put --user ").append(uid).append(" secure enabled_input_methods ")
+                .append(q).append(enOut).append(q).append("; ");
+        w.append("settings put --user ").append(uid).append(" secure default_input_method ")
+                .append(q).append(useDef).append(q).append("; ");
+        if (!isNull(sub)) {
+            w.append("settings put --user ").append(uid)
+                    .append(" secure selected_input_method_subtype ").append(sub).append("; ");
+        }
+        if (hOut.length() > 0) {
+            w.append("settings put --user ").append(uid)
+                    .append(" secure input_methods_subtype_history ").append(q).append(hOut)
+                    .append(q).append("; ");
+        }
+        w.append("echo D:$(settings get --user ").append(uid).append(" secure default_input_method)");
+        String got = tag(Shell.exec(w.toString()), "D:");
+        if (!useDef.equals(got)) return new ImeResult(keep.size(), useDef, "设置没写进去");
+        return new ImeResult(keep.size(), useDef, null);
+    }
+
+    /** 取 "前缀:值" 形式回显里的某个值（没这行返回 ""） */
+    private static String tag(String out, String prefix) {
+        for (String line : out.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith(prefix)) return t.substring(prefix.length()).trim();
+        }
+        return "";
+    }
+
+    private static boolean isNull(String s) {
+        return s == null || s.length() == 0 || s.equals("null");
+    }
+
+    /** 只收 "包/类" 形状的输入法组件，别把 settings 回显的杂项当组件 */
+    private static void addComp(List<String> out, String comp) {
+        if (comp == null) return;
+        String t = comp.trim();
+        int i = t.indexOf('/');
+        if (i <= 0 || i == t.length() - 1) return;
+        if (!out.contains(t)) out.add(t);
+    }
+
+    private static String pkgOf(String comp) {
+        if (comp == null) return null;
+        int i = comp.indexOf('/');
+        String p = (i > 0 ? comp.substring(0, i) : comp).trim();
+        return p.length() == 0 ? null : p;
     }
 
     /**

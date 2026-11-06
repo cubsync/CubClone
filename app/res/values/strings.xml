@@ -191,4 +191,10 @@
     <string name="label_recent_rows">最近打开行数</string>
     <string name="label_recent_cols">最近打开列数</string>
     <string name="recent_cols_follow">跟随网格列数</string>
+
+    <string name="ime_action">输入法</string>
+    <string name="ime_working">正在同步输入法…</string>
+    <string name="ime_done">输入法已同步：%1$s（共 %2$s 个）</string>
+    <string name="ime_failed">输入法同步失败：%1$s</string>
+    <string name="hint_ime">分身沿用主空间的输入法设置，词库、账号等数据各空间独立</string>
 </resources>

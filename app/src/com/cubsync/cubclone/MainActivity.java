@@ -1620,7 +1620,7 @@ public class MainActivity extends Activity {
         final boolean installed = low.contains("installed") || low.contains("success");
         // 登记：这个空间里「该有」的包。清理只认这张表，不再靠「三方还是系统」猜
         if (installed) CloneStore.markKept(MainActivity.this, uid, g.pkg);
-        if (!reused) CloneStore.syncIme(uid);   // 新空间复用主空间输入法
+        if (!reused) CloneStore.ensureIme(uid);   // 新空间装上主空间输入法并抄设置
         // 新空间会被系统灌进主身份里的全部应用（OP12 上 25 个三方全来了、红米 184 个包），
         // 一加桌面会把它们整个摆出来 ⇒ 建完立刻按登记表清掉，只留刚装进去的这个
         int left = 0;

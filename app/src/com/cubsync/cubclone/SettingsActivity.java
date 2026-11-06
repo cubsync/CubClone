@@ -334,6 +334,8 @@ public class SettingsActivity extends Activity {
         if (ueh != null) ueh.setTextColor(secColor);
         TextView hsh = findViewById(R.id.hidden_sys_hint);
         if (hsh != null) hsh.setTextColor(secColor);
+        TextView imh = findViewById(R.id.ime_hint);
+        if (imh != null) imh.setTextColor(secColor);
 
         divider.setBackgroundColor(line);
         dividerKeep.setBackgroundColor(line);
@@ -822,6 +824,18 @@ public class SettingsActivity extends Activity {
                 public void onClick(View v) { askRenameSpace(uid); }
             });
             row.addView(rn);
+
+            // 输入法：老空间可能被早期 prune 清掉过输入法，或主空间换了输入法没跟着换。
+            // 点一下就地重装＋重写设置，幂等，随便点。
+            TextView ime = new TextView(this);
+            ime.setText(R.string.ime_action);
+            ime.setTextSize(14);
+            ime.setPadding(dp(12), dp(6), dp(4), dp(6));
+            ime.setTextColor(dark ? 0xFFA8C7FA : 0xFF0B57D0);
+            ime.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { repairIme(uid); }
+            });
+            row.addView(ime);
 
             TextView del = new TextView(this);
             del.setText(R.string.delete_space);
@@ -1615,7 +1629,7 @@ public class SettingsActivity extends Activity {
                     // 再 start 让存储就绪（/data/user/N、/data/media/N）——createProfileForUser
                     // 只建号不建存储，不 start 的话备份还原会报「目录不存在」。
                     CloneStore.startSpace(uid);
-                    CloneStore.syncIme(uid);   // 复用主空间输入法（MyUI/ColorOS 同款）
+                    CloneStore.ensureIme(uid);   // 装主空间输入法并抄一份设置（词库各自独立）
                     if (CloneStore.pruneSys(SettingsActivity.this)) {
                         CloneStore.pruneSpace(SettingsActivity.this, uid, true);
                     }
@@ -1639,6 +1653,39 @@ public class SettingsActivity extends Activity {
                 });
             }
         }).start();
+    }
+
+    /** 修复某个空间的输入法：装主空间在用的输入法 + 抄一份设置（幂等，可反复点） */
+    private void repairIme(final int uid) {
+        toast(getString(R.string.ime_working));
+        new Thread(new Runnable() {
+            public void run() {
+                final CloneStore.ImeResult r = CloneStore.ensureIme(uid);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (r.ok()) {
+                            toast(getString(R.string.ime_done, imeLabel(r.def),
+                                    String.valueOf(r.imes)));
+                        } else {
+                            toast(getString(R.string.ime_failed, r.err));
+                        }
+                    }
+                });
+            }
+        }).start();
+    }
+
+    /** 输入法组件（包/类）→ 应用名；取不到就用包名 */
+    private String imeLabel(String comp) {
+        String p = comp == null ? "" : comp;
+        int i = p.indexOf('/');
+        if (i > 0) p = p.substring(0, i);
+        try {
+            android.content.pm.PackageManager pm = getPackageManager();
+            return pm.getApplicationLabel(pm.getApplicationInfo(p, 0)).toString();
+        } catch (Throwable t) {
+            return p;
+        }
     }
 
     /** 给分身空间改名（AOSP 允许随时改，名字就是分身里设置里看到的名字） */

@@ -11,7 +11,7 @@ Semantic Versioning，`MAJOR.MINOR.PATCH`，当前处于 `0.x`：
 | 不兼容的接口/数据变更 | MAJOR（0.x 阶段允许 Breaking 走 MINOR） | 1.0.0 |
 
 **开发期不动版本号**：`versionName` 保持上一个已发布版本，改代码、构建、装真机都沿用；
-收版时才写新号。未验证的改动不占版本号，汇报只给 git 提交号。
+收版时才写新号。未验证的改动不占版本号。
 
 ## 测试版
 

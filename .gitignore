@@ -45,3 +45,6 @@ docs/同类项目调研.md
 
 # 个人设备部署脚本（含内网地址与本机路径）
 tools/sync-apk.sh
+
+# 品牌几何生成脚本：图标几何属品牌资产，不进公开仓
+tools/gen-icon.py

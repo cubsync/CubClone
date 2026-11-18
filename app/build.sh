@@ -19,11 +19,19 @@ mkdir -p out/classes out/dex out/gen out/res
 echo "[1/7] aapt2 compile"
 "$BT/aapt2.exe" compile --dir res -o out/res.zip
 
+# 版本号唯一真源＝AndroidManifest 的 versionName；versionCode 由它推导，见 docs/VERSIONING.md
+VNAME=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' AndroidManifest.xml | head -1)
+VCODE=$(printf '%s' "$VNAME" | awk -F. '{maj=$1+0; min=$2+0; pat=($3==""?0:$3+0);
+  printf "%d", maj*1000000 + min*10000 + pat*100}')
+[ -n "$VNAME" ] && [ -n "$VCODE" ] || { echo "读不到 versionName: [$VNAME]"; exit 1; }
+echo "    版本 $VNAME  versionCode $VCODE（由 versionName 推导）"
+
 echo "[2/7] aapt2 link（出 base.apk + R.java）"
 "$BT/aapt2.exe" link -o out/base.apk -I "$AJ" \
   --manifest AndroidManifest.xml -A assets -R out/res.zip \
   --auto-add-overlay \
   --java out/gen \
+  --version-code "$VCODE" --version-name "$VNAME" \
   --min-sdk-version 29 --target-sdk-version 33
 
 echo "[3/7] javac"

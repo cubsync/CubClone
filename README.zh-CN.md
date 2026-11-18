@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/logo.png" width="132" alt="CubClone"></p>
+<p align="center"><img src="assets/logo.png" width="132" alt="CubClone"></p>
 
 <h1 align="center">CubClone 分身空间</h1>
 
@@ -51,17 +51,6 @@ CubClone（分身空间）是一个 Android 应用多开工具。它不虚拟化
 
 Shizuku 的 API class 内置在 `app/libs/`（取自官方发行版），对应的 AIDL 源在 `app/libs/aidl`。
 
-## 签名
-
-发布用密钥库**不放仓库**——放进仓库等于谁 clone 谁拿到密钥。`app/build.sh` 读一个本地
-properties 文件：
-
-```
-storeFile=<.jks 的绝对路径>
-storePassword=...
-keyAlias=...
-keyPassword=...
-```
 
 ## 状态
 

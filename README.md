@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/logo.png" width="132" alt="CubClone"></p>
+<p align="center"><img src="assets/logo.png" width="132" alt="CubClone"></p>
 
 <h1 align="center">CubClone</h1>
 
@@ -61,18 +61,6 @@ Requirements: Android SDK build-tools 35.0.0 + platform android-36, JDK 21.
 Shizuku API classes are vendored under `app/libs/` from the official Shizuku
 releases; the matching AIDL sources are in `app/libs/aidl`.
 
-## Signing
-
-The release keystore lives **outside the repository** — never commit it, since
-repository access would then equal key access. `app/build.sh` reads a local
-properties file:
-
-```
-storeFile=<absolute path to .jks>
-storePassword=...
-keyAlias=...
-keyPassword=...
-```
 
 ## Status
 

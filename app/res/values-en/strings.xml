@@ -207,7 +207,7 @@ Owner data is not touched.</string>
     <string name="space_storage_broken">Space storage unavailable: this kernel still uses sdcardfs, so the gallery stays empty and some input methods crash. Tap to generate the fix module</string>
     <string name="space_storage_fixed">Space storage fixed (the kernel sdcardfs conflict is bypassed) · Tap to regenerate the fix module</string>
     <string name="fix_module_title">Generate fix module</string>
-    <string name="fix_module_msg">A zip will be written to the Download folder (an existing one is overwritten). Flash it in APatch or Magisk: the module checks this device during installation and refuses to install on devices without the sdcardfs conflict, leaving nothing behind. Reboot to restore space storage.\n\nSide effect: the Android/data bind isolation is no longer applied.</string>
+    <string name="fix_module_msg">A zip will be written to the Download folder (an existing one is overwritten). Flash it in APatch or Magisk: the module checks this device during installation and refuses to install on devices without the sdcardfs conflict, leaving nothing behind. Reboot to restore space storage.\n\nSide effect: external storage no longer uses the sdcardfs passthrough layer, so large file transfers may be slightly slower.</string>
     <string name="fix_module_working">Generating…</string>
     <string name="fix_module_done">Generated: %1$s</string>
     <string name="fix_module_failed">Failed to generate</string>

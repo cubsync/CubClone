@@ -24,6 +24,8 @@ Elevation is obtained through **root (Magisk/Su)** or **Shizuku** — whichever 
 - "Recently opened" strip on top of both views (toggleable, adjustable columns/rows)
 - Multi-select batch cloning: pick N apps × M profiles
 - Per-clone rename, disable/enable, shortcut pinning, per-profile cleanup
+- Input-method picker per new profile, with automatic repair of the profile's IME settings
+- Built-in check for the kernel `sdcardfs` conflict that leaves clone storage unmountable on some ROMs; the app detects it and generates a one-tap fix module for the device's root manager
 - Theme: system / light / dark / pure-black (AMOLED), English & Chinese UI
 
 ## Build

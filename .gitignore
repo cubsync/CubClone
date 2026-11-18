@@ -35,9 +35,13 @@ docs/reference/rom/
 
 # 取证与版权物 —— 只留本地，公开仓不要
 docs/reference/
-docs/screenshots/moto-*
-docs/screenshots/mt-moto.png
 docs/魅族应用分身原理分析.md
+
+# 手机截图：含状态栏/已装应用/厂商界面，只留本地
+docs/screenshots/
+
+# 竞品与厂商实现调研：属于产品策略，不进公开仓
+docs/同类项目调研.md
 
 # 个人设备部署脚本（含内网地址与本机路径）
 tools/sync-apk.sh

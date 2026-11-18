@@ -1,24 +1,13 @@
-# CubClone docs
+# 文档目录
 
-## screenshots/
+这个仓库只放与实现、构建、使用直接相关的说明，其余资料留在本地或私有仓。
 
-Real-device UI captures taken during development and verification. File names keep
-the original capture prefix:
-
-| Prefix | Source |
+| 文件 | 内容 |
 |---|---|
-| `esp-*`, `desk-*`, `new-ui*`, `settings-*`, `theme-*`, `ui-*`, `v14-*` | UI iterations on a test phone |
-| `redmi-*` | second test device, Android 16 |
-| `open-icon*`, `reuse*`, `order-check`, `shot-*` | single-feature verification shots |
+| `logo.png` | 应用标识，README 引用 |
 
-## 同类项目调研.md
+## 不在这里的内容
 
-Survey of how app cloning is implemented in the wild: work profiles
-(Island / Shelter / Insular), native multi-user (the route this project takes),
-and virtualization engines (VirtualApp / BlackBox).
-
-## Not in this repository
-
-Reference material gathered while studying OEM implementations — original APKs,
-decompiled output, UI dumps and firmware — is **not** distributed here; it belongs
-to its vendors. Those paths are listed in `.gitignore` and stay local only.
+研究阶段收集的厂商实现资料（原版 APK、反编译产物、界面 dump、固件）、真机截图，
+以及竞品路线调研，**不随仓库分发**：前者属厂商版权物，后者属产品策略。这些路径
+已写入 `.gitignore`，只留在本地。

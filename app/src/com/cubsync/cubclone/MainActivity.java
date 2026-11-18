@@ -763,7 +763,10 @@ public class MainActivity extends Activity {
             CloneStore.dirty = true;
             return;
         }
-        if (refreshing) return;
+        // 正在刷时来的请求不能丢：标记脏，当前这轮结束时（见下面的 settle）会自己再跑一轮。
+        // 以前直接 return ⇒ 装完应用调 refresh() 正好撞上后台刷新，界面就停在旧数据，
+        // 看着像「没装进去」。
+        if (refreshing) { CloneStore.dirty = true; return; }
         refreshing = true;
         CloneStore.dirty = false;
         new Thread(new Runnable() {
@@ -1620,7 +1623,10 @@ public class MainActivity extends Activity {
         final boolean installed = low.contains("installed") || low.contains("success");
         // 登记：这个空间里「该有」的包。清理只认这张表，不再靠「三方还是系统」猜
         if (installed) CloneStore.markKept(MainActivity.this, uid, g.pkg);
-        if (!reused) CloneStore.ensureIme(uid);   // 新空间装上主空间输入法并抄设置
+        // 新空间：装上主空间输入法并抄一份设置。
+        // 老空间再装：只有这次装的正好是输入法时才同步——否则包进去了，但
+        // enabled_input_methods 里没有它，键盘列表里根本选不到（看着就是「没装上」）。
+        if (!reused || CloneStore.isIme(g.pkg)) CloneStore.ensureIme(uid);
         // 新空间会被系统灌进主身份里的全部应用（OP12 上 25 个三方全来了、红米 184 个包），
         // 一加桌面会把它们整个摆出来 ⇒ 建完立刻按登记表清掉，只留刚装进去的这个
         int left = 0;

@@ -640,6 +640,26 @@ public final class CloneStore {
         if (!isNull(en)) {
             for (String s : en.split(":")) addComp(want, s);
         }
+        // ①b 主空间**所有**输入法都带进分身（不只是当前启用的那几个）——
+        //     用户想在新空间里随时切换任意输入法，不用先回主空间启用。
+        //     但「卸载清单」里的包跳过：那是用户明确要清掉的，建空间时不该再装回去。
+        Set<String> skipIme = new HashSet<String>();
+        try {
+            Set<String> ul = extraUninstall(appCtx);
+            if (ul != null) skipIme.addAll(ul);
+        } catch (Throwable ignored) {
+        }
+        String imeOut = Shell.exec(
+                "cmd package query-services -a android.view.InputMethod --brief 2>/dev/null");
+        for (String line : imeOut.split("\n")) {
+            String t = line.trim();
+            int sl = t.indexOf('/');
+            // 只要 "包/类" 形状：排除 "Service #0:"、属性行（带空格或 =）
+            if (sl <= 0 || t.indexOf(' ') >= 0 || t.indexOf('=') >= 0) continue;
+            String p = pkgOf(t);
+            if (p == null || skipIme.contains(p)) continue;
+            addComp(want, t);
+        }
         if (want.isEmpty()) return new ImeResult(0, "", "主空间没有可用输入法");
         // ② 装进分身并启用（install-existing 幂等），最后一次列出分身里真正可用的包
         StringBuilder sb = new StringBuilder();
@@ -736,6 +756,18 @@ public final class CloneStore {
         int i = t.indexOf('/');
         if (i <= 0 || i == t.length() - 1) return;
         if (!out.contains(t)) out.add(t);
+    }
+
+    /** 这个包是不是输入法（挂了 android.view.InputMethod 服务）—— 决定装完要不要同步输入法设置 */
+    static boolean isIme(String pkg) {
+        if (pkg == null || pkg.length() == 0 || !Shell.ready()) return false;
+        String out = Shell.exec(
+                "cmd package query-services -a android.view.InputMethod --brief 2>/dev/null");
+        for (String line : out.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith(pkg + "/")) return true;
+        }
+        return false;
     }
 
     private static String pkgOf(String comp) {

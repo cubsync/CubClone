@@ -27,25 +27,27 @@ manifest 里的 `versionCode` 只作占位，构建时会被覆盖。这样两�
 
 ## 分支
 
-| 分支 | 用途 |
-|---|---|
-| `main` | 永远可安装、可运行。日常小改可直接提交，功能改动走短分支 |
-| `feat/<短名>`、`fix/<短名>` | 单次改动，合进 main 后删 |
-| `release/<版本号>` | 收版用：从 main 切出 → 验证 → 打 tag → 合回 main |
+| 分支 | 用途 | 生命周期 |
+|---|---|---|
+| `main` | 永远可安装、可运行，日常小改直接提交 | 常驻 |
+| `feat/<短名>`、`fix/<短名>` | 单次改动 | 合进 main 后删 |
+| `release/<版本号>` | 收版：从 main 切出 → 验证 → 打 tag → 合回 main | **发完即删**，需要时再建 |
 
 - 收版分支命名 `release/0.6.52`，不用裸版本号，和 `feat/`、`fix/` 一眼区分。
-- **只留最近 2~3 个 release 分支**，更早的删掉——tag 已经能回到任意版本，容器分支堆着只是噪音。
+- 发完版就把 release 分支删掉：tag `v0.6.52` 已经固定了那一刻的代码，分支留着只是噪音。
+- 只有需要给**已发布的旧版本**单独回补补丁时，才把 `release/<旧版本号>` 重新建出来（从对应 tag 切）。
+- 任何时刻远端应该只有 `main`（加正在进行的 `feat/`、`fix/`）。
 - 单人开发的例外：改动很小且当场验证通过，允许直接在 `main` 提交（本文档与 CHANGELOG 的维护就是这样）。
 
 ## 发布
 
 1. 版本号先只改 `AndroidManifest.xml` 的 `versionName`，构建一次确认 `versionCode` 推导正确。
 2. 装真机，等验证通过。
-3. 验证通过后：`CHANGELOG.md` 补条目 → 提交 → 切 `release/<版本号>` → 打 tag
+3. 验证通过后：`CHANGELOG.md` 补条目 → 提交 → `git checkout -b release/<版本号>` → 打 tag
    `v<版本号>` → `gh release create v<版本号> --prerelease --notes-file <说明>`。
-4. 用户在真机上确认没问题后，把 pre-release 转正式：
+4. 真机确认没问题后，把 pre-release 转正式：
    `gh release edit v<版本号> --prerelease=false --latest`。
-5. pre-release 合回 `main`。
+5. `release/<版本号>` 合回 `main`（快进即可），然后**删掉这条分支**，远端只剩 `main`。
 
 ## 发布说明
 

@@ -10,20 +10,44 @@ Semantic Versioning，`MAJOR.MINOR.PATCH`，当前处于 `0.x`：
 | 只修 bug | PATCH | 0.6.52 → 0.6.53 |
 | 不兼容的接口/数据变更 | MAJOR（0.x 阶段允许 Breaking 走 MINOR） | 1.0.0 |
 
-**版本号只在真机验证通过后递增。** 未验证的改动留在当前号上，汇报只给 git 提交号，
-不占版本号。
+**开发期不动版本号**：`versionName` 保持上一个已发布版本，改代码、构建、装真机都沿用；
+收版时才写新号。未验证的改动不占版本号，汇报只给 git 提交号。
+
+## 测试版
+
+内测只用预发布后缀，不消耗正式版本号：
+
+```
+0.7.0-alpha.1 → 0.7.0-beta.1 → 0.7.0-beta.2 → 0.7.0-rc.1 → 0.7.0
+```
+
+预发布一律发 GitHub `--prerelease`；转正式时用新的 tag（`v0.7.0`），不是把 beta 的
+release 点成正式。
 
 ## versionCode
 
 由版本号自动推导，不手写：
 
 ```
-versionCode = major * 1000000 + minor * 10000 + patch * 100
+正式版   versionCode = major * 1000000 + minor * 10000 + patch * 100
+预发布   versionCode = 正式版 code - 槽偏移 + 序号N
 ```
 
-`0.6.52` → `65200`，`0.6.53` → `65300`，`0.7.0` → `70000`。
-`app/build.sh` 在构建时从 `AndroidManifest.xml` 的 `versionName` 算出并传给 aapt2，
-manifest 里的 `versionCode` 只作占位，构建时会被覆盖。这样两个字段永远不会错位。
+| 后缀 | 槽偏移 | 序号范围 | 0.7.0 下的 code |
+|---|---|---|---|
+| `-dev.N` | 100 | 1–9 | 69901–69909 |
+| `-alpha.N` | 90 | 1–19 | 69911–69929 |
+| `-beta.N` | 70 | 1–29 | 69931–69959 |
+| `-rc.N` | 40 | 1–29 | 69961–69989 |
+| 无 | — | — | 70000 |
+
+**预发布必须小于同号正式版**，否则正式版发不出去（versionCode 只能升不能降）。
+只认 `dev` / `alpha` / `beta` / `rc` 四种后缀，其它后缀构建直接报错。
+
+`app/build.sh` 构建时从 `AndroidManifest.xml` 的 `versionName` 算出并传给 aapt2。
+
+> 坑：manifest 里**不能**留 `android:versionCode`。留了 aapt2 会忽略 `--version-code`
+> 参数，产物 versionCode 变空。
 
 ## 分支
 
@@ -41,7 +65,7 @@ manifest 里的 `versionCode` 只作占位，构建时会被覆盖。这样两�
 
 ## 发布
 
-1. 版本号先只改 `AndroidManifest.xml` 的 `versionName`，构建一次确认 `versionCode` 推导正确。
+1. 收版时才改 `AndroidManifest.xml` 的 `versionName`，构建一次确认 `versionCode` 推导正确。
 2. 装真机，等验证通过。
 3. 验证通过后：`CHANGELOG.md` 补条目 → 提交 → `git checkout -b release/<版本号>` → 打 tag
    `v<版本号>` → `gh release create v<版本号> --prerelease --notes-file <说明>`。
@@ -59,7 +83,7 @@ manifest 里的 `versionCode` 只作占位，构建时会被覆盖。这样两�
 
 | 平台 | 产物 |
 |---|---|
-| Android | `CubClone-<版本号>.apk`，签名用仓库外的密钥库（见 build.sh 的 `$CUBCLONE_SIGNING`） |
+| Android | `CubClone-<版本号>.apk`（预发布带后缀，如 `CubClone-0.7.0-beta.1.apk`），签名用仓库外的密钥库（见 build.sh 的 `$CUBCLONE_SIGNING`） |
 | 桌面 | 暂无 |
 
 产物名带版本号；`app/分身空间.apk` 是构建中间产物，不入库。

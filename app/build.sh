@@ -20,10 +20,30 @@ echo "[1/7] aapt2 compile"
 "$BT/aapt2.exe" compile --dir res -o out/res.zip
 
 # 版本号唯一真源＝AndroidManifest 的 versionName；versionCode 由它推导，见 docs/VERSIONING.md
+# 正式版 0.7.0 -> 70000。预发布占用本版本号下 100 个槽之前的那段，保证「预发布 < 正式版」且单调：
+#   dev.N 69901-69909 · alpha.N 69911-69929 · beta.N 69931-69959 · rc.N 69961-69989
 VNAME=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' AndroidManifest.xml | head -1)
-VCODE=$(printf '%s' "$VNAME" | awk -F. '{maj=$1+0; min=$2+0; pat=($3==""?0:$3+0);
-  printf "%d", maj*1000000 + min*10000 + pat*100}')
-[ -n "$VNAME" ] && [ -n "$VCODE" ] || { echo "读不到 versionName: [$VNAME]"; exit 1; }
+[ -n "$VNAME" ] || { echo "读不到 versionName"; exit 1; }
+BASE="${VNAME%%-*}"; PRE=""
+[ "$BASE" != "$VNAME" ] && PRE="${VNAME#*-}"
+VCODE=$(printf '%s\n' "$BASE" | awk -v pre="$PRE" '{
+  n = split($0, a, "[.]")
+  maj = a[1]+0; min = (n>1 ? a[2]+0 : 0); pat = (n>2 ? a[3]+0 : 0)
+  code = maj*1000000 + min*10000 + pat*100
+  if (pre != "") {
+    st = pre; sub(/\..*$/, "", st)
+    k = match(pre, /[0-9]+$/) ? substr(pre, RSTART)+0 : 1
+    if      (st == "dev")   { off = 100; lim = 9 }
+    else if (st == "alpha") { off = 90;  lim = 19 }
+    else if (st == "beta")  { off = 70;  lim = 29 }
+    else if (st == "rc")    { off = 40;  lim = 29 }
+    else { print "ERR" ; exit }
+    if (k < 1 || k > lim) { print "ERR"; exit }
+    code = code - off + k
+  }
+  printf "%d", code
+}')
+case "$VCODE" in ''|*[!0-9]*) echo "versionCode 计算失败: [$VCODE]（versionName=$VNAME，预发布后缀只认 dev/alpha/beta/rc）"; exit 1;; esac
 echo "    版本 $VNAME  versionCode $VCODE（由 versionName 推导）"
 
 echo "[2/7] aapt2 link（出 base.apk + R.java）"

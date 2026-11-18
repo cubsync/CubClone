@@ -3,6 +3,7 @@ package com.cubsync.cubclone;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ResolveInfo;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
 
@@ -635,20 +636,27 @@ public final class CloneStore {
         String en = tag(a, "E:");
         String sub = tag(a, "S:");
         String hist = tag(a, "H:");
-        List<String> want = new ArrayList<String>();
-        addComp(want, def);
-        if (!isNull(en)) {
-            for (String s : en.split(":")) addComp(want, s);
-        }
-        // ①b 主空间**所有**输入法都带进分身（不只是当前启用的那几个）——
-        //     用户想在新空间里随时切换任意输入法，不用先回主空间启用。
-        //     但「卸载清单」里的包跳过：那是用户明确要清掉的，建空间时不该再装回去。
+        // ①a 哪些输入法不带：卸载清单（用户明确要清掉的应用）+ 新空间输入法清单里取消勾选的
         Set<String> skipIme = new HashSet<String>();
         try {
             Set<String> ul = extraUninstall(appCtx);
             if (ul != null) skipIme.addAll(ul);
         } catch (Throwable ignored) {
         }
+        try {
+            skipIme.addAll(imeExclude(appCtx));
+        } catch (Throwable ignored) {
+        }
+        List<String> want = new ArrayList<String>();
+        if (!skipIme.contains(pkgOf(def))) addComp(want, def);
+        if (!isNull(en)) {
+            for (String s : en.split(":")) {
+                if (!skipIme.contains(pkgOf(s))) addComp(want, s);
+            }
+        }
+        // ①b 主空间**所有**输入法都带进分身（不只是当前启用的那几个）——
+        //     用户想在新空间里随时切换任意输入法，不用先回主空间启用。
+        //     同样跳过上面那两份清单里的包。
         String imeOut = Shell.exec(
                 "cmd package query-services -a android.view.InputMethod --brief 2>/dev/null");
         for (String line : imeOut.split("\n")) {
@@ -756,6 +764,59 @@ public final class CloneStore {
         int i = t.indexOf('/');
         if (i <= 0 || i == t.length() - 1) return;
         if (!out.contains(t)) out.add(t);
+    }
+
+    // ---------------- 新空间输入法清单 ----------------
+
+    /**
+     * 建新空间时**不带**进去的输入法（只存用户取消勾选的那些包名）。
+     * 默认空集合 ＝ 全部带进去。清单是全局的，对所有新空间生效；
+     * 已建好的空间点空间行的「输入法」按钮，也按这份清单重同步一次。
+     */
+    static Set<String> imeExclude(Context c) {
+        try {
+            Set<String> s = c.getSharedPreferences("clone", Context.MODE_PRIVATE)
+                    .getStringSet("ime_exclude", null);
+            return s == null ? new HashSet<String>() : new HashSet<String>(s);
+        } catch (Throwable t) {
+            return new HashSet<String>();
+        }
+    }
+
+    static void setImeExclude(Context c, Set<String> s) {
+        c.getSharedPreferences("clone", Context.MODE_PRIVATE)
+                .edit().putStringSet("ime_exclude", new HashSet<String>(s)).apply();
+    }
+
+    /** 主空间所有输入法：{包名, 显示名}，按显示名排序 */
+    static List<String[]> allImes(Context c) {
+        List<String[]> out = new ArrayList<String[]>();
+        if (c == null) return out;
+        try {
+            List<ResolveInfo> list = c.getPackageManager().queryIntentServices(
+                    new Intent("android.view.InputMethod"), 0);
+            Set<String> seen = new HashSet<String>();
+            if (list != null) {
+                for (ResolveInfo ri : list) {
+                    if (ri == null || ri.serviceInfo == null) continue;
+                    String p = ri.serviceInfo.packageName;
+                    if (p == null || !seen.add(p)) continue;
+                    CharSequence lab = null;
+                    try {
+                        lab = ri.serviceInfo.loadLabel(c.getPackageManager());
+                    } catch (Throwable ignored) {
+                    }
+                    out.add(new String[]{p, lab == null ? p : lab.toString()});
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        Collections.sort(out, new Comparator<String[]>() {
+            public int compare(String[] a, String[] b) {
+                return a[1].compareToIgnoreCase(b[1]);
+            }
+        });
+        return out;
     }
 
     /** 这个包是不是输入法（挂了 android.view.InputMethod 服务）—— 决定装完要不要同步输入法设置 */

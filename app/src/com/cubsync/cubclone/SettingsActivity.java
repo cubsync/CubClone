@@ -59,6 +59,7 @@ public class SettingsActivity extends Activity {
     private TextView btnRecheck, btnShizuku, btnNewSpace, btnRefreshSpace;
     private LinearLayout spaceList;
     private TextView hiddenCount;
+    private TextView imePickCount;
     private View divider, dividerKeep, lineLook;
     private Switch swAll, swIcon, swAmoled, swKeepSys, swManageForeign, swSpaceBadge, swShowDisabled;
     /** 程序里刷开关状态时别再触发监听，否则会把用户的选择写没 */
@@ -109,6 +110,11 @@ public class SettingsActivity extends Activity {
         btnRefreshSpace = findViewById(R.id.btn_refresh_space);
         spaceList = findViewById(R.id.space_list);
         hiddenCount = findViewById(R.id.hidden_entry_count);
+        imePickCount = findViewById(R.id.ime_pick_count);
+        findViewById(R.id.ime_pick_entry).setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { showImePicker(); }
+        });
+        renderImePick();
         findViewById(R.id.hidden_entry).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { showHiddenManager(); }
         });
@@ -336,6 +342,9 @@ public class SettingsActivity extends Activity {
         if (hsh != null) hsh.setTextColor(secColor);
         TextView imh = findViewById(R.id.ime_hint);
         if (imh != null) imh.setTextColor(secColor);
+        TextView ipl = findViewById(R.id.ime_pick_label);
+        if (ipl != null) ipl.setTextColor(fgColor);
+        renderImePick();
 
         divider.setBackgroundColor(line);
         dividerKeep.setBackgroundColor(line);
@@ -1292,6 +1301,60 @@ public class SettingsActivity extends Activity {
     }
 
     /** 「已隐藏的应用」入口行：右侧显示已隐藏数量（用户应用 + 系统应用，无则空），点击进管理 */
+    // ---------------- 新空间输入法 ----------------
+
+    /** 右侧计数：「5 个 · 全部」/「5 个 · 带 3 个」 */
+    private void renderImePick() {
+        if (imePickCount == null) return;
+        List<String[]> all = CloneStore.allImes(this);
+        Set<String> ex = CloneStore.imeExclude(this);
+        int total = all.size();
+        int keep = 0;
+        for (String[] a : all) if (!ex.contains(a[0])) keep++;
+        if (total == 0) {
+            imePickCount.setText("");
+            return;
+        }
+        imePickCount.setText(keep == total
+                ? getString(R.string.ime_pick_all, total)
+                : getString(R.string.ime_pick_some, keep, total));
+        imePickCount.setTextColor(keep == 0 ? 0xFFE53935 : secColor);
+    }
+
+    /** 新空间输入法清单：列出主空间所有输入法，默认全选；取消勾选的建新空间时不带进去 */
+    private void showImePicker() {
+        final List<String[]> all = CloneStore.allImes(this);
+        if (all.isEmpty()) {
+            toast(getString(R.string.ime_pick_empty));
+            return;
+        }
+        final Set<String> ex = CloneStore.imeExclude(this);
+        final String[] names = new String[all.size()];
+        final boolean[] checked = new boolean[all.size()];
+        for (int i = 0; i < all.size(); i++) {
+            names[i] = all.get(i)[1];
+            checked[i] = !ex.contains(all.get(i)[0]);
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.ime_pick_title)
+                .setMultiChoiceItems(names, checked, new DialogInterface.OnMultiChoiceClickListener() {
+                    public void onClick(DialogInterface d, int which, boolean isChecked) {
+                        checked[which] = isChecked;
+                    }
+                })
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        Set<String> out = new HashSet<String>();
+                        for (int i = 0; i < all.size(); i++) if (!checked[i]) out.add(all.get(i)[0]);
+                        CloneStore.setImeExclude(SettingsActivity.this, out);
+                        renderImePick();
+                        toast(getString(R.string.ime_pick_saved));
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     private void renderHiddenCard() {
         if (hiddenCount == null) return;
         int n = CloneStore.hiddenClones().size() + CloneStore.hiddenSys().size();

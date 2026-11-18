@@ -197,4 +197,10 @@
     <string name="ime_done">输入法已同步：%1$s（共 %2$s 个）</string>
     <string name="ime_failed">输入法同步失败：%1$s</string>
     <string name="hint_ime">分身沿用主空间的输入法设置，词库、账号等数据各空间独立</string>
+
+    <string name="ime_pick_title">新空间输入法</string>
+    <string name="ime_pick_all">%1$d 个 · 全部</string>
+    <string name="ime_pick_some">%1$d/%2$d 个</string>
+    <string name="ime_pick_empty">主空间没有输入法</string>
+    <string name="ime_pick_saved">已保存，新建空间时生效</string>
 </resources>

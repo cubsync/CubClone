@@ -196,4 +196,10 @@ Owner data is not touched.</string>
     <string name="ime_done">Input method synced: %1$s (%2$s available)</string>
     <string name="ime_failed">Failed to sync input method: %1$s</string>
     <string name="hint_ime">Spaces reuse the main space\'s input method settings; dictionaries and accounts stay per space</string>
+
+    <string name="ime_pick_title">Input methods for new spaces</string>
+    <string name="ime_pick_all">%1$d · all</string>
+    <string name="ime_pick_some">%1$d of %2$d</string>
+    <string name="ime_pick_empty">No input method in main space</string>
+    <string name="ime_pick_saved">Saved, applies to new spaces</string>
 </resources>

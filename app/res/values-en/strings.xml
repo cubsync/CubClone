@@ -82,7 +82,7 @@ Turn on "Show all clonable apps" above, then tap "Create clone".</string>
     <string name="clone_created">Clone of %1$s is ready (uid %2$d)</string>
     <string name="clone_reused">Space is full, %1$s was installed into the existing space (uid %2$d)</string>
     <string name="clone_exists">Only 1 clone space is allowed, %1$s already has a clone. Delete it first.</string>
-    <string name="opening">Opening %2$s in space %1$d</string>
+    <string name="opening">Opening space %1$d: %2$s</string>
     <string name="launch_failed">Failed to open %1$s</string>
     <string name="rename_title">Rename clone</string>
     <string name="remove_clone_title">Delete clone</string>
@@ -117,6 +117,7 @@ Owner data is not touched.</string>
     <string name="install_failed">Could not install %1$s into the clone: %2$s</string>
     <string name="prune_failed">; %1$s app(s) could not be cleaned</string>
     <string name="space_row2">%1$s · uid %2$d · %3$d clone apps</string>
+    <string name="space_row2_foreign">%1$s · uid %2$d</string>
     <string name="space_deleted_reboot">Deleted space uid %1$d; disappears after reboot</string>
     <string name="refresh">Refresh</string>
     <string name="refreshing">Refreshing…</string>

@@ -661,26 +661,69 @@ public final class CloneStore {
             + "恢复分身的外部存储（相册、文件选择器、依赖外部存储的输入法）。"
             + "不符合特征的机型不做任何改动。\n";
 
+    /**
+     * 模块脚本（post-fs-data.sh 与 service.sh 内容相同，两个阶段各跑一次，幂等）。
+     *
+     * 判据只说一条：内核还编着 sdcardfs 驱动（/proc/filesystems）。
+     * ⛔ 绝不能拿 /mnt/runtime 的挂载当判据 —— 那是**解锁之后**才挂上的，
+     * 脚本执行时（post-fs-data / late_start service）必然一条都没有，条件永远不成立，
+     * 等于空脚本（2026-11-18 踩过：模块装了、重启了、prop 一直是空）。
+     */
     private static final String MODULE_SCRIPT =
             "#!/system/bin/sh\n"
+            + "# CubClone 分身存储修复：内核仍编着 sdcardfs 的机型上，让 vold 跳过 Android/data 的 bind\n"
             + "MODDIR=${0%/*}\n"
-            + "# 只在 /mnt/runtime 确实被挂成 sdcardfs 的机型上生效；其余机型直接退出\n"
-            + "if mount 2>/dev/null | grep -q 'mnt/runtime/default/emulated type sdcardfs'; then\n"
-            + "  resetprop ro.fuse.bpf.is_running true\n"
+            + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
+            + "STAGE=${0##*/}\n"
+            + "NOW=$(date '+%Y-%m-%d %H:%M:%S')\n"
+            + "\n"
+            + "# resetprop 路径探测：APatch / KernelSU / Magisk 各有各的位置\n"
+            + "RP=\"\"\n"
+            + "for p in /data/adb/ap/bin/resetprop /data/adb/ksu/bin/resetprop /data/adb/magisk/resetprop; do\n"
+            + "  if [ -x \"$p\" ]; then RP=\"$p\"; break; fi\n"
+            + "done\n"
+            + "[ -z \"$RP\" ] && RP=$(command -v resetprop 2>/dev/null)\n"
+            + "if [ -z \"$RP\" ]; then\n"
+            + "  echo \"$NOW [$STAGE] 跳过：找不到 resetprop，本机未做任何改动\" >> \"$LOG\"\n"
+            + "  exit 0\n"
+            + "fi\n"
+            + "\n"
+            + "BEFORE=$(\"$RP\" ro.fuse.bpf.is_running 2>/dev/null)\n"
+            + "if grep -q sdcardfs /proc/filesystems 2>/dev/null; then\n"
+            + "  \"$RP\" ro.fuse.bpf.is_running true\n"
+            + "  AFTER=$(\"$RP\" ro.fuse.bpf.is_running 2>/dev/null)\n"
+            + "  echo \"$NOW [$STAGE] 命中 sdcardfs，ro.fuse.bpf.is_running: [$BEFORE] -> [$AFTER]\" >> \"$LOG\"\n"
+            + "else\n"
+            + "  echo \"$NOW [$STAGE] 本机内核没有 sdcardfs，跳过，未做任何改动（prop=[$BEFORE]）\" >> \"$LOG\"\n"
             + "fi\n";
 
+    /** 卸载时只写一行日志：resetprop 只改内存，重启即回原值，不需要额外恢复动作 */
+    private static final String MODULE_UNINSTALL =
+            "#!/system/bin/sh\n"
+            + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
+            + "echo \"$(date '+%Y-%m-%d %H:%M:%S') [uninstall] 模块已卸载；"
+            + "ro.fuse.bpf.is_running 只改内存，重启后自动恢复原值\" >> \"$LOG\"\n";
+
     private static final String MODULE_CUSTOMIZE =
-            "# 安装时把 service.sh 设成可执行（模块文件默认是 0644）\n"
-            + "set_perm $MODPATH/service.sh 0 0 0755\n";
+            "# 模块里的脚本默认 0644，安装时统一给可执行\n"
+            + "set_perm $MODPATH/post-fs-data.sh 0 0 0755\n"
+            + "set_perm $MODPATH/service.sh 0 0 0755\n"
+            + "set_perm $MODPATH/uninstall.sh 0 0 0755\n";
 
     private static final String MODULE_README =
             "CubClone 分身存储修复模块\n"
             + "\n"
-            + "适用：内核仍保留 sdcardfs、导致分身存储 unmountable 的机型。\n"
-            + "不适用：其余机型（模块检测到没有 sdcardfs 挂载就什么都不做）。\n"
+            + "它做什么：把 ro.fuse.bpf.is_running 报成 true，让 vold 跳过 Android/data 的\n"
+            + "bind 挂载尝试，从而恢复分身的外部存储（相册、文件选择器、依赖外部存储的输入法）。\n"
             + "\n"
-            + "用法：在 APatch / Magisk 里刷入本 zip，重启。\n"
-            + "卸载：在管理器里移除模块，重启即恢复原状。\n"
+            + "自动判断（刷错机型也不会出事）：\n"
+            + "  开机时读 /proc/filesystems，只有内核仍编着 sdcardfs 驱动才动作。\n"
+            + "  没有该驱动的机型（绝大多数）脚本直接跳过，不改任何东西。\n"
+            + "\n"
+            + "用法：在 APatch / KernelSU / Magisk 里刷入本 zip，重启手机，解锁后检查。\n"
+            + "  执行记录在 /data/adb/cubclone-sdcardfs-fix.log，可看到命中/跳过与 prop 前后值。\n"
+            + "\n"
+            + "卸载：管理器里移除模块，重启即恢复原状（属性只改内存，不落盘）。\n"
             + "\n"
             + "副作用：Android/data 的 bind 隔离不再做（scoped storage 与 MediaStore 层仍在）。\n";
 
@@ -690,7 +733,9 @@ public final class CloneStore {
         try {
             zos = new java.util.zip.ZipOutputStream(bos);
             putEntry(zos, "module.prop", MODULE_PROP);
+            putEntry(zos, "post-fs-data.sh", MODULE_SCRIPT);
             putEntry(zos, "service.sh", MODULE_SCRIPT);
+            putEntry(zos, "uninstall.sh", MODULE_UNINSTALL);
             putEntry(zos, "customize.sh", MODULE_CUSTOMIZE);
             putEntry(zos, "README.txt", MODULE_README);
             zos.finish();

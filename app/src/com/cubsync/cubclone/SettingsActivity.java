@@ -62,7 +62,7 @@ public class SettingsActivity extends Activity {
     private TextView imePickCount;
     private TextView spaceWarn;
     /** 分身存储是否已知不可用（只测一次，结果缓存） */
-    private Boolean storageBad;
+    private Integer storageState;
     private View divider, dividerKeep, lineLook;
     private Switch swAll, swIcon, swAmoled, swKeepSys, swManageForeign, swSpaceBadge, swShowDisabled;
     /** 程序里刷开关状态时别再触发监听，否则会把用户的选择写没 */
@@ -604,7 +604,7 @@ public class SettingsActivity extends Activity {
             loadSpaces();
         }
         // 提权刚就绪时补算一次存储检测（首次进页面时可能还没拿到 Shizuku）
-        if (Shell.ready() && storageBad == null) renderStorageWarn();
+        if (Shell.ready() && storageState == null) renderStorageWarn();
     }
 
     private void askShizuku() {
@@ -1339,31 +1339,39 @@ public class SettingsActivity extends Activity {
     }
 
     /**
-     * 分身存储不可用提示：只在真会坏的机型上出现（内核留了 sdcardfs 且没装修复模块），
-     * 正常的机器一个字都不显示。
+     * 分身存储状态提示，三态：
+     * 需修＝红字（点击生成模块）；已修＝绿字（点击也能重新生成，方便用户重刷）；
+     * 本机不需要＝一个字都不显示。
      */
     private void renderStorageWarn() {
         if (spaceWarn == null) return;
-        if (storageBad != null) { applyStorageWarn(); return; }
+        if (storageState != null) { applyStorageState(); return; }
         // 检测要走提权 shell，不能放主线程；算完再显示
         new Thread(new Runnable() {
             public void run() {
-                final Boolean bad = CloneStore.storageBroken();
+                final Integer st = CloneStore.storageState();
                 runOnUiThread(new Runnable() {
                     public void run() {
-                        if (bad == null) return;   // 提权未就绪，等 showPermState 补算
-                        storageBad = bad;
-                        applyStorageWarn();
+                        if (st == null) return;   // 提权未就绪，等 showPermState 补算
+                        storageState = st;
+                        applyStorageState();
                     }
                 });
             }
         }).start();
     }
 
-    private void applyStorageWarn() {
-        if (spaceWarn == null || storageBad == null) return;
-        spaceWarn.setVisibility(storageBad.booleanValue() ? View.VISIBLE : View.GONE);
-        spaceWarn.setTextColor(0xFFE53935);
+    private void applyStorageState() {
+        if (spaceWarn == null || storageState == null) return;
+        int st = storageState.intValue();
+        if (st == 0) {                       // 本机不需要，不显示
+            spaceWarn.setVisibility(View.GONE);
+            return;
+        }
+        boolean fixed = st == 2;
+        spaceWarn.setText(fixed ? R.string.space_storage_fixed : R.string.space_storage_broken);
+        spaceWarn.setTextColor(fixed ? 0xFF2E7D32 : 0xFFE53935);
+        spaceWarn.setVisibility(View.VISIBLE);
     }
 
     // ---------------- 新空间输入法 ----------------

@@ -592,27 +592,25 @@ public final class CloneStore {
     }
 
     /**
-     * 本机的分身存储是否已知不可用。
-     *
-     * 成因：ROM 的内核还编着 sdcardfs，init 就把 /mnt/runtime/*（和 /mnt/pass_through/*）
-     * 挂成 sdcardfs；而 Android 14+ 的 vold 在做 Android/data 的 bind 时，目标落在这个
-     * sdcardfs 视图上，UnmountTree 拿不到 → 整卷回滚成 UNMOUNTABLE → 分身里相册空白、
-     * 依赖外部存储的输入法直接崩。只有内核留了 sdcardfs 的机型会踩到，其余机型正常。
+     * 本机分身存储状态：
+     * 0＝本机不需要（内核没有 sdcardfs 驱动，或 ROM 不用它挂 /mnt/runtime）
+     * 1＝需要修（有 sdcardfs 冲突，且还没修）
+     * 2＝已修（sdcardfs 冲突已绕过，ro.fuse.bpf.is_running=true）
+     * null＝提权没就绪，判不了（不要缓存成「没问题」）
      *
      * 判断必须提权执行：应用进程读 /proc/filesystems 会被 SELinux 拒
-     * （avc denied untrusted_app proc_filesystems:file read），拿到空串必然漏报；
-     * shell 身份两个文件都能读，还顺带能看 getprop。全部只读，无任何写操作。
-     * 已经报 ro.fuse.bpf.is_running=true 的（装了修复模块/脚本）视为已解决，不再提示。
+     * （avc denied untrusted_app proc_filesystems:file read），拿到空串必然漏报。
      */
-    static Boolean storageBroken() {
-        if (!Shell.ready()) return null;   // 提权还没就绪，判不了，别当「没问题」缓存下来
+    static Integer storageState() {
+        if (!Shell.ready()) return null;
         String out = Shell.exec(
-                "if [ \"$(getprop ro.fuse.bpf.is_running)\" = \"true\" ]; then echo NO; "
-                + "elif grep -q sdcardfs /proc/filesystems 2>/dev/null "
-                + "&& grep -q 'mnt/runtime/default/emulated sdcardfs' /proc/mounts 2>/dev/null; "
-                + "then echo YES; else echo NO; fi");
-        if (out.indexOf("YES") >= 0) return Boolean.TRUE;
-        if (out.indexOf("NO") >= 0) return Boolean.FALSE;
+                "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then echo NO_NEED; "
+                + "elif [ \"$(getprop ro.fuse.bpf.is_running)\" = \"true\" ]; then echo FIXED; "
+                + "elif grep -q 'mnt/runtime/default/emulated sdcardfs' /proc/mounts 2>/dev/null; "
+                + "then echo BROKEN; else echo NO_NEED; fi");
+        if (out.indexOf("FIXED") >= 0) return Integer.valueOf(2);
+        if (out.indexOf("BROKEN") >= 0) return Integer.valueOf(1);
+        if (out.indexOf("NO_NEED") >= 0) return Integer.valueOf(0);
         return null;
     }
 
@@ -629,13 +627,23 @@ public final class CloneStore {
             byte[] zip = buildFixModuleZip();
             if (zip == null) return null;
             String name = "cubclone-sdcardfs-fix.zip";
+            android.net.Uri col = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+            // 先删掉 Download 里已有的同名/带 (1) 后缀的旧副本，否则 MediaStore 会另存成 (1).zip
+            try {
+                c.getContentResolver().delete(col,
+                        "(" + android.provider.MediaStore.MediaColumns.DISPLAY_NAME + "=?"
+                        + " OR " + android.provider.MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ?)"
+                        + " AND " + android.provider.MediaStore.MediaColumns.RELATIVE_PATH + "=?",
+                        new String[]{name, "cubclone-sdcardfs-fix (%).zip",
+                                android.os.Environment.DIRECTORY_DOWNLOADS + "/"});
+            } catch (Throwable ignored) {
+            }
             android.content.ContentValues v = new android.content.ContentValues();
             v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
             v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/zip");
             v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
                     android.os.Environment.DIRECTORY_DOWNLOADS);
-            android.net.Uri uri = c.getContentResolver().insert(
-                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+            android.net.Uri uri = c.getContentResolver().insert(col, v);
             if (uri == null) return null;
             java.io.OutputStream os = c.getContentResolver().openOutputStream(uri);
             if (os == null) return null;
@@ -704,11 +712,40 @@ public final class CloneStore {
             + "echo \"$(date '+%Y-%m-%d %H:%M:%S') [uninstall] 模块已卸载；"
             + "ro.fuse.bpf.is_running 只改内存，重启后自动恢复原值\" >> \"$LOG\"\n";
 
+    /**
+     * 安装阶段（customize.sh）就把特征检查做完：不符条件直接 abort，模块根本不落地。
+     * 刷的时候人在管理器里、手机已解锁，所以这里能同时看内核驱动和真实挂载，判据比开机脚本更准。
+     */
     private static final String MODULE_CUSTOMIZE =
-            "# 模块里的脚本默认 0644，安装时统一给可执行\n"
-            + "set_perm $MODPATH/post-fs-data.sh 0 0 0755\n"
-            + "set_perm $MODPATH/service.sh 0 0 0755\n"
-            + "set_perm $MODPATH/uninstall.sh 0 0 0755\n";
+            "# 刷入前检查：本机不符合条件就直接拒绝安装，不在设备上留下任何东西\n"
+            + "if ! command -v ui_print >/dev/null 2>&1; then ui_print() { echo \"$1\"; }; fi\n"
+            + "if ! command -v abort >/dev/null 2>&1; then abort() { echo \"! $1\"; exit 1; }; fi\n"
+            + "\n"
+            + "ui_print \"- CubClone 分身存储修复：检查本机特征\"\n"
+            + "\n"
+            + "# 注意：不能因为「prop 已经是 true」就拒装 —— 那只代表本次开机内存里已生效，\n"
+            + "# 模块若被删掉，重启就失效，用户重装是正当需求。\n"
+            + "if [ \"$(getprop ro.fuse.bpf.is_running)\" = \"true\" ]; then\n"
+            + "  ui_print \"- 提示：本次开机 ro.fuse.bpf.is_running 已是 true，安装后重启仍会重新设置\"\n"
+            + "fi\n"
+            + "\n"
+            + "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then\n"
+            + "  abort \"! 本机内核没有 sdcardfs 驱动，分身存储不走这条路径，不需要此模块（未做任何改动）\"\n"
+            + "fi\n"
+            + "\n"
+            + "if ! mount 2>/dev/null | grep -q 'mnt/runtime/default/emulated type sdcardfs'; then\n"
+            + "  abort \"! 本机 /mnt/runtime 未使用 sdcardfs，不需要此模块（未做任何改动）\"\n"
+            + "fi\n"
+            + "\n"
+            + "ui_print \"- 本机符合修复条件，开始安装\"\n"
+            + "if command -v set_perm >/dev/null 2>&1; then\n"
+            + "  set_perm $MODPATH/post-fs-data.sh 0 0 0755\n"
+            + "  set_perm $MODPATH/service.sh 0 0 0755\n"
+            + "  set_perm $MODPATH/uninstall.sh 0 0 0755\n"
+            + "else\n"
+            + "  chmod 0755 $MODPATH/post-fs-data.sh $MODPATH/service.sh $MODPATH/uninstall.sh\n"
+            + "fi\n"
+            + "ui_print \"- 安装完成，重启手机后生效\"\n";
 
     private static final String MODULE_README =
             "CubClone 分身存储修复模块\n"
@@ -716,9 +753,11 @@ public final class CloneStore {
             + "它做什么：把 ro.fuse.bpf.is_running 报成 true，让 vold 跳过 Android/data 的\n"
             + "bind 挂载尝试，从而恢复分身的外部存储（相册、文件选择器、依赖外部存储的输入法）。\n"
             + "\n"
-            + "自动判断（刷错机型也不会出事）：\n"
-            + "  开机时读 /proc/filesystems，只有内核仍编着 sdcardfs 驱动才动作。\n"
-            + "  没有该驱动的机型（绝大多数）脚本直接跳过，不改任何东西。\n"
+            + "刷入时就会检查（不满足直接拒绝安装，不在设备上留下任何东西）：\n"
+            + "  1) 内核没有 sdcardfs 驱动            -> 拒绝：本机不需要\n"
+            + "  2) /mnt/runtime 未使用 sdcardfs 挂载 -> 拒绝：本机不需要\n"
+            + "  两条都过才安装。开机后脚本还会按同样的特征再判一次。\n"
+            + "  注：本次开机 prop 已是 true 不构成拒装理由（模块被删后重启会失效，重装是正当需求）。\n"
             + "\n"
             + "用法：在 APatch / KernelSU / Magisk 里刷入本 zip，重启手机，解锁后检查。\n"
             + "  执行记录在 /data/adb/cubclone-sdcardfs-fix.log，可看到命中/跳过与 prop 前后值。\n"

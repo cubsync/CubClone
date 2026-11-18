@@ -721,6 +721,15 @@
                     android:layout_marginTop="4dp"
                     android:textSize="12sp" />
 
+                <TextView
+                    android:id="@+id/space_storage_warn"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/space_storage_broken"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
+
                 <LinearLayout
                     android:id="@+id/space_list"
                     android:layout_width="match_parent"

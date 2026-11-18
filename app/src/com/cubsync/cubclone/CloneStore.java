@@ -591,6 +591,159 @@ public final class CloneStore {
         }
     }
 
+    /**
+     * 本机的分身存储是否已知不可用。
+     *
+     * 成因：ROM 的内核还编着 sdcardfs，init 就把 /mnt/runtime/*（和 /mnt/pass_through/*）
+     * 挂成 sdcardfs；而 Android 14+ 的 vold 在做 Android/data 的 bind 时，目标落在这个
+     * sdcardfs 视图上，UnmountTree 拿不到 → 整卷回滚成 UNMOUNTABLE → 分身里相册空白、
+     * 依赖外部存储的输入法直接崩。只有内核留了 sdcardfs 的机型会踩到，其余机型正常。
+     *
+     * 全部是只读判断，不需要 root / Shizuku：/proc/filesystems 与 /proc/mounts 普通应用可读。
+     * 已经报 ro.fuse.bpf.is_running=true 的（装了修复模块/脚本）视为已解决，不再提示。
+     */
+    static boolean storageBroken() {
+        try {
+            if (readSmall("/proc/filesystems").indexOf("sdcardfs") < 0) return false;
+            if ("true".equals(getProp("ro.fuse.bpf.is_running"))) return false;
+            String mt = readSmall("/proc/mounts");
+            for (String line : mt.split("\n")) {
+                // /data/media /mnt/runtime/default/emulated sdcardfs rw,...
+                String[] p = line.trim().split("\\s+");
+                if (p.length >= 3
+                        && p[1].startsWith("/mnt/runtime/default/emulated")
+                        && "sdcardfs".equals(p[2])) return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    /**
+     * 现场生成修复模块 zip 到公共 Download 目录（走 MediaStore，不需要存储权限）。
+     * 返回给用户看的相对路径（Download/xxx.zip）；失败返回 null。
+     *
+     * 模块只做一件事：开机时若 /mnt/runtime 确实被挂成 sdcardfs，就把
+     * ro.fuse.bpf.is_running 报成 true，让 vold 跳过 Android/data 的 bind。
+     * 没这个特征的机型模块等于空跑，不会改动任何东西。
+     */
+    static String writeFixModule(Context c) {
+        try {
+            byte[] zip = buildFixModuleZip();
+            if (zip == null) return null;
+            String name = "cubclone-sdcardfs-fix.zip";
+            android.content.ContentValues v = new android.content.ContentValues();
+            v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
+            v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/zip");
+            v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                    android.os.Environment.DIRECTORY_DOWNLOADS);
+            android.net.Uri uri = c.getContentResolver().insert(
+                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+            if (uri == null) return null;
+            java.io.OutputStream os = c.getContentResolver().openOutputStream(uri);
+            if (os == null) return null;
+            try {
+                os.write(zip);
+                os.flush();
+            } finally {
+                try { os.close(); } catch (Throwable ignored) { }
+            }
+            return android.os.Environment.DIRECTORY_DOWNLOADS + "/" + name;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static final String MODULE_PROP =
+            "id=cubclone_sdcardfs_fix\n"
+            + "name=CubClone 分身存储修复\n"
+            + "version=1.0\n"
+            + "versionCode=1\n"
+            + "author=cubsync\n"
+            + "description=内核仍保留 sdcardfs 的机型上，让 vold 跳过 Android/data 的 bind，"
+            + "恢复分身的外部存储（相册、文件选择器、依赖外部存储的输入法）。"
+            + "不符合特征的机型不做任何改动。\n";
+
+    private static final String MODULE_SCRIPT =
+            "#!/system/bin/sh\n"
+            + "MODDIR=${0%/*}\n"
+            + "# 只在 /mnt/runtime 确实被挂成 sdcardfs 的机型上生效；其余机型直接退出\n"
+            + "if mount 2>/dev/null | grep -q 'mnt/runtime/default/emulated type sdcardfs'; then\n"
+            + "  resetprop ro.fuse.bpf.is_running true\n"
+            + "fi\n";
+
+    private static final String MODULE_CUSTOMIZE =
+            "# 安装时把 service.sh 设成可执行（模块文件默认是 0644）\n"
+            + "set_perm $MODPATH/service.sh 0 0 0755\n";
+
+    private static final String MODULE_README =
+            "CubClone 分身存储修复模块\n"
+            + "\n"
+            + "适用：内核仍保留 sdcardfs、导致分身存储 unmountable 的机型。\n"
+            + "不适用：其余机型（模块检测到没有 sdcardfs 挂载就什么都不做）。\n"
+            + "\n"
+            + "用法：在 APatch / Magisk 里刷入本 zip，重启。\n"
+            + "卸载：在管理器里移除模块，重启即恢复原状。\n"
+            + "\n"
+            + "副作用：Android/data 的 bind 隔离不再做（scoped storage 与 MediaStore 层仍在）。\n";
+
+    private static byte[] buildFixModuleZip() {
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        java.util.zip.ZipOutputStream zos = null;
+        try {
+            zos = new java.util.zip.ZipOutputStream(bos);
+            putEntry(zos, "module.prop", MODULE_PROP);
+            putEntry(zos, "service.sh", MODULE_SCRIPT);
+            putEntry(zos, "customize.sh", MODULE_CUSTOMIZE);
+            putEntry(zos, "README.txt", MODULE_README);
+            zos.finish();
+            zos.close();
+            zos = null;
+            return bos.toByteArray();
+        } catch (Throwable t) {
+            return null;
+        } finally {
+            if (zos != null) try { zos.close(); } catch (Throwable ignored) { }
+        }
+    }
+
+    private static void putEntry(java.util.zip.ZipOutputStream zos, String name, String body)
+            throws java.io.IOException {
+        zos.putNextEntry(new java.util.zip.ZipEntry(name));
+        zos.write(body.getBytes("UTF-8"));
+        zos.closeEntry();
+    }
+
+    /** 读小文件（/proc 下的都是几十 KB 以内），失败返回空串 */
+    private static String readSmall(String path) {
+        java.io.FileInputStream in = null;
+        try {
+            in = new java.io.FileInputStream(path);
+            byte[] buf = new byte[64 * 1024];
+            int n = in.read(buf);
+            return n <= 0 ? "" : new String(buf, 0, n);
+        } catch (Throwable t) {
+            return "";
+        } finally {
+            if (in != null) try { in.close(); } catch (Throwable ignored) { }
+        }
+    }
+
+    /** getprop（普通应用也能执行，不需要 Shizuku） */
+    private static String getProp(String key) {
+        try {
+            Process p = Runtime.getRuntime().exec(new String[]{"getprop", key});
+            java.io.BufferedReader r = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(p.getInputStream()));
+            String s = r.readLine();
+            r.close();
+            p.waitFor();
+            return s == null ? "" : s.trim();
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
     /** ensureIme 的结果：imes＝分身里真正可用的输入法个数，def＝写进去的默认输入法 */
     static final class ImeResult {
         final int imes;

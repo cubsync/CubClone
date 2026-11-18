@@ -204,4 +204,10 @@ Owner data is not touched.</string>
     <string name="ime_pick_some">%1$d of %2$d</string>
     <string name="ime_pick_empty">No input method in main space</string>
     <string name="ime_pick_saved">Saved, applies to new spaces</string>
+    <string name="space_storage_broken">Space storage unavailable: this kernel still uses sdcardfs, so the gallery stays empty and some input methods crash. Tap to generate the fix module</string>
+    <string name="fix_module_title">Generate fix module</string>
+    <string name="fix_module_msg">A zip will be written to the Download folder. Flash it in APatch or Magisk, then reboot to restore space storage.\n\nThe module only acts when this device really uses sdcardfs; on other devices it changes nothing. Side effect: the Android/data bind isolation is no longer applied.</string>
+    <string name="fix_module_working">Generating…</string>
+    <string name="fix_module_done">Generated: %1$s</string>
+    <string name="fix_module_failed">Failed to generate</string>
 </resources>

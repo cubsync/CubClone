@@ -60,6 +60,9 @@ public class SettingsActivity extends Activity {
     private LinearLayout spaceList;
     private TextView hiddenCount;
     private TextView imePickCount;
+    private TextView spaceWarn;
+    /** 分身存储是否已知不可用（只测一次，结果缓存） */
+    private Boolean storageBad;
     private View divider, dividerKeep, lineLook;
     private Switch swAll, swIcon, swAmoled, swKeepSys, swManageForeign, swSpaceBadge, swShowDisabled;
     /** 程序里刷开关状态时别再触发监听，否则会把用户的选择写没 */
@@ -102,6 +105,11 @@ public class SettingsActivity extends Activity {
         iconHint = findViewById(R.id.icon_hint);
         spaceTitle = findViewById(R.id.space_title);
         spaceLimit = findViewById(R.id.space_limit);
+        spaceWarn = findViewById(R.id.space_storage_warn);
+        spaceWarn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { makeFixModule(); }
+        });
+        renderStorageWarn();
         aboutVer = findViewById(R.id.about_ver);
         aboutNote = findViewById(R.id.about_note);
         btnRecheck = findViewById(R.id.btn_recheck);
@@ -345,6 +353,7 @@ public class SettingsActivity extends Activity {
         TextView ipl = findViewById(R.id.ime_pick_label);
         if (ipl != null) ipl.setTextColor(fgColor);
         renderImePick();
+        renderStorageWarn();
 
         divider.setBackgroundColor(line);
         dividerKeep.setBackgroundColor(line);
@@ -1301,6 +1310,43 @@ public class SettingsActivity extends Activity {
     }
 
     /** 「已隐藏的应用」入口行：右侧显示已隐藏数量（用户应用 + 系统应用，无则空），点击进管理 */
+    /** 生成修复模块到 Download（模块内容由应用现场拼，不单独维护模块包） */
+    private void makeFixModule() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.fix_module_title)
+                .setMessage(R.string.fix_module_msg)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        toast(getString(R.string.fix_module_working));
+                        new Thread(new Runnable() {
+                            public void run() {
+                                final String p = CloneStore.writeFixModule(SettingsActivity.this);
+                                runOnUiThread(new Runnable() {
+                                    public void run() {
+                                        toast(p == null
+                                                ? getString(R.string.fix_module_failed)
+                                                : getString(R.string.fix_module_done, p));
+                                    }
+                                });
+                            }
+                        }).start();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * 分身存储不可用提示：只在真会坏的机型上出现（内核留了 sdcardfs 且没装修复模块），
+     * 正常的机器一个字都不显示。
+     */
+    private void renderStorageWarn() {
+        if (spaceWarn == null) return;
+        if (storageBad == null) storageBad = Boolean.valueOf(CloneStore.storageBroken());
+        spaceWarn.setVisibility(storageBad.booleanValue() ? View.VISIBLE : View.GONE);
+        spaceWarn.setTextColor(0xFFE53935);
+    }
+
     // ---------------- 新空间输入法 ----------------
 
     /** 右侧计数：「5 个 · 全部」/「5 个 · 带 3 个」 */

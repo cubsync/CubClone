@@ -204,4 +204,10 @@
     <string name="ime_pick_some">%1$d/%2$d 个</string>
     <string name="ime_pick_empty">主空间没有输入法</string>
     <string name="ime_pick_saved">已保存，新建空间时生效</string>
+    <string name="space_storage_broken">分身存储不可用：本机内核仍在用 sdcardfs，相册会空白、部分输入法会崩。点这里生成修复模块</string>
+    <string name="fix_module_title">生成修复模块</string>
+    <string name="fix_module_msg">会生成一个 zip 到 Download 目录。用 APatch 或 Magisk 刷入后重启，分身存储即可恢复。\n\n模块只在本机确实用 sdcardfs 时才生效，其他机型刷了也不会改动什么。副作用：Android/data 的 bind 隔离不再做。</string>
+    <string name="fix_module_working">正在生成…</string>
+    <string name="fix_module_done">已生成：%1$s</string>
+    <string name="fix_module_failed">生成失败</string>
 </resources>

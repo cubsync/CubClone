@@ -599,24 +599,21 @@ public final class CloneStore {
      * sdcardfs 视图上，UnmountTree 拿不到 → 整卷回滚成 UNMOUNTABLE → 分身里相册空白、
      * 依赖外部存储的输入法直接崩。只有内核留了 sdcardfs 的机型会踩到，其余机型正常。
      *
-     * 全部是只读判断，不需要 root / Shizuku：/proc/filesystems 与 /proc/mounts 普通应用可读。
+     * 判断必须提权执行：应用进程读 /proc/filesystems 会被 SELinux 拒
+     * （avc denied untrusted_app proc_filesystems:file read），拿到空串必然漏报；
+     * shell 身份两个文件都能读，还顺带能看 getprop。全部只读，无任何写操作。
      * 已经报 ro.fuse.bpf.is_running=true 的（装了修复模块/脚本）视为已解决，不再提示。
      */
-    static boolean storageBroken() {
-        try {
-            if (readSmall("/proc/filesystems").indexOf("sdcardfs") < 0) return false;
-            if ("true".equals(getProp("ro.fuse.bpf.is_running"))) return false;
-            String mt = readSmall("/proc/mounts");
-            for (String line : mt.split("\n")) {
-                // /data/media /mnt/runtime/default/emulated sdcardfs rw,...
-                String[] p = line.trim().split("\\s+");
-                if (p.length >= 3
-                        && p[1].startsWith("/mnt/runtime/default/emulated")
-                        && "sdcardfs".equals(p[2])) return true;
-            }
-        } catch (Throwable ignored) {
-        }
-        return false;
+    static Boolean storageBroken() {
+        if (!Shell.ready()) return null;   // 提权还没就绪，判不了，别当「没问题」缓存下来
+        String out = Shell.exec(
+                "if [ \"$(getprop ro.fuse.bpf.is_running)\" = \"true\" ]; then echo NO; "
+                + "elif grep -q sdcardfs /proc/filesystems 2>/dev/null "
+                + "&& grep -q 'mnt/runtime/default/emulated sdcardfs' /proc/mounts 2>/dev/null; "
+                + "then echo YES; else echo NO; fi");
+        if (out.indexOf("YES") >= 0) return Boolean.TRUE;
+        if (out.indexOf("NO") >= 0) return Boolean.FALSE;
+        return null;
     }
 
     /**

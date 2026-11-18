@@ -603,6 +603,8 @@ public class SettingsActivity extends Activity {
             spacesLoaded = true;
             loadSpaces();
         }
+        // 提权刚就绪时补算一次存储检测（首次进页面时可能还没拿到 Shizuku）
+        if (Shell.ready() && storageBad == null) renderStorageWarn();
     }
 
     private void askShizuku() {
@@ -1342,7 +1344,24 @@ public class SettingsActivity extends Activity {
      */
     private void renderStorageWarn() {
         if (spaceWarn == null) return;
-        if (storageBad == null) storageBad = Boolean.valueOf(CloneStore.storageBroken());
+        if (storageBad != null) { applyStorageWarn(); return; }
+        // 检测要走提权 shell，不能放主线程；算完再显示
+        new Thread(new Runnable() {
+            public void run() {
+                final Boolean bad = CloneStore.storageBroken();
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (bad == null) return;   // 提权未就绪，等 showPermState 补算
+                        storageBad = bad;
+                        applyStorageWarn();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void applyStorageWarn() {
+        if (spaceWarn == null || storageBad == null) return;
         spaceWarn.setVisibility(storageBad.booleanValue() ? View.VISIBLE : View.GONE);
         spaceWarn.setTextColor(0xFFE53935);
     }

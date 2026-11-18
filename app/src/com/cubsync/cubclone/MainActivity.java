@@ -1756,7 +1756,7 @@ public class MainActivity extends Activity {
 
     /** 把被隐藏的分身重新启用（pm enable，数据原样还在） */
     private void enableClone(final Clone c, final Group g) {
-        toast(getString(R.string.opening, g.label));
+        toast(getString(R.string.clone_enabling, g.label));
         new Thread(new Runnable() {
             public void run() {
                 final String r = Launcher.enable(c.uid, g.pkg);
@@ -1790,7 +1790,7 @@ public class MainActivity extends Activity {
     }
 
     private void launch(final Clone c, final Group g) {
-        toast(getString(R.string.opening, g.label));
+        toast(getString(R.string.opening, c.uid, g.label));
         new Thread(new Runnable() {
             public void run() {
                 if (!Launcher.launch(MainActivity.this, c.uid, g.pkg)) {

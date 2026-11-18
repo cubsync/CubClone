@@ -82,7 +82,7 @@
     <string name="clone_created">「%1$s」的分身已就绪（uid %2$d）</string>
     <string name="clone_reused">本机空间已满，「%1$s」装进了已有空间（uid %2$d）</string>
     <string name="clone_exists">本机只允许 1 个分身空间，「%1$s」已经有分身了，要再加只能先删掉那个</string>
-    <string name="opening">正在打开 %1$s 的分身</string>
+    <string name="opening">正在打开空间 %1$d：%2$s</string>
     <string name="launch_failed">启动失败：%1$s</string>
     <string name="rename_title">修改分身后缀</string>
     <string name="remove_clone_title">删除分身</string>
@@ -155,6 +155,7 @@
     <string name="menu_remove">从空间移除</string>
     <string name="clone_hidden_hint">这个分身被禁用了，长按可启用</string>
     <string name="clone_enabled">已启用 %1$s</string>
+    <string name="clone_enabling">正在启用 %1$s</string>
     <string name="clone_disabled">已禁用 %1$s</string>
     <string name="clone_hidden_ok">已隐藏 %1$s（设置里可恢复）</string>
     <string name="hidden_title">已隐藏的应用（%1$d）</string>

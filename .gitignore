@@ -28,7 +28,16 @@ app/libs/*.aar
 app/libs/t/
 app/libs/tgen/
 
-# ⛔ 版权物（moto/一加 原版 APK、反编译产物、官方固件）——本地参考，绝不进库
+# ⛔ 版权物（厂商原版 APK、反编译产物、官方固件）——本地参考，绝不进库
 docs/reference/apk/
 docs/reference/decoded/
 docs/reference/rom/
+
+# 取证与版权物 —— 只留本地，公开仓不要
+docs/reference/
+docs/screenshots/moto-*
+docs/screenshots/mt-moto.png
+docs/魅族应用分身原理分析.md
+
+# 个人设备部署脚本（含内网地址与本机路径）
+tools/sync-apk.sh

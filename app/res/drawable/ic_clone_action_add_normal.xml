@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 照抄 myui 手机管家 res/drawable/ic_clone_action_add_normal.xml -->
+<!-- 图标/布局按应用分身界面风格绘制，矢量路径自持 -->
 <vector android:height="20dp" android:width="20dp"
     android:viewportWidth="20.0" android:viewportHeight="20.0"
     xmlns:android="http://schemas.android.com/apk/res/android">

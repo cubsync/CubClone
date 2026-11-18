@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
 import rikka.shizuku.Shizuku;
 
 /**
- * 应用分身主界面 —— 结构照 myui 手机管家的应用分身页：
+ * 应用分身主界面 —— 一个应用一张卡片：
  * 每个应用一张卡片，第一行是主身份那份 + 「创建分身」按钮，
  * 下面每行是一个分身（图标带角标、名字带序号、右侧改名/删除）。
  */
@@ -1530,8 +1530,8 @@ public class MainActivity extends Activity {
     /**
      * 给这个应用建分身。
      *
-     * 两条路：先按 myui 的方式新建一个 clone profile（moto 上最多 5 个）；
-     * 建不出来（红米/LOS 上 perParent=1，已经占满）就复用已有的分身空间，
+     * 两条路：先新建一个 clone profile（多数 ROM 允许 3~5 个）；
+     * 建不出来（有的 ROM perParent=1，已经占满）就复用已有的分身空间，
      * 把应用装进去 —— 一个空间装多个应用，这是 AOSP 允许的做法。
      */
     private interface NameCb { void onName(String name); }

@@ -1,4 +1,6 @@
-# CubClone
+<p align="center"><img src="docs/logo.png" width="132" alt="CubClone"></p>
+
+<h1 align="center">CubClone</h1>
 
 **CubClone** (分身空间) is a multi-instance app cloner for Android. It creates real, system-level clone profiles and runs independent copies of any app inside them — the same mechanism Android OEMs use for "App Twin / 应用分身", rebuilt as a single open-source app.
 

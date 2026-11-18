@@ -1,6 +1,6 @@
 /*
  * This file is auto-generated.  DO NOT MODIFY.
- * Using: D:\Dev\Android\Sdk\build-tools\35.0.0\aidl.exe -I D:\Dev\Workspaces\WorkBuddy\SelfDeviceCheck\moto-port\apk-src\libs\aidl -p D:\Dev\Android\Sdk\platforms\android-36\framework.aidl -o D:\Dev\Workspaces\WorkBuddy\SelfDeviceCheck\moto-port\apk-src\libs\gen D:\Dev\Workspaces\WorkBuddy\SelfDeviceCheck\moto-port\apk-src\libs\aidl\moe\shizuku\server\IShizukuService.aidl
+ * Generated from the matching .aidl with the Android SDK aidl tool.
  */
 package moe.shizuku.server;
 public interface IShizukuService extends android.os.IInterface

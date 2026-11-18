@@ -1,6 +1,6 @@
 /*
  * This file is auto-generated.  DO NOT MODIFY.
- * Using: D:\Dev\Android\Sdk\build-tools\35.0.0\aidl.exe -I D:\Dev\Workspaces\WorkBuddy\SelfDeviceCheck\moto-port\apk-src\libs\t -o D:\Dev\Workspaces\WorkBuddy\SelfDeviceCheck\moto-port\apk-src\libs\tgen D:\Dev\Workspaces\WorkBuddy\SelfDeviceCheck\moto-port\apk-src\libs\t\test\ITest.aidl
+ * Generated from the matching .aidl with the Android SDK aidl tool.
  */
 package test;
 public interface ITest extends android.os.IInterface

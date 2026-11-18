@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.cubsync.cubclone"
     android:versionCode="103"
-    android:versionName="6.52">
+    android:versionName="0.6.52">
 
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="33" />
 

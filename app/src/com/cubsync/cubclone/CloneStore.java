@@ -83,7 +83,8 @@ public final class CloneStore {
     /** 从设备上重新读一遍标记；顺带把「我们装过分身、但还没标记」的老空间补上标记 */
     static void loadMarks() {
         final String out = Shell.exec(
-                "for u in $(cmd user list --all -v 2>/dev/null | grep 'type=profile[.]CLONE'"
+                "for u in $(cmd user list --all -v 2>/dev/null"
+                + " | grep -E 'type=(profile[.]CLONE|full[.]SECONDARY)'"
                 + " | sed -n 's/^[0-9]*: id=\\([0-9]*\\),.*/\\1/p'); do "
                 + "echo \"CSPACE $u\"; "
                 + "m=$(settings get --user $u secure " + OWNED + " 2>/dev/null); "
@@ -161,9 +162,14 @@ public final class CloneStore {
     private static final String SCAN =
             "RM=\" $(dumpsys user 2>/dev/null"
             + " | sed -n 's/.*UserInfo{\\([0-9]*\\):.*<removing>.*/\\1/p' | tr '\\n' ' ') \"; "
-            + "cmd user list --all -v 2>/dev/null | grep 'type=profile[.]CLONE' | while read -r ln; do "
+            + "cmd user list --all -v 2>/dev/null"
+            + " | grep -E 'type=(profile[.]CLONE|full[.]SECONDARY)' | while read -r ln; do "
             + "u=$(echo \"$ln\" | sed -n 's/^[0-9]*: id=\\([0-9]*\\),.*/\\1/p'); "
             + "case \"$RM\" in *\" $u \"*) continue;; esac; "
+            // 普通用户（full.SECONDARY）只有带我们归属标记的才算空间：
+            // 系统里自己建的「访客/第二用户」不能被当成分身显示
+            + "case \"$ln\" in *type=profile[.]CLONE*) ;; "
+            + "*) case \" $OURS \" in *\" $u \"*) ;; *) continue;; esac;; esac; "
             + "case \" $OURS \" in *\" $u \"*) echo \"SPACE $u\"; t=ICO;; "
             + "*) echo \"FSPACE $u\"; t=EXT;; esac; "
             + "pm list packages -e --user $u | sed \"s/^package:/PKG $u /\"; "
@@ -304,12 +310,22 @@ public final class CloneStore {
         sp.edit().putStringSet("hidden_sys", s).apply();
     }
 
+    /**
+     * `cmd user list --all -v` 的一行是否属于空间类型。
+     * 正常机型是 clone profile；内核带 sdcardfs 的机型上 clone 共享存储挂不上
+     * （vold 在 Android/data 的 lookup 被 MediaProvider 的 FUSE 拒掉），
+     * CubClone 会降级建成 full.SECONDARY（独立存储），同样算空间。
+     */
+    static boolean isSpaceType(String line) {
+        return line.contains("type=profile.CLONE") || line.contains("type=full.SECONDARY");
+    }
+
     /** 空间名（建空间时给的名字），用来给老空间猜「这个空间本来是给谁建的」 */
     static String spaceName(int uid) {
         String out = Shell.exec("cmd user list --all -v 2>/dev/null");
         for (String line : out.split("\n")) {
             String t = line.trim();
-            if (!t.contains("type=profile.CLONE") || !t.contains("id=" + uid + ",")) continue;
+            if (!isSpaceType(t) || !t.contains("id=" + uid + ",")) continue;
             int i = t.indexOf("name=");
             int j = i < 0 ? -1 : t.indexOf(',', i);
             if (j > i) return t.substring(i + 5, j).trim();
@@ -575,7 +591,7 @@ public final class CloneStore {
         String out = Shell.exec("cmd user list --all -v 2>/dev/null");
         for (String line : out.split("\n")) {
             String t = line.trim();
-            if (t.contains("type=profile.CLONE") && t.contains("id=" + uid + ",")) {
+            if (isSpaceType(t) && t.contains("id=" + uid + ",")) {
                 return t.contains("INITIALIZED");
             }
         }
@@ -617,223 +633,6 @@ public final class CloneStore {
         return null;
     }
 
-    /**
-     * 现场生成修复模块 zip 到公共 Download 目录（走 MediaStore，不需要存储权限）。
-     * 返回给用户看的相对路径（Download/xxx.zip）；失败返回 null。
-     *
-     * 模块只做一件事：开机时把 external_storage.sdcardfs.enabled 报成 false，
-     * 让 vold 用纯 FUSE 挂载（与没有 sdcardfs 驱动的机型同一条分支）。
-     * 没这个驱动的机型模块等于空跑，不会改动任何东西。
-     */
-    static String writeFixModule(Context c) {
-        try {
-            byte[] zip = buildFixModuleZip();
-            if (zip == null) return null;
-            String name = "cubclone-sdcardfs-fix.zip";
-            android.net.Uri col = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI;
-            // 先删掉 Download 里已有的同名/带 (1) 后缀的旧副本，否则 MediaStore 会另存成 (1).zip
-            try {
-                c.getContentResolver().delete(col,
-                        "(" + android.provider.MediaStore.MediaColumns.DISPLAY_NAME + "=?"
-                        + " OR " + android.provider.MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ?)"
-                        + " AND " + android.provider.MediaStore.MediaColumns.RELATIVE_PATH + "=?",
-                        new String[]{name, "cubclone-sdcardfs-fix (%).zip",
-                                android.os.Environment.DIRECTORY_DOWNLOADS + "/"});
-            } catch (Throwable ignored) {
-            }
-            android.content.ContentValues v = new android.content.ContentValues();
-            v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
-            v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/zip");
-            v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
-                    android.os.Environment.DIRECTORY_DOWNLOADS);
-            android.net.Uri uri = c.getContentResolver().insert(col, v);
-            if (uri == null) return null;
-            java.io.OutputStream os = c.getContentResolver().openOutputStream(uri);
-            if (os == null) return null;
-            try {
-                os.write(zip);
-                os.flush();
-            } finally {
-                try { os.close(); } catch (Throwable ignored) { }
-            }
-            return android.os.Environment.DIRECTORY_DOWNLOADS + "/" + name;
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    private static final String MODULE_PROP =
-            "id=cubclone_sdcardfs_fix\n"
-            + "name=CubClone 分身存储修复\n"
-            + "version=1.1\n"
-            + "versionCode=2\n"
-            + "author=cubsync\n"
-            + "description=内核仍编着 sdcardfs 的机型上，让 vold 改用纯 FUSE 挂载（与没有该驱动的"
-            + "机型完全一致），恢复分身的外部存储。不符合特征的机型不做任何改动。\n";
-
-    /** 管理器若在更早阶段应用 system.prop，这里也备一份，双保险（内容与脚本一致） */
-    private static final String MODULE_SYSPROP =
-            "external_storage.sdcardfs.enabled=false\n";
-
-    /**
-     * 模块脚本（post-fs-data.sh 与 service.sh 内容相同，两个阶段各跑一次，幂等）。
-     *
-     * 做的事只有一行：把 external_storage.sdcardfs.enabled 报成 false。
-     * LineageOS vold 的判据是
-     *   IsSdcardfsUsed() = IsFilesystemSupported("sdcardfs") && GetBoolProperty(kExternalStorageSdcardfs, true)
-     * 于是有驱动的机型（esp）也就走到了「没有驱动」机型（8A）完全相同的纯 FUSE 分支：
-     * 分身卷的 Android/data bind 不再撞 sdcardfs 致命 EACCES，Android/data 变成 f2fs 直挂。
-     * ⛔ 不能改成设 ro.fuse.bpf.is_running：那会让 vold 走 fuse-bpf 分支，
-     * 而这台内核不支持 → 所有 emulated 卷都挂不上（11-18 实测，已回滚）。
-     *
-     * 判据只说一条：内核还编着 sdcardfs 驱动（/proc/filesystems，静态、全程可见）。
-     * ⛔ 绝不能拿 /mnt/runtime 或 Android/data 的挂载当判据 —— 那是**解锁之后**才挂上的，
-     * 脚本执行时必然一条都没有，条件永远不成立（11-18 踩过：模块装了、重启了、一直是空脚本）。
-     */
-    private static final String MODULE_SCRIPT =
-            "#!/system/bin/sh\n"
-            + "# CubClone 分身存储修复：有 sdcardfs 驱动的机型上，让 vold 改用纯 FUSE\n"
-            + "MODDIR=${0%/*}\n"
-            + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
-            + "STAGE=${0##*/}\n"
-            + "NOW=$(date '+%Y-%m-%d %H:%M:%S')\n"
-            + "\n"
-            + "# resetprop 路径探测：APatch / KernelSU / Magisk 各有各的位置\n"
-            + "RP=\"\"\n"
-            + "for p in /data/adb/ap/bin/resetprop /data/adb/ksu/bin/resetprop /data/adb/magisk/resetprop; do\n"
-            + "  if [ -x \"$p\" ]; then RP=\"$p\"; break; fi\n"
-            + "done\n"
-            + "[ -z \"$RP\" ] && RP=$(command -v resetprop 2>/dev/null)\n"
-            + "if [ -z \"$RP\" ]; then\n"
-            + "  echo \"$NOW [$STAGE] 跳过：找不到 resetprop，本机未做任何改动\" >> \"$LOG\"\n"
-            + "  exit 0\n"
-            + "fi\n"
-            + "\n"
-            + "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then\n"
-            + "  echo \"$NOW [$STAGE] 本机内核没有 sdcardfs 驱动，跳过，未做任何改动\" >> \"$LOG\"\n"
-            + "  exit 0\n"
-            + "fi\n"
-            + "\n"
-            + "BEFORE=$(\"$RP\" external_storage.sdcardfs.enabled 2>/dev/null)\n"
-            + "\"$RP\" external_storage.sdcardfs.enabled false\n"
-            + "AFTER=$(\"$RP\" external_storage.sdcardfs.enabled 2>/dev/null)\n"
-            + "echo \"$NOW [$STAGE] external_storage.sdcardfs.enabled: [$BEFORE] -> [$AFTER]\" >> \"$LOG\"\n";
-
-    /** 卸载时只写一行日志：属性只改内存，重启即回原值，不需要额外恢复动作 */
-    private static final String MODULE_UNINSTALL =
-            "#!/system/bin/sh\n"
-            + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
-            + "echo \"$(date '+%Y-%m-%d %H:%M:%S') [uninstall] 模块已卸载；"
-            + "external_storage.sdcardfs.enabled 只改内存，重启后自动恢复原值\" >> \"$LOG\"\n";
-
-    /**
-     * 安装阶段（customize.sh）就把特征检查做完：不符条件直接 abort，模块根本不落地。
-     * 刷的时候人在管理器里、手机已解锁，环境信息最全。
-     */
-    private static final String MODULE_CUSTOMIZE =
-            "# 刷入前检查：本机不符合条件就直接拒绝安装，不在设备上留下任何东西\n"
-            + "if ! command -v ui_print >/dev/null 2>&1; then ui_print() { echo \"$1\"; }; fi\n"
-            + "if ! command -v abort >/dev/null 2>&1; then abort() { echo \"! $1\"; exit 1; }; fi\n"
-            + "\n"
-            + "ui_print \"- CubClone 分身存储修复：检查本机特征\"\n"
-            + "\n"
-            + "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then\n"
-            + "  abort \"! 本机内核没有 sdcardfs 驱动，分身存储不走这条路径，不需要此模块（未做任何改动）\"\n"
-            + "fi\n"
-            + "\n"
-            + "# 已有 sdcardfs 挂载 0 条，可能是已经修好或旧版模块还在 —— 都不构成拒装理由\n"
-            + "# （模块被删掉重启就失效，重装是正当需求）\n"
-            + "if [ \"$(mount 2>/dev/null | grep -c sdcardfs)\" = \"0\" ]; then\n"
-            + "  ui_print \"- 提示：当前没有 sdcardfs 挂载，可能已经修好；安装后重启仍按内核驱动判断\"\n"
-            + "fi\n"
-            + "\n"
-            + "ui_print \"- 本机符合修复条件，开始安装\"\n"
-            + "if command -v set_perm >/dev/null 2>&1; then\n"
-            + "  set_perm $MODPATH/post-fs-data.sh 0 0 0755\n"
-            + "  set_perm $MODPATH/service.sh 0 0 0755\n"
-            + "  set_perm $MODPATH/uninstall.sh 0 0 0755\n"
-            + "else\n"
-            + "  chmod 0755 $MODPATH/post-fs-data.sh $MODPATH/service.sh $MODPATH/uninstall.sh\n"
-            + "fi\n"
-            + "ui_print \"- 安装完成，重启手机后生效\"\n";
-
-    private static final String MODULE_README =
-            "CubClone 分身存储修复模块\n"
-            + "\n"
-            + "它做什么：把 external_storage.sdcardfs.enabled 报成 false，让 vold 用纯 FUSE 挂载\n"
-            + "外部存储（和内核没有 sdcardfs 驱动的机型走同一条分支），从而恢复分身的外部存储\n"
-            + "（相册、文件选择器、依赖外部存储的输入法）。物理数据一个字节不动，只换视图层。\n"
-            + "\n"
-            + "刷入时就会检查（不满足直接拒绝安装，不在设备上留下任何东西）：\n"
-            + "  内核没有 sdcardfs 驱动 -> 拒绝：本机不需要\n"
-            + "开机后脚本还会按同样的一条特征再判一次，不符合就跳过。\n"
-            + "\n"
-            + "用法：在 APatch / KernelSU / Magisk 里刷入本 zip，重启手机，解锁后检查。\n"
-            + "  执行记录在 /data/adb/cubclone-sdcardfs-fix.log，可看到属性前后值。\n"
-            + "\n"
-            + "卸载：管理器里移除模块，重启即恢复原状（属性只改内存，不落盘）。\n"
-            + "\n"
-            + "副作用：外部存储不再走 sdcardfs 直通层，大文件读写可能略慢；功能不受影响。\n";
-
-    private static byte[] buildFixModuleZip() {
-        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-        java.util.zip.ZipOutputStream zos = null;
-        try {
-            zos = new java.util.zip.ZipOutputStream(bos);
-            putEntry(zos, "module.prop", MODULE_PROP);
-            putEntry(zos, "system.prop", MODULE_SYSPROP);
-            putEntry(zos, "post-fs-data.sh", MODULE_SCRIPT);
-            putEntry(zos, "service.sh", MODULE_SCRIPT);
-            putEntry(zos, "uninstall.sh", MODULE_UNINSTALL);
-            putEntry(zos, "customize.sh", MODULE_CUSTOMIZE);
-            putEntry(zos, "README.txt", MODULE_README);
-            zos.finish();
-            zos.close();
-            zos = null;
-            return bos.toByteArray();
-        } catch (Throwable t) {
-            return null;
-        } finally {
-            if (zos != null) try { zos.close(); } catch (Throwable ignored) { }
-        }
-    }
-
-    private static void putEntry(java.util.zip.ZipOutputStream zos, String name, String body)
-            throws java.io.IOException {
-        zos.putNextEntry(new java.util.zip.ZipEntry(name));
-        zos.write(body.getBytes("UTF-8"));
-        zos.closeEntry();
-    }
-
-    /** 读小文件（/proc 下的都是几十 KB 以内），失败返回空串 */
-    private static String readSmall(String path) {
-        java.io.FileInputStream in = null;
-        try {
-            in = new java.io.FileInputStream(path);
-            byte[] buf = new byte[64 * 1024];
-            int n = in.read(buf);
-            return n <= 0 ? "" : new String(buf, 0, n);
-        } catch (Throwable t) {
-            return "";
-        } finally {
-            if (in != null) try { in.close(); } catch (Throwable ignored) { }
-        }
-    }
-
-    /** getprop（普通应用也能执行，不需要 Shizuku） */
-    private static String getProp(String key) {
-        try {
-            Process p = Runtime.getRuntime().exec(new String[]{"getprop", key});
-            java.io.BufferedReader r = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(p.getInputStream()));
-            String s = r.readLine();
-            r.close();
-            p.waitFor();
-            return s == null ? "" : s.trim();
-        } catch (Throwable t) {
-            return "";
-        }
-    }
 
     /** ensureIme 的结果：imes＝分身里真正可用的输入法个数，def＝写进去的默认输入法 */
     static final class ImeResult {
@@ -1112,7 +911,7 @@ public final class CloneStore {
                 }
                 continue;
             }
-            if (!t.contains("type=profile.CLONE")) continue;
+            if (!isSpaceType(t)) continue;
             int i = t.indexOf("id=");
             if (i < 0) continue;
             int j = i + 3, k = j;

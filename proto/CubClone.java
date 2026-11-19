@@ -4,7 +4,10 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * CubClone —— 应用分身 CLI（AOSP clone profile）
@@ -20,6 +23,13 @@ import java.util.List;
 public final class CubClone {
 
     private static final String CLONE = "android.os.usertype.profile.CLONE";
+    /**
+     * 降级档：内核还编着 sdcardfs 的 ROM 上，vold 给 clone 用户 bind
+     * `/mnt/user/<uid>/emulated/<uid>/Android/data` 时，MediaProvider 的 FUSE
+     * 对非属主（含 root）的 lookup 直接回 EACCES，整卷回滚成 unmountable。
+     * 这类机型改用普通用户（独立存储）：功能可用，代价是不与主空间共享相册/文件。
+     */
+    private static final String PRIVATE = "android.os.usertype.full.SECONDARY";
     private static UserManager UM;
     private static Object PM;   // PackageManager
 
@@ -59,8 +69,11 @@ public final class CubClone {
         int n = 0;
         for (Object u : all) {
             String type = userTypeOf(u);
-            boolean hit = CLONE.equals(type);
-            say((hit ? "CLONE " : "      ") + u
+            String uid = uidOf(u);
+            boolean hit = CLONE.equals(type)
+                    || (PRIVATE.equals(type)
+                    && sh("settings", "get", "--user", uid, "secure", "cubclone_owned").trim().startsWith("1"));
+            say((hit ? "SPACE " : "      ") + u
                     + "   type=" + (type == null || type.isEmpty() ? "?" : type));
             if (hit) n++;
         }
@@ -78,15 +91,105 @@ public final class CubClone {
         }
     }
 
+    /**
+     * 建空间。正常机型建 clone profile（与主空间共享存储、相册同一份）；
+     * 建完立刻验存储，挂不上就删号重建为独立存储用户（见 {@link #PRIVATE}）。
+     * 输出末行形如 `MODE=shared` / `MODE=private`，调用方据此提示用户。
+     */
     private static void create(String name) throws Exception {
+        // 已有 clone 空间但一个都没挂上 ⇒ 这台机器的共享存储本来就走不通，别浪费一次建删
+        if (cloneStorageBroken()) {
+            say("NOTE 已有 clone 空间存储均未挂载，直接建独立存储空间");
+            createPrivate(name);
+            return;
+        }
         Method m = pick("createProfileForUser");
         if (m == null) { say("ERR no createProfileForUser"); return; }
         Object r = (m.getParameterTypes().length == 4)
                 ? m.invoke(UM, name, CLONE, 0, 0)
                 : m.invoke(UM, name, CLONE, 0, 0, null);
         if (r == null) { say("ERR create returned null (上限或权限)"); return; }
+        int uid = parseUid(uidOf(r));
+        if (uid <= 0) { say("ERR 建号返回的 uid 解析失败: " + r); return; }
         say("CREATED " + r);
-        say("初始化请执行: start " + uidOf(r));
+        sh("am", "start-user", String.valueOf(uid));
+        if (waitStorage(uid, 15000)) { say("MODE=shared"); return; }
+        // 共享存储挂不上：vold 在 Android/data 的 lookup 被 MediaProvider 的 FUSE 拒掉（EACCES）
+        say("FALLBACK clone 共享存储不可用，改用独立存储（不与主空间共享相册/文件）");
+        // stop-user 对刚启动的 clone 用户常回 -4（related users can't be stopped），
+        // 但 remove-user 照样能删；删是异步的，必须等它真的从用户表里消失再建新号。
+        sh("am", "stop-user", String.valueOf(uid));
+        sh("pm", "remove-user", String.valueOf(uid));
+        waitUserGone(uid, 15000);
+        createPrivate(name);
+    }
+
+    /** 建独立存储用户：功能与分身一致（独立应用数据、可 pm uninstall --user），只是不共享主空间文件 */
+    private static void createPrivate(String name) throws Exception {
+        String out = sh("pm", "create-user", "--profileOf", "0", "--user-type", PRIVATE, name);
+        say("CREATE " + out.trim());
+        Matcher mm = Pattern.compile("id (\\d+)").matcher(out);
+        if (!mm.find()) { say("ERR 建独立存储空间失败: " + out.trim()); return; }
+        int uid = Integer.parseInt(mm.group(1));
+        sh("am", "start-user", String.valueOf(uid));
+        if (waitStorage(uid, 12000)) {
+            say("CREATED {" + uid + ":" + name + ":0}");
+            say("MODE=private");
+        } else {
+            say("ERR 独立存储空间也未挂载（uid=" + uid + "）");
+        }
+    }
+
+    /** 已存在的 clone 空间是否全部没挂上存储（有 running 的 clone 空间且一个 mounted 都没有） */
+    private static boolean cloneStorageBroken() {
+        List<String> clones = new ArrayList<String>();
+        for (String line : sh("cmd", "user", "list", "--all", "-v").split("\n")) {
+            if (!line.contains("type=profile.CLONE")) continue;
+            if (!line.contains("running")) continue;
+            Matcher m = Pattern.compile("id=(\\d+)").matcher(line);
+            if (m.find()) clones.add(m.group(1));
+        }
+        if (clones.isEmpty()) return false;
+        String vols = sh("sm", "list-volumes");
+        for (String c : clones) {
+            if (vols.contains("emulated;" + c + " mounted")) return false;
+        }
+        return true;
+    }
+
+    /** 等某个用户的 emulated 卷变成 mounted；超时返回 false */
+    private static boolean waitStorage(int uid, long ms) {
+        long end = System.currentTimeMillis() + ms;
+        while (System.currentTimeMillis() < end) {
+            if (sh("sm", "list-volumes").contains("emulated;" + uid + " mounted")) return true;
+            try {
+                Thread.sleep(400);
+            } catch (InterruptedException e) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /** 等某个用户从用户表里消失（remove-user 是异步的，删一半时建新号会撞上限） */
+    private static void waitUserGone(int uid, long ms) {
+        long end = System.currentTimeMillis() + ms;
+        while (System.currentTimeMillis() < end) {
+            if (!sh("cmd", "user", "list", "--all", "-v").contains("id=" + uid + ",")) return;
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                return;
+            }
+        }
+    }
+
+    private static int parseUid(String s) {
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (Throwable t) {
+            return -1;
+        }
     }
 
     /** 从 UserInfo{uid:name:flags} 里抠出 uid */
@@ -98,24 +201,29 @@ public final class CubClone {
     }
 
     /**
-     * 删除分身。⚠ 这里是唯一会真正抹数据的地方，两道闸：
+     * 删除分身。⚠ 这里是唯一会真正抹数据的地方，三道闸：
      * ① uid < 10 一律拒绝（机主是 0，绝不能碰）
-     * ② 必须是 CLONE 类型的用户，避免把机主或普通用户当替身删掉
+     * ② 类型必须是 clone profile 或 CubClone 建的独立存储用户
+     * ③ 必须带 cubclone_owned 归属标记（只有我们建的空间才写），
+     *    避免把用户自己建的普通用户 / ROM 自带分身当替身删掉
      */
     private static void remove(int uid) throws Exception {
         if (uid < 10) { say("REFUSED: uid<10 是机主/系统用户，不删"); return; }
-        if (!isClone(uid)) { say("REFUSED: " + uid + " 不是 clone 分身，不删"); return; }
+        if (!isOurs(uid)) { say("REFUSED: " + uid + " 不是 CubClone 建的空间，不删"); return; }
         Object r = invoke(UM, "removeUser", new Class[]{int.class}, uid);
         say("removeUser(" + uid + ") -> " + r);
     }
 
-    private static boolean isClone(int uid) throws Exception {
+    private static boolean isOurs(int uid) throws Exception {
         Method gu = UserManager.class.getMethod("getUsers");
         List<?> all = (List<?>) gu.invoke(UM);
         String want = String.valueOf(uid);
         for (Object u : all) {
             if (!want.equals(uidOf(u))) continue;
-            return CLONE.equals(userTypeOf(u));
+            String type = String.valueOf(userTypeOf(u));
+            if (!CLONE.equals(type) && !PRIVATE.equals(type)) return false;
+            String owned = sh("settings", "get", "--user", want, "secure", "cubclone_owned").trim();
+            return owned.startsWith("1");
         }
         return false;
     }

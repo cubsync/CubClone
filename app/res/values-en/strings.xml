@@ -53,6 +53,7 @@
     <string name="space_global">Global limit %1$d</string>
     <string name="space_empty">No clone space yet. Tap "New space" or create a clone from the main screen.</string>
     <string name="space_created">Space created: uid %1$d</string>
+    <string name="space_created_private">Space created: uid %1$d (shared storage unavailable on this device; using separate storage, gallery/files not shared with owner)</string>
     <string name="space_limit_reached">Clone space limit reached (%1$s), delete one first</string>
     <string name="space_deleted">Deleted space uid %1$d</string>
     <string name="delete_space_msg">Deleting space uid %1$d removes all cloned apps and their data inside it. The copy in the primary space is not affected.\n\nOwner data is never touched.</string>
@@ -204,11 +205,8 @@ Owner data is not touched.</string>
     <string name="ime_pick_some">%1$d of %2$d</string>
     <string name="ime_pick_empty">No input method in main space</string>
     <string name="ime_pick_saved">Saved, applies to new spaces</string>
-    <string name="space_storage_broken">Space storage unavailable: this kernel still uses sdcardfs, so the gallery stays empty and some input methods crash. Tap to generate the fix module</string>
-    <string name="space_storage_fixed">Space storage fixed (the kernel sdcardfs conflict is bypassed) · Tap to regenerate the fix module</string>
-    <string name="fix_module_title">Generate fix module</string>
-    <string name="fix_module_msg">A zip will be written to the Download folder (an existing one is overwritten). Flash it in APatch or Magisk: the module checks this device during installation and refuses to install on devices without the sdcardfs conflict, leaving nothing behind. Reboot to restore space storage.\n\nSide effect: external storage no longer uses the sdcardfs passthrough layer, so large file transfers may be slightly slower.</string>
-    <string name="fix_module_working">Generating…</string>
-    <string name="fix_module_done">Generated: %1$s</string>
-    <string name="fix_module_failed">Failed to generate</string>
+    <string name="space_storage_broken">Shared space storage unavailable: this kernel\u0027s sdcardfs is incompatible with clone spaces. New spaces will use separate storage</string>
+    <string name="space_storage_fixed">Shared space storage available</string>
+    <string name="storage_note_title">About space storage</string>
+    <string name="storage_note_msg">This kernel ships sdcardfs, so the system cannot mount shared storage for clone spaces (the gallery stays empty and some input methods crash).\n\nNew spaces automatically use separate storage: apps install and run as usual, but gallery, downloads and other files are kept apart from the owner space.\n\nNo disable-sdcardfs fix module is offered: testing showed it breaks cross-app writes under Android/media in the owner space (Alipay Sesame, MT Manager can no longer write), which is not an acceptable trade-off.\n\nExisting spaces are not affected.</string>
 </resources>

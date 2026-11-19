@@ -107,7 +107,7 @@ public class SettingsActivity extends Activity {
         spaceLimit = findViewById(R.id.space_limit);
         spaceWarn = findViewById(R.id.space_storage_warn);
         spaceWarn.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { makeFixModule(); }
+            public void onClick(View v) { showStorageNote(); }
         });
         renderStorageWarn();
         aboutVer = findViewById(R.id.about_ver);
@@ -1312,36 +1312,24 @@ public class SettingsActivity extends Activity {
     }
 
     /** 「已隐藏的应用」入口行：右侧显示已隐藏数量（用户应用 + 系统应用，无则空），点击进管理 */
-    /** 生成修复模块到 Download（模块内容由应用现场拼，不单独维护模块包） */
-    private void makeFixModule() {
+    /**
+     * 共享存储不可用时的说明。
+     * 不再提供「关 sdcardfs」模块：实测（2026-11-19）关掉后主空间
+     * `Android/media/<包>` 的跨包写会被 FUSE 按目录属主拒掉，代价不可接受。
+     * 现在的做法是新建空间时自动降级为独立存储（见 proto/CubClone.java）。
+     */
+    private void showStorageNote() {
         new AlertDialog.Builder(this)
-                .setTitle(R.string.fix_module_title)
-                .setMessage(R.string.fix_module_msg)
-                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int which) {
-                        toast(getString(R.string.fix_module_working));
-                        new Thread(new Runnable() {
-                            public void run() {
-                                final String p = CloneStore.writeFixModule(SettingsActivity.this);
-                                runOnUiThread(new Runnable() {
-                                    public void run() {
-                                        toast(p == null
-                                                ? getString(R.string.fix_module_failed)
-                                                : getString(R.string.fix_module_done, p));
-                                    }
-                                });
-                            }
-                        }).start();
-                    }
-                })
-                .setNegativeButton(android.R.string.cancel, null)
+                .setTitle(R.string.storage_note_title)
+                .setMessage(R.string.storage_note_msg)
+                .setPositiveButton(android.R.string.ok, null)
                 .show();
     }
 
     /**
-     * 分身存储状态提示，三态：
-     * 需修＝红字（点击生成模块）；已修＝绿字（点击也能重新生成，方便用户重刷）；
-     * 本机不需要＝一个字都不显示。
+     * 分身存储状态提示：
+     * 共享存储不可用（内核 sdcardfs 与分身不兼容）＝红字，点开看说明（新建空间会自动用独立存储）；
+     * 共享存储可用＝绿字；本机内核没有 sdcardfs 驱动＝不显示。
      */
     private void renderStorageWarn() {
         if (spaceWarn == null) return;
@@ -1778,7 +1766,9 @@ public class SettingsActivity extends Activity {
                             String.valueOf(readTypeInt("mMaxAllowedPerParent")))
                             : getString(R.string.create_failed, out.trim());
                 } else {
-                    msg = getString(R.string.space_created, uid);
+                    msg = out.contains("MODE=private")
+                            ? getString(R.string.space_created_private, uid)
+                            : getString(R.string.space_created, uid);
                     CloneStore.dirty = true;   // 空间变了重扫空间状态；主身份清单没变，不重载
                 }
                 runOnUiThread(new Runnable() {

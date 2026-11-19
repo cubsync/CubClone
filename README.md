@@ -38,9 +38,9 @@ Elevation comes from **Shizuku** or **root**, whichever the device has.
 - Per-clone rename, enable/disable, hide, shortcut pinning, per-profile cleanup
 - Input-method picker per new profile, with automatic repair of the profile's IME
   settings
-- Built-in check for the kernel `sdcardfs` conflict that leaves clone storage
-  unmountable on some ROMs; the app detects it and generates a one-tap fix module
-  for the device's root manager
+- Handles the kernel `sdcardfs` conflict that leaves clone storage unmountable
+  on some ROMs: new spaces automatically fall back to separate storage (apps
+  still install and run; gallery and files are not shared with the owner space)
 - Theme: system / light / dark / pure black (AMOLED); English and Chinese UI
 
 ## Build

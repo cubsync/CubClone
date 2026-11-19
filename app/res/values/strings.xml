@@ -53,6 +53,7 @@
     <string name="space_global">全局上限 %1$d 个</string>
     <string name="space_empty">还没有分身空间，点「新建空间」，或在主界面给应用创建分身</string>
     <string name="space_created">空间已创建：uid %1$d</string>
+    <string name="space_created_private">空间已创建：uid %1$d（本机不支持共享存储，已用独立存储，相册/文件不与主空间共用）</string>
     <string name="space_limit_reached">分身空间已到上限（%1$s 个），先删一个再建</string>
     <string name="space_deleted">已删除空间 uid %1$d</string>
     <string name="delete_space_msg">删除空间 uid %1$d 会把里面所有分身应用的数据一起清掉，主空间那份不受影响。\n\n机主数据不会被触碰。</string>
@@ -204,11 +205,8 @@
     <string name="ime_pick_some">%1$d/%2$d 个</string>
     <string name="ime_pick_empty">主空间没有输入法</string>
     <string name="ime_pick_saved">已保存，新建空间时生效</string>
-    <string name="space_storage_broken">分身存储不可用：本机内核仍在用 sdcardfs，相册会空白、部分输入法会崩。点这里生成修复模块</string>
-    <string name="space_storage_fixed">分身存储已修复（内核 sdcardfs 冲突已绕过）· 点这里可重新生成修复模块</string>
-    <string name="fix_module_title">生成修复模块</string>
-    <string name="fix_module_msg">会生成一个 zip 到 Download 目录（同名文件直接覆盖）。用 APatch 或 Magisk 刷入：模块在刷入时先检查本机，内核没有 sdcardfs 的机型会被直接拒绝、不留任何东西。刷好重启，分身存储即恢复。\n\n副作用：外部存储不再走 sdcardfs 直通层，大文件读写可能略慢。</string>
-    <string name="fix_module_working">正在生成…</string>
-    <string name="fix_module_done">已生成：%1$s</string>
-    <string name="fix_module_failed">生成失败</string>
+    <string name="space_storage_broken">分身共享存储不可用：本机内核的 sdcardfs 与分身不兼容，新建空间会自动使用独立存储</string>
+    <string name="space_storage_fixed">分身共享存储可用</string>
+    <string name="storage_note_title">关于分身存储</string>
+    <string name="storage_note_msg">本机内核带着 sdcardfs，系统的分身空间挂不上共享存储（相册会空白、部分输入法会崩）。\n\n新建空间时会自动改用独立存储：应用照常安装运行，但相册、下载等文件与主空间各存一份，互不相通。\n\n不提供「关掉 sdcardfs」的修复模块：实测那会让主空间 Android/media 下的跨应用写入失效（支付宝芝麻粒、MT 管理器都写不进去），代价不可接受。\n\n已存在的分身空间不受影响。</string>
 </resources>

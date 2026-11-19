@@ -62,6 +62,14 @@ Shizuku API classes are vendored under `app/libs/` from the official Shizuku
 releases; the matching AIDL sources are in `app/libs/aidl`.
 
 
+## Versioning
+
+Semantic Versioning, still in `0.x`. The version lives only in `versionName` inside
+`AndroidManifest.xml`; `versionCode` is derived from it at build time.
+Releases use a short-lived `release/<version>` branch (GitFlow's release branch):
+merged into `main`, tagged `v<version>`, then deleted. Pre-releases carry a
+`-beta.N` / `-rc.N` suffix. Full rules: [docs/VERSIONING.md](docs/VERSIONING.md).
+
 ## Status
 
 Actively developed and used daily by the author. Verified on Android 13–16 devices,

@@ -75,7 +75,8 @@ public final class AppData {
             // 复制成功后按设置把这份备份压成包；压缩失败不影响复制结果，
             // 目录形态的备份照样能恢复
             if (algo != null && algo.length() > 0 && !"none".equals(algo)) {
-                Backup nb = new Backup(dstUser, pkg, bakPath, 0, "", "");
+                // ts 必须带上：压缩包的命名要 <包>-<空间>-<ts>，少了 ts 列表就认不出来
+                Backup nb = new Backup(dstUser, pkg, bakPath, 0, ts, "");
                 String zr = compress(nb, algo, level);
                 android.util.Log.i("CubClone", "auto compress " + bakPath + " -> " + zr);
                 if (zr.startsWith("OK ")) {
@@ -467,7 +468,9 @@ public final class AppData {
         String name = b.path.substring(b.path.lastIndexOf('/') + 1);
         String want = (algo == null || algo.length() == 0) ? "none" : algo;
         int lv = level > 0 ? level : defaultLevel(want);
-        String base = rootDir + "/" + b.pkg + "-" + b.user + "-" + b.ts;
+        String bts = (b.ts != null && b.ts.length() > 0) ? b.ts
+                : new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
+        String base = rootDir + "/" + b.pkg + "-" + b.user + "-" + bts;
 
         StringBuilder s = new StringBuilder();
         s.append("SRC='").append(b.path).append("'\n");

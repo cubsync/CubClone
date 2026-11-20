@@ -1911,7 +1911,7 @@ public class MainActivity extends Activity {
 
     /**
      * 「克隆数据到…」：源就是长按的那一行（主空间 = 0，分身 = 该空间的用户 id），
-     * 目标用其余装了该应用的空间 —— 主空间、别的分身都列出来，方向不设限。
+     * 目标用其余装了该应用的空间，可以多选。
      */
     private void pickCopyTarget(final Group g, final int srcUser) {
         final java.util.List<Integer> targets = new java.util.ArrayList<Integer>();
@@ -1935,36 +1935,57 @@ public class MainActivity extends Activity {
             }
             items[i] = nm;
         }
+        final boolean[] checked = new boolean[items.length];
         new AlertDialog.Builder(this)
                 .setTitle(R.string.copy_data_pick_title)
-                .setItems(items, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int which) {
-                        confirmCopyData(g, srcUser, targets.get(which).intValue());
+                .setMultiChoiceItems(items, checked, new DialogInterface.OnMultiChoiceClickListener() {
+                    public void onClick(DialogInterface d, int which, boolean isChecked) {
+                        checked[which] = isChecked;
                     }
                 })
-                .show();
-    }
-
-    private void confirmCopyData(final Group g, final int srcUser, final int dstUser) {
-        if (!Shell.ready()) {
-            toast(getString(R.string.copy_data_no_root));
-            return;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.copy_data_title)
-                .setMessage(getString(R.string.copy_data_msg,
-                        spaceLabel(srcUser), g.label, spaceLabel(dstUser)))
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int w) {
-                        runCopyData(g, srcUser, dstUser);
+                        java.util.List<Integer> sel = new java.util.ArrayList<Integer>();
+                        for (int i = 0; i < checked.length; i++) {
+                            if (checked[i]) sel.add(targets.get(i));
+                        }
+                        if (sel.isEmpty()) {
+                            toast(getString(R.string.copy_data_pick_empty));
+                            return;
+                        }
+                        confirmCopyData(g, srcUser, sel);
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
-    private void runCopyData(final Group g, final int srcUser, final int dstUser) {
-        say(getString(R.string.copy_data_working, g.label));
+    private void confirmCopyData(final Group g, final int srcUser,
+                                 final java.util.List<Integer> dstUsers) {
+        if (!Shell.ready()) {
+            toast(getString(R.string.copy_data_no_root));
+            return;
+        }
+        StringBuilder names = new StringBuilder();
+        for (Integer u : dstUsers) {
+            if (names.length() > 0) names.append("\u3001");
+            names.append(spaceLabel(u.intValue()));
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.copy_data_title)
+                .setMessage(getString(R.string.copy_data_msg,
+                        spaceLabel(srcUser), g.label, names.toString()))
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        runCopyData(g, srcUser, dstUsers);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void runCopyData(final Group g, final int srcUser,
+                             final java.util.List<Integer> dstUsers) {
         // 锁屏会驱逐 CE 密钥，复制中途锁屏就写不进去；复制期间保持屏幕常亮
         getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         new Thread(new Runnable() {
@@ -1983,29 +2004,51 @@ public class MainActivity extends Activity {
                     });
                     return;
                 }
-                final String r = AppData.copy(srcUser, dstUser, g.pkg, appId);
-                // 数据到位后再补授权，这样用户打开目标应用不用再点一遍
-                final int np = r.startsWith("OK")
-                        ? AppData.syncPermissions(srcUser, dstUser, g.pkg) : 0;
+                int ok = 0, bad = 0, perms = 0;
+                String lastBak = "", firstErr = "";
+                for (int i = 0; i < dstUsers.size(); i++) {
+                    final int dst = dstUsers.get(i).intValue();
+                    final int no = i + 1;
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            say(getString(R.string.copy_data_working_multi, g.label,
+                                    spaceLabel(dst), Integer.valueOf(no),
+                                    Integer.valueOf(dstUsers.size())));
+                        }
+                    });
+                    String r = AppData.copy(srcUser, dst, g.pkg, appId);
+                    if (r.startsWith("OK")) {
+                        ok++;
+                        lastBak = r.length() > 3 ? r.substring(3).trim() : "";
+                        // 数据到位后再补授权，用户打开目标应用就不用再点一遍
+                        perms += AppData.syncPermissions(srcUser, dst, g.pkg);
+                    } else {
+                        bad++;
+                        if (firstErr.length() == 0) firstErr = r;
+                    }
+                }
+                final int fok = ok, fbad = bad, fp = perms;
+                final String fbak = lastBak, ferr = firstErr;
                 runOnUiThread(new Runnable() {
                     public void run() {
                         getWindow().clearFlags(
                                 android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                        if (r.startsWith("OK")) {
-                            String bak = r.length() > 3 ? r.substring(3).trim() : "";
-                            say(getString(R.string.copy_data_ok, bak));
-                            if (np > 0) toast(getString(R.string.copy_data_perms, np));
-                        } else if (r.startsWith("ERR_LOCKED")) {
+                        if (fok == 1 && fbad == 0) {
+                            say(getString(R.string.copy_data_ok, fbak));
+                        } else if (fok > 0) {
+                            say(getString(R.string.copy_data_done_multi,
+                                    Integer.valueOf(fok), Integer.valueOf(fbad)));
+                        } else if (ferr.startsWith("ERR_LOCKED")) {
                             toast(getString(R.string.copy_data_locked));
                         } else {
-                            toast(getString(R.string.copy_data_fail, r));
+                            toast(getString(R.string.copy_data_fail, ferr));
                         }
+                        if (fp > 0) toast(getString(R.string.copy_data_perms, Integer.valueOf(fp)));
                     }
                 });
             }
         }).start();
     }
-
 
     /** 隐藏一个启用中的分身：只从列表里藏起来（应用保持启用、能跑），设置里可恢复 */
     private void hideClone(final Clone c, final Group g) {

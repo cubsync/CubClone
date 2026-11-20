@@ -164,6 +164,9 @@ Owner data is not touched.</string>
     <string name="copy_data_pick_title">Copy into which space</string>
     <string name="copy_data_msg">Copy the app data of %2$s from %1$s into %3$s.\n\n· Both apps are stopped first\n· The destination\'s existing data is renamed to a backup next to it (.cubclone-bak-timestamp)\n· Only private app data — gallery, downloads and other shared files are not copied\n· Owner and SELinux context are fixed afterwards, otherwise the app will not start\n\nContinue?</string>
     <string name="copy_data_working">Copying data of %1$s…</string>
+    <string name="copy_data_pick_empty">No space selected</string>
+    <string name="copy_data_working_multi">Copying %1$s to %2$s (%3$d/%4$d)…</string>
+    <string name="copy_data_done_multi">Copied to %1$d spaces, %2$d failed</string>
     <string name="copy_data_perms">Synced %1$d permissions</string>
     <string name="copy_data_ok">Data copied. Old data kept at %1$s</string>
     <string name="copy_data_fail">Copy failed: %1$s</string>

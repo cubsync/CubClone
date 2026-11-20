@@ -645,8 +645,10 @@ public final class CloneStore {
     // 判据只用「/proc/filesystems 里有 sdcardfs」：静态、BFU 也可见。
     // ⛔ 不能拿 mount 或卷状态当判据 —— 脚本跑在 post-fs-data，那时还没解锁，一条挂载都没有。
 
+    // id 沿用 1.1 的 cubclone_sdcardfs_fix：模块 id 是升级主键，换 id 会变成两个模块同时生效，
+    // 2.0 就覆盖不到已经刷过 1.x 的机器。name 才是给人看的。
     private static final String MODULE_PROP =
-            "id=cubclone_shared_storage\n"
+            "id=cubclone_sdcardfs_fix\n"
             + "name=CubClone 分身共享存储\n"
             + "version=2.0\n"
             + "versionCode=3\n"

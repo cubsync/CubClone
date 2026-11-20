@@ -223,6 +223,7 @@ Every time you clone app data, the destination\u2019s existing data is kept here
     <string name="backup_filter_all">All spaces</string>
     <string name="backup_filter_title">Filter by space</string>
     <string name="backup_filter_reset">Clear filter</string>
+    <string name="backup_filter_count">%1$d spaces</string>
     <string name="backup_no_match">No matching backups</string>
     <string name="backup_sel_title">Select backups</string>
     <string name="backup_sel_count">%1$d selected</string>

@@ -57,7 +57,7 @@ public class BackupActivity extends Activity {
     private final java.util.HashMap<String, String> labelCache = new java.util.HashMap<String, String>();
 
     private String query = "";
-    private int filterUser = -1;
+    private final Set<Integer> filterUsers = new HashSet<Integer>();
     private boolean multi = false;
     private boolean rootOk = false;
 
@@ -330,7 +330,7 @@ public class BackupActivity extends Activity {
     private void refilter() {
         shown.clear();
         for (AppData.Backup b : all) {
-            if (filterUser >= 0 && b.user != filterUser) continue;
+            if (!filterUsers.isEmpty() && !filterUsers.contains(Integer.valueOf(b.user))) continue;
             if (query.length() > 0) {
                 String label = labelOf(b.pkg).toLowerCase();
                 if (!label.contains(query) && !b.pkg.toLowerCase().contains(query)) continue;
@@ -358,34 +358,51 @@ public class BackupActivity extends Activity {
 
     private void renderFilter() {
         StringBuilder sb = new StringBuilder();
-        if (filterUser < 0) sb.append(getString(R.string.backup_filter_all));
-        else sb.append(CloneStore.nameOf(this, filterUser));
+        if (filterUsers.isEmpty()) {
+            sb.append(getString(R.string.backup_filter_all));
+        } else if (filterUsers.size() == 1) {
+            for (Integer u : filterUsers) sb.append(CloneStore.nameOf(this, u.intValue()));
+        } else {
+            sb.append(getString(R.string.backup_filter_count, filterUsers.size()));
+        }
         if (query.length() > 0) sb.append(" • ").append(query);
         sb.append(" ▾");
         filter.setText(sb.toString());
     }
 
+    /** 空间筛选支持多选：勾几个就看几个空间，全不勾等于全部 */
     private void pickFilter() {
         final List<Integer> users = new ArrayList<Integer>();
         for (AppData.Backup b : all) {
             if (!users.contains(Integer.valueOf(b.user))) users.add(Integer.valueOf(b.user));
         }
-        String[] items = new String[users.size() + 1];
-        items[0] = getString(R.string.backup_filter_all);
+        if (users.isEmpty()) return;
+        String[] items = new String[users.size()];
+        final boolean[] checked = new boolean[users.size()];
         for (int i = 0; i < users.size(); i++) {
-            items[i + 1] = CloneStore.nameOf(this, users.get(i).intValue());
+            int u = users.get(i).intValue();
+            items[i] = CloneStore.nameOf(this, u);
+            checked[i] = filterUsers.contains(Integer.valueOf(u));
         }
         new AlertDialog.Builder(this)
                 .setTitle(R.string.backup_filter_title)
-                .setItems(items, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int which) {
-                        filterUser = which == 0 ? -1 : users.get(which - 1).intValue();
+                .setMultiChoiceItems(items, checked, new DialogInterface.OnMultiChoiceClickListener() {
+                    public void onClick(DialogInterface d, int which, boolean isChecked) {
+                        checked[which] = isChecked;
+                    }
+                })
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        filterUsers.clear();
+                        for (int i = 0; i < checked.length; i++) {
+                            if (checked[i]) filterUsers.add(users.get(i));
+                        }
                         refilter();
                     }
                 })
                 .setNeutralButton(R.string.backup_filter_reset, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int w) {
-                        filterUser = -1;
+                        filterUsers.clear();
                         search.setText("");
                         query = "";
                         refilter();
@@ -595,7 +612,14 @@ public class BackupActivity extends Activity {
             sub.append(CloneStore.nameOf(BackupActivity.this, b.user))
                     .append(" · ").append(b.ts)
                     .append(" · ").append(b.sizeText());
-            if (b.packed()) sub.append(" · ").append(getString(R.string.backup_packed));
+            if (b.packed()) {
+                sub.append(" · ").append(getString(R.string.backup_packed));
+                String an = b.algo;
+                if ("zst".equals(an)) an = "zstd";
+                else if ("gz".equals(an)) an = "gzip";
+                else if ("bz2".equals(an)) an = "bzip2";
+                if (an.length() > 0) sub.append(" ").append(an);
+            }
             t2.setText(sub.toString());
             t2.setTextColor(sec);
             more.setTextColor(sec);

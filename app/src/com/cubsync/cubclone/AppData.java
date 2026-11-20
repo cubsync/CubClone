@@ -265,12 +265,21 @@ public final class AppData {
         return 0;
     }
 
-    /** 某算法可选的级别 */
+    /** 某算法的最高级别（zstd 1–22，20 以上要 --ultra；gzip/bzip2 1–9） */
+    public static int maxLevel(String algo) {
+        if ("zst".equals(algo)) return 22;
+        if ("gz".equals(algo)) return 9;
+        if ("bz2".equals(algo)) return 9;
+        return 0;
+    }
+
+    /** 某算法可选的级别（保留给需要枚举的场景，UI 用 maxLevel + SeekBar） */
     public static int[] levelsOf(String algo) {
-        if ("zst".equals(algo)) return new int[]{1, 3, 9, 19};
-        if ("gz".equals(algo)) return new int[]{1, 6, 9};
-        if ("bz2".equals(algo)) return new int[]{1, 9};
-        return new int[0];
+        int max = maxLevel(algo);
+        if (max <= 0) return new int[0];
+        int[] r = new int[max];
+        for (int i = 0; i < max; i++) r[i] = i + 1;
+        return r;
     }
 
     /**
@@ -305,8 +314,11 @@ public final class AppData {
         s.append("  rm -f \"$O\"; return 1\n");
         s.append("}\n");
         if ("zst".equals(algo)) {
-            s.append("command -v zstd >/dev/null 2>&1 && pack \"zstd -").append(lv)
-                    .append(" -q -c\" \"$SRC.tar.zst\" zst Z && exit 0\n");
+            // 20 级以上 zstd 要求 --ultra，否则直接拒绝
+            String zcmd = lv > 19 ? ("zstd --ultra -" + lv + " -q -c")
+                    : ("zstd -" + lv + " -q -c");
+            s.append("command -v zstd >/dev/null 2>&1 && pack \"").append(zcmd)
+                    .append("\" \"$SRC.tar.zst\" zst Z && exit 0\n");
         }
         if ("zst".equals(algo) || "gz".equals(algo)) {
             s.append("pack \"gzip -").append("zst".equals(algo) ? String.valueOf(defaultLevel("gz")) : String.valueOf(lv))
@@ -401,6 +413,25 @@ public final class AppData {
     public static String delete(Backup b) {
         String out = Shell.execScript("rm -rf '" + b.path + "' 2>&1 && echo CUB_OK\n");
         return out.contains("CUB_OK") ? "OK" : "ERR " + out.trim();
+    }
+
+    /** 批量删除，逐条 rm 并统计成功数 */
+    public static String deleteMany(java.util.List<Backup> list) {
+        StringBuilder s = new StringBuilder();
+        s.append("N=0\n");
+        for (Backup b : list) {
+            s.append("[ -e '").append(b.path).append("' ] && rm -rf '").append(b.path)
+                    .append("' && N=$((N+1))\n");
+        }
+        s.append("echo CUB_OK $N\n");
+        String out = Shell.execScript(s.toString());
+        int i = out.indexOf("CUB_OK ");
+        if (i >= 0) return "OK " + out.substring(i + 7).trim();
+        for (String line : out.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("ERR")) return t;
+        }
+        return "ERR " + out.trim();
     }
 
     /**

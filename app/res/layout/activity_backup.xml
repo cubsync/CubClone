@@ -12,7 +12,7 @@
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:paddingStart="6dp"
-        android:paddingEnd="16dp">
+        android:paddingEnd="12dp">
 
         <ImageButton
             android:id="@+id/bk_back"
@@ -33,7 +33,82 @@
             android:text="@string/sec_backup"
             android:textSize="20sp"
             android:textStyle="bold" />
+
+        <!-- 多选模式才显示 -->
+        <TextView
+            android:id="@+id/bk_sel_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/bk_sel_all"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="@string/backup_sel_all"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/bk_sel_more"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="8dp"
+            android:paddingEnd="4dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="⋮"
+            android:textSize="20sp"
+            android:visibility="gone" />
     </LinearLayout>
+
+    <!-- 搜索 + 空间筛选 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="6dp">
+
+        <EditText
+            android:id="@+id/bk_search"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="@string/backup_search_hint"
+            android:inputType="text"
+            android:maxLines="1"
+            android:textSize="14sp"
+            android:background="@null" />
+
+        <TextView
+            android:id="@+id/bk_filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp"
+            android:paddingEnd="4dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/bk_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp"
+        android:lineSpacingExtra="3dp"
+        android:textSize="12sp"
+        android:visibility="gone" />
 
     <LinearLayout
         android:id="@+id/bk_algo_row"
@@ -43,7 +118,7 @@
         android:gravity="center_vertical"
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
-        android:paddingTop="10dp"
+        android:paddingTop="8dp"
         android:paddingBottom="10dp"
         android:background="?android:attr/selectableItemBackground">
 

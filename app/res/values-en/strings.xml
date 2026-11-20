@@ -205,8 +205,11 @@ Owner data is not touched.</string>
     <string name="ime_pick_some">%1$d of %2$d</string>
     <string name="ime_pick_empty">No input method in main space</string>
     <string name="ime_pick_saved">Saved, applies to new spaces</string>
-    <string name="space_storage_broken">Shared space storage unavailable: this kernel\u0027s sdcardfs is incompatible with clone spaces. New spaces will use separate storage</string>
-    <string name="space_storage_fixed">Shared space storage available</string>
-    <string name="storage_note_title">About space storage</string>
-    <string name="storage_note_msg">This kernel ships sdcardfs, so the system cannot mount shared storage for clone spaces (the gallery stays empty and some input methods crash).\n\nNew spaces automatically use separate storage: apps install and run as usual, but gallery, downloads and other files are kept apart from the owner space.\n\nNo disable-sdcardfs fix module is offered: testing showed it breaks cross-app writes under Android/media in the owner space (Alipay Sesame, MT Manager can no longer write), which is not an acceptable trade-off.\n\nExisting spaces are not affected.</string>
+    <string name="space_storage_broken">Shared space storage unavailable: this kernel\u0027s sdcardfs is incompatible with clone spaces, so the gallery stays empty. Tap to generate the fix module</string>
+    <string name="space_storage_fixed">Shared space storage available · Tap to regenerate the fix module</string>
+    <string name="fix_module_title">Generate fix module</string>
+    <string name="fix_module_msg">A zip named cubclone-shared-storage.zip will be written to the Download folder (an existing one is overwritten). Flash it in APatch / KernelSU / Magisk and reboot.\n\nThe module does two things:\n1. Switches external storage to pure FUSE mounting — with sdcardfs in the kernel a clone volume cannot be mounted at all, which is the root cause;\n2. Migrates the owner of directories under Android/media that were created in the sdcardfs era — without it, cross-app writes in the owner space break (Alipay Sesame and MT Manager can no longer write).\n\nDevices whose kernel has no sdcardfs are rejected at install time and nothing is left behind.\n\nNote: ROM OTA updates usually require re-flashing the module.</string>
+    <string name="fix_module_working">Generating…</string>
+    <string name="fix_module_done">Generated: %1$s</string>
+    <string name="fix_module_failed">Failed to generate</string>
 </resources>

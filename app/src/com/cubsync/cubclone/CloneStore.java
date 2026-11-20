@@ -633,6 +633,216 @@ public final class CloneStore {
         return null;
     }
 
+    // ---------------- 「生成修复模块」 ----------------
+    // 模块做两件事：
+    // ① 让 vold / MediaProvider 不再走 sdcardfs 分支（纯 FUSE）。内核带 sdcardfs 时，
+    //    vold 给 clone 用户 bind Android/data 会先 UnmountTree(target)，而 target 在 FUSE
+    //    视图里被 MediaProvider 按「不该由我管」直接回 EACCES —— 整卷回滚成 unmountable。
+    //    关掉后 clone 卷正常挂上，且与主空间共用同一份存储（相册是同一份文件）。
+    // ② 把 /data/media/0/Android/media/<包> 从 sdcardfs 形态（media_rw:<扩展组> 2775）
+    //    迁成 FUSE 形态（<包uid>:media_rw）。不迁的话切成 FUSE 后 root 和别的应用都写不进去
+    //    （实测支付宝芝麻粒保存不了配置、MT 管理器删不掉目录）。
+    // 判据只用「/proc/filesystems 里有 sdcardfs」：静态、BFU 也可见。
+    // ⛔ 不能拿 mount 或卷状态当判据 —— 脚本跑在 post-fs-data，那时还没解锁，一条挂载都没有。
+
+    private static final String MODULE_PROP =
+            "id=cubclone_shared_storage\n"
+            + "name=CubClone 分身共享存储\n"
+            + "version=2.0\n"
+            + "versionCode=3\n"
+            + "author=cubsync\n"
+            + "description=内核带 sdcardfs 的机型上，让 vold/MediaProvider 走纯 FUSE，"
+            + "恢复分身空间与主空间共用的存储（相册、文件同一份）。安装后会把 Android/media "
+            + "下 sdcardfs 时代建的目录属主迁移成 FUSE 形态，避免主空间跨应用写入失效。"
+            + "仅适用于内核带 sdcardfs 的设备；不含该驱动的机型会被拒绝安装。\n";
+
+    /** 管理器若在更早阶段应用 system.prop，这里也备一份，双保险（内容与脚本一致） */
+    private static final String MODULE_SYSPROP =
+            "external_storage.sdcardfs.enabled=false\n";
+
+    /**
+     * post-fs-data.sh：只做属性（必须在 vold 启动前），顺带尝试一次属主迁移。
+     * resetprop 路径按 APatch → KernelSU → Magisk 依次探测。
+     */
+    private static final String MODULE_PFD =
+            "#!/system/bin/sh\n"
+            + "# CubClone 分身共享存储：让 vold 走纯 FUSE（clone 卷才挂得上）\n"
+            + "LOG=/data/adb/cubclone-shared-storage.log\n"
+            + "NOW=$(date '+%F %T')\n"
+            + "say() { echo \"$NOW [pfd] $*\" >> \"$LOG\"; }\n"
+            + "\n"
+            + "RP=\"\"\n"
+            + "for p in /data/adb/ap/bin/resetprop /data/adb/ksu/bin/resetprop /data/adb/magisk/resetprop; do\n"
+            + "  if [ -x \"$p\" ]; then RP=\"$p\"; break; fi\n"
+            + "done\n"
+            + "[ -z \"$RP\" ] && RP=$(command -v resetprop 2>/dev/null)\n"
+            + "if [ -z \"$RP\" ]; then say '跳过：找不到 resetprop，未做任何改动'; exit 0; fi\n"
+            + "\n"
+            + "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then\n"
+            + "  say '本机内核没有 sdcardfs 驱动，跳过，未做任何改动'; exit 0\n"
+            + "fi\n"
+            + "\n"
+            + "BEFORE=$(\"$RP\" external_storage.sdcardfs.enabled 2>/dev/null)\n"
+            + "\"$RP\" external_storage.sdcardfs.enabled false\n"
+            + "AFTER=$(\"$RP\" external_storage.sdcardfs.enabled 2>/dev/null)\n"
+            + "say \"external_storage.sdcardfs.enabled: [$BEFORE] -> [$AFTER]\"\n";
+
+    /**
+     * service.sh：late_start 阶段跑属主迁移（post-fs-data 时 /data/media/0 往往还没就绪，
+     * 实测会直接 skip）。等目录出现最多 30 秒，然后逐包 chown，幂等。
+     */
+    private static final String MODULE_SVC =
+            "#!/system/bin/sh\n"
+            + "# CubClone 分身共享存储：把 sdcardfs 时代建的 Android/media/<包> 迁成 FUSE 形态\n"
+            + "LOG=/data/adb/cubclone-shared-storage.log\n"
+            + "NOW=$(date '+%F %T')\n"
+            + "say() { echo \"$NOW [svc] $*\" >> \"$LOG\"; }\n"
+            + "\n"
+            + "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then exit 0; fi\n"
+            + "\n"
+            + "BASE=/data/media/0/Android/media\n"
+            + "PKGLIST=/data/system/packages.list\n"
+            + "i=0\n"
+            + "while [ ! -d \"$BASE\" ] && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done\n"
+            + "if [ ! -d \"$BASE\" ]; then say \"skip: $BASE 30 秒内没出现\"; exit 0; fi\n"
+            + "if [ ! -f \"$PKGLIST\" ]; then say \"skip: $PKGLIST 不存在\"; exit 0; fi\n"
+            + "\n"
+            + "n=0\n"
+            + "for d in \"$BASE\"/*; do\n"
+            + "  [ -d \"$d\" ] || continue\n"
+            + "  pkg=${d##*/}\n"
+            + "  uid=$(awk -v p=\"$pkg\" '$1==p{print $2; exit}' \"$PKGLIST\" 2>/dev/null)\n"
+            + "  [ -n \"$uid\" ] || { say \"skip $pkg (not installed)\"; continue; }\n"
+            + "  cur=$(stat -c %u \"$d\" 2>/dev/null)\n"
+            + "  [ \"$cur\" = \"$uid\" ] && continue\n"
+            + "  chown -R \"$uid:media_rw\" \"$d\" 2>/dev/null && n=$((n+1)) && say \"chown $pkg $cur -> $uid\"\n"
+            + "done\n"
+            + "say \"migrate done, changed=$n\"\n";
+
+    /** 卸载只记一行：属性只改内存，重启回原值；属主不回滚（迁回 sdcardfs 形态反而会坏） */
+    private static final String MODULE_UNINSTALL =
+            "#!/system/bin/sh\n"
+            + "LOG=/data/adb/cubclone-shared-storage.log\n"
+            + "echo \"$(date '+%F %T') [uninstall] 模块已卸载；"
+            + "external_storage.sdcardfs.enabled 只改内存，重启后自动恢复原值\" >> \"$LOG\"\n";
+
+    /** 安装阶段把特征检查做完：不符条件直接 abort，模块不落地 */
+    private static final String MODULE_CUSTOMIZE =
+            "# 刷入前检查：本机不符合条件就直接拒绝安装，不在设备上留下任何东西\n"
+            + "if ! command -v ui_print >/dev/null 2>&1; then ui_print() { echo \"$1\"; }; fi\n"
+            + "if ! command -v abort >/dev/null 2>&1; then abort() { echo \"! $1\"; exit 1; }; fi\n"
+            + "\n"
+            + "ui_print \"- CubClone 分身共享存储：检查本机特征\"\n"
+            + "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then\n"
+            + "  abort \"! 本机内核没有 sdcardfs 驱动，分身存储不走这条路径，不需要此模块（未做任何改动）\"\n"
+            + "fi\n"
+            + "ui_print \"- 内核带 sdcardfs，继续安装\"\n"
+            + "if command -v set_perm >/dev/null 2>&1; then\n"
+            + "  set_perm $MODPATH/post-fs-data.sh 0 0 0755\n"
+            + "  set_perm $MODPATH/service.sh 0 0 0755\n"
+            + "  set_perm $MODPATH/uninstall.sh 0 0 0755\n"
+            + "else\n"
+            + "  chmod 0755 $MODPATH/post-fs-data.sh $MODPATH/service.sh $MODPATH/uninstall.sh\n"
+            + "fi\n"
+            + "ui_print \"- 安装完成，重启后分身空间与主空间共用同一份存储\"\n";
+
+    private static final String MODULE_README =
+            "CubClone 分身共享存储模块\n"
+            + "\n"
+            + "它做什么：\n"
+            + "  1. 把 external_storage.sdcardfs.enabled 报成 false，让 vold / MediaProvider 走纯 FUSE\n"
+            + "     （和内核没有 sdcardfs 驱动的机型同一条分支）。内核带 sdcardfs 时，vold 给分身\n"
+            + "     用户 bind Android/data 会被 FUSE 拒掉（EACCES），整卷回滚成 unmountable，\n"
+            + "     分身里根本没有外部存储。关掉后分身卷正常挂上，且与主空间共用同一份文件。\n"
+            + "  2. 把 /data/media/0/Android/media/<包> 的属主从 sdcardfs 形态\n"
+            + "     （media_rw:<包扩展组> 2775）迁成 FUSE 形态（<包uid>:media_rw）。\n"
+            + "     不迁的话，切成 FUSE 后 root 和别的应用都写不进这些老目录\n"
+            + "     （实测支付宝芝麻粒保存不了配置、MT 管理器删不掉目录）。\n"
+            + "\n"
+            + "刷入时就会检查，不满足直接拒绝安装、不留任何东西：\n"
+            + "  内核没有 sdcardfs 驱动 -> 拒绝：本机不需要\n"
+            + "\n"
+            + "用法：在 APatch / KernelSU / Magisk 里刷入本 zip，重启手机，解锁后检查。\n"
+            + "  执行记录在 /data/adb/cubclone-shared-storage.log，能看到属性前后值与逐包 chown 记录。\n"
+            + "\n"
+            + "卸载：管理器里移除模块，重启即恢复原状（属性只改内存，不落盘）。\n"
+            + "  属主不会回滚：迁回 sdcardfs 形态在纯 FUSE 下反而写不进去。\n"
+            + "\n"
+            + "注意：ROM OTA 升级后 Magisk/APatch 模块通常要重刷一次。\n";
+
+    /**
+     * 现场生成模块 zip 到公共 Download 目录（走 MediaStore，不需要存储权限）。
+     * 返回给用户看的相对路径（Download/xxx.zip）；失败返回 null。
+     */
+    static String writeFixModule(Context c) {
+        try {
+            byte[] zip = buildFixModuleZip();
+            if (zip == null) return null;
+            String name = "cubclone-shared-storage.zip";
+            android.net.Uri col = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+            // 先删掉 Download 里已有的同名/带 (1) 后缀的旧副本，否则 MediaStore 会另存成 (1).zip
+            try {
+                c.getContentResolver().delete(col,
+                        "(" + android.provider.MediaStore.MediaColumns.DISPLAY_NAME + "=?"
+                        + " OR " + android.provider.MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ?)"
+                        + " AND " + android.provider.MediaStore.MediaColumns.RELATIVE_PATH + "=?",
+                        new String[]{name, "cubclone-shared-storage (%).zip",
+                                android.os.Environment.DIRECTORY_DOWNLOADS + "/"});
+            } catch (Throwable ignored) {
+            }
+            android.content.ContentValues v = new android.content.ContentValues();
+            v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
+            v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/zip");
+            v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                    android.os.Environment.DIRECTORY_DOWNLOADS);
+            android.net.Uri uri = c.getContentResolver().insert(col, v);
+            if (uri == null) return null;
+            java.io.OutputStream os = c.getContentResolver().openOutputStream(uri);
+            if (os == null) return null;
+            try {
+                os.write(zip);
+                os.flush();
+            } finally {
+                try { os.close(); } catch (Throwable ignored) { }
+            }
+            return android.os.Environment.DIRECTORY_DOWNLOADS + "/" + name;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static byte[] buildFixModuleZip() {
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        java.util.zip.ZipOutputStream zos = null;
+        try {
+            zos = new java.util.zip.ZipOutputStream(bos);
+            putEntry(zos, "module.prop", MODULE_PROP);
+            putEntry(zos, "system.prop", MODULE_SYSPROP);
+            putEntry(zos, "post-fs-data.sh", MODULE_PFD);
+            putEntry(zos, "service.sh", MODULE_SVC);
+            putEntry(zos, "uninstall.sh", MODULE_UNINSTALL);
+            putEntry(zos, "customize.sh", MODULE_CUSTOMIZE);
+            putEntry(zos, "README.txt", MODULE_README);
+            zos.finish();
+            zos.close();
+            zos = null;
+            return bos.toByteArray();
+        } catch (Throwable t) {
+            return null;
+        } finally {
+            if (zos != null) try { zos.close(); } catch (Throwable ignored) { }
+        }
+    }
+
+    private static void putEntry(java.util.zip.ZipOutputStream zos, String name, String body)
+            throws java.io.IOException {
+        zos.putNextEntry(new java.util.zip.ZipEntry(name));
+        zos.write(body.getBytes("UTF-8"));
+        zos.closeEntry();
+    }
+
+
+
 
     /** ensureIme 的结果：imes＝分身里真正可用的输入法个数，def＝写进去的默认输入法 */
     static final class ImeResult {

@@ -107,7 +107,7 @@ public class SettingsActivity extends Activity {
         spaceLimit = findViewById(R.id.space_limit);
         spaceWarn = findViewById(R.id.space_storage_warn);
         spaceWarn.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { showStorageNote(); }
+            public void onClick(View v) { makeFixModule(); }
         });
         renderStorageWarn();
         aboutVer = findViewById(R.id.about_ver);
@@ -1312,17 +1312,29 @@ public class SettingsActivity extends Activity {
     }
 
     /** 「已隐藏的应用」入口行：右侧显示已隐藏数量（用户应用 + 系统应用，无则空），点击进管理 */
-    /**
-     * 共享存储不可用时的说明。
-     * 不再提供「关 sdcardfs」模块：实测（2026-11-19）关掉后主空间
-     * `Android/media/<包>` 的跨包写会被 FUSE 按目录属主拒掉，代价不可接受。
-     * 现在的做法是新建空间时自动降级为独立存储（见 proto/CubClone.java）。
-     */
-    private void showStorageNote() {
+    /** 生成修复模块到 Download（模块内容由应用现场拼，不单独维护模块包） */
+    private void makeFixModule() {
         new AlertDialog.Builder(this)
-                .setTitle(R.string.storage_note_title)
-                .setMessage(R.string.storage_note_msg)
-                .setPositiveButton(android.R.string.ok, null)
+                .setTitle(R.string.fix_module_title)
+                .setMessage(R.string.fix_module_msg)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        toast(getString(R.string.fix_module_working));
+                        new Thread(new Runnable() {
+                            public void run() {
+                                final String p = CloneStore.writeFixModule(SettingsActivity.this);
+                                runOnUiThread(new Runnable() {
+                                    public void run() {
+                                        toast(p == null
+                                                ? getString(R.string.fix_module_failed)
+                                                : getString(R.string.fix_module_done, p));
+                                    }
+                                });
+                            }
+                        }).start();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 

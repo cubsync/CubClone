@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 克隆前数据备份页。交互按常见备份工具的做法：
+ * 数据备份页（克隆时自动留的那份和长按「备份数据」建的都在这里）。交互按常见备份工具的做法：
  *   列表是页面主体；点一行或右侧 ⋮ 出操作；长按进多选；顶部搜索 + 空间筛选；
  *   没有 root 时页面顶部给出明确提示（备份在 /data/user 下，Shizuku 读不到）。
  */
@@ -146,14 +146,21 @@ public class BackupActivity extends Activity {
         new Thread(new Runnable() {
             public void run() {
                 final boolean ok = Shell.checkRoot();
-                // 首次进来先确认 zstd 真的能跑：本机那个二进制是坏的，
-                // 默认值挂在 zstd 上会让每次压缩都白试一次再降级
-                if (ok && !sp().contains("backup_algo")) {
-                    boolean zok = AppData.zstdUsable();
-                    sp().edit().putString("backup_algo", zok ? "zst" : "gz").apply();
+                // 每次打开都实测一遍可用的算法：换机器、系统升级、刷了别的 ROM 都会变，
+                // 存下来的选择可能已经不能用，这时按 zstd → gzip → bzip2 降级并告知
+                String fell = null;
+                if (ok) {
+                    java.util.List<String> usable = AppData.usableAlgos();
+                    String cur = currentAlgo();
+                    if (!usable.contains(cur)) {
+                        String fb = usable.isEmpty() ? "none" : usable.get(0);
+                        sp().edit().putString("backup_algo", fb).apply();
+                        fell = getString(R.string.backup_algo_auto, algoName(cur), algoName(fb));
+                    }
                 }
                 final List<AppData.Backup> r = ok ? AppData.listBackups()
                         : new ArrayList<AppData.Backup>();
+                final String fbMsg = fell;
                 runOnUiThread(new Runnable() {
                     public void run() {
                         rootOk = ok;
@@ -167,6 +174,7 @@ public class BackupActivity extends Activity {
                         all.clear();
                         all.addAll(r);
                         refilter();
+                        if (fbMsg != null) toast(fbMsg);
                     }
                 });
             }
@@ -230,13 +238,11 @@ public class BackupActivity extends Activity {
         return getString(R.string.backup_algo_none);
     }
 
+    /** 主界面只报实际用的算法和级别，不标「默认档」——那会被当成推荐值 */
     private String algoSummary() {
         String a = currentAlgo();
         if ("none".equals(a)) return algoName(a);
-        int lv = currentLevel(a);
-        return algoName(a) + " · " + (lv == AppData.defaultLevel(a)
-                ? getString(R.string.backup_level_def, lv)
-                : getString(R.string.backup_level_item, lv));
+        return algoName(a) + " · " + getString(R.string.backup_level_item, currentLevel(a));
     }
 
     private void renderAlgo() {
@@ -264,12 +270,6 @@ public class BackupActivity extends Activity {
                 .show();
     }
 
-    /** 滑到默认档时才显示「（默认）」，其它位置只报数值 */
-    private String levelText(int lv, int def) {
-        return lv == def ? getString(R.string.backup_level_def, lv)
-                : getString(R.string.backup_level_item, lv);
-    }
-
     /** 级别用 SeekBar + 实时数值，覆盖算法完整范围（zstd 1–22 / gzip 1–9 / bzip2 1–9） */
     private void pickLevel(final String algo) {
         final int max = AppData.maxLevel(algo);
@@ -278,9 +278,8 @@ public class BackupActivity extends Activity {
             return;
         }
         final int min = 1;
-        final int def = AppData.defaultLevel(algo);
         int cur = currentLevel(algo);
-        if (cur < min || cur > max) cur = def;
+        if (cur < min || cur > max) cur = AppData.defaultLevel(algo);
 
         float d = getResources().getDisplayMetrics().density;
         LinearLayout box = new LinearLayout(this);
@@ -290,7 +289,7 @@ public class BackupActivity extends Activity {
         final TextView value = new TextView(this);
         value.setTextSize(16);
         value.setTextColor(fg);
-        value.setText(levelText(cur, def));
+        value.setText(getString(R.string.backup_level_item, cur));
         box.addView(value);
 
         final SeekBar bar = new SeekBar(this);
@@ -312,7 +311,7 @@ public class BackupActivity extends Activity {
 
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
-                value.setText(levelText(progress + 1, def));
+                value.setText(getString(R.string.backup_level_item, progress + 1));
             }
 
             public void onStartTrackingTouch(SeekBar s) { }

@@ -1788,7 +1788,9 @@ public class MainActivity extends Activity {
             items.add(getString(R.string.menu_hide)); acts.add(5);
         }
         items.add(getString(R.string.menu_open)); acts.add(2);
-        items.add(getString(R.string.menu_copy_data)); acts.add(6);
+        // 需要 root 的入口按 Root 开关出现；只用 Shizuku 时这里什么都没有
+        if (Root.on(this, Root.CLONE)) { items.add(getString(R.string.menu_copy_data)); acts.add(6); }
+        if (Root.on(this, Root.BACKUP)) { items.add(getString(R.string.menu_backup_data)); acts.add(7); }
         if (!ro) { items.add(getString(R.string.menu_remove)); acts.add(3); }
         new android.app.AlertDialog.Builder(this)
                 .setTitle(g.label + suffixOf(c.uid, g.pkg, 0))
@@ -1801,6 +1803,7 @@ public class MainActivity extends Activity {
                                 else if (a == 5) hideClone(c, g);
                                 else if (a == 2) launch(c, g);
                                 else if (a == 6) pickCopyTarget(g, c.uid);
+                                else if (a == 7) backupData(g, c.uid);
                                 else confirmRemove(c, g);
                             }
                         })
@@ -1817,13 +1820,16 @@ public class MainActivity extends Activity {
         items.add(getString(R.string.menu_batch_create)); acts.add(1);
         items.add(getString(R.string.menu_create_in)); acts.add(2);
         items.add(getString(R.string.menu_app_info)); acts.add(3);
+        if (Root.on(this, Root.BACKUP)) { items.add(getString(R.string.menu_backup_data)); acts.add(6); }
         int cnt = 0;
         for (Clone c : g.clones) {
             if (c.foreign && !sp().getBoolean("manage_foreign", false)) continue;
             cnt++;
         }
         if (cnt > 0) {
-            items.add(getString(R.string.menu_copy_data)); acts.add(5);
+            if (Root.on(this, Root.CLONE)) {
+                items.add(getString(R.string.menu_copy_data)); acts.add(5);
+            }
             items.add(getString(R.string.menu_remove_all, cnt)); acts.add(4);
         }
         new AlertDialog.Builder(this)
@@ -1844,6 +1850,8 @@ public class MainActivity extends Activity {
                                     openAppInfo(g.pkg);
                                 } else if (a == 5) {
                                     pickCopyTarget(g, 0);
+                                } else if (a == 6) {
+                                    backupData(g, 0);
                                 } else {
                                     confirmRemoveAll(g);
                                 }
@@ -1958,6 +1966,51 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    /** 长按菜单的「备份数据」：只给这一个空间做备份，不涉及另一边 */
+    private void backupData(final Group g, final int user) {
+        if (!Root.on(this, Root.BACKUP)) {
+            toast(getString(R.string.root_need));
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.backup_now_title)
+                .setMessage(getString(R.string.backup_now_msg) + "\n\n"
+                        + spaceLabel(user) + " · " + g.label)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) { runBackup(g, user); }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void runBackup(final Group g, final int user) {
+        // 备份要逐字节复制整个数据目录，锁屏会驱逐 CE 密钥，期间保持常亮
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        toast(getString(R.string.backup_creating));
+        new Thread(new Runnable() {
+            public void run() {
+                String algo = sp().getString("backup_algo", "zst");
+                int lv = sp().getInt("backup_level_" + algo, AppData.defaultLevel(algo));
+                final String r = AppData.backupNow(user, g.pkg, algo, lv);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        getWindow().clearFlags(
+                                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                        if (r.startsWith("OK ")) {
+                            String rest = r.substring(3).trim();
+                            int bar = rest.lastIndexOf('|');
+                            String path = bar > 0 ? rest.substring(0, bar) : rest;
+                            toast(getString(R.string.backup_now_ok,
+                                    path.substring(path.lastIndexOf('/') + 1)));
+                        } else {
+                            toast(getString(R.string.backup_fail, r));
+                        }
+                    }
+                });
+            }
+        }).start();
     }
 
     private void confirmCopyData(final Group g, final int srcUser,

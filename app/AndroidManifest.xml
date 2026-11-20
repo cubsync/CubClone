@@ -37,7 +37,13 @@
         <activity
             android:name=".BackupActivity"
             android:exported="false"
-            android:label="克隆前数据备份" />
+            android:label="数据备份" />
+
+        <!-- Root 功能：总开关 + 单项开关 -->
+        <activity
+            android:name=".RootActivity"
+            android:exported="false"
+            android:label="Root 功能" />
 
         <!-- 桌面快捷方式落地页：收到 uid/pkg 后直接启动分身里的应用 -->
         <activity

@@ -257,12 +257,77 @@ public final class AppData {
         return r;
     }
 
-    /** zstd 能不能真的用：本机 /system_ext/bin/zstd 实测任何调用都报 Unsupported parameter */
-    public static boolean zstdUsable() {
+    /** 本机能真正跑起来的算法，按优先级从好到差；纯打包（none）永远可用 */
+    public static java.util.List<String> usableAlgos() {
+        java.util.List<String> r = new java.util.ArrayList<String>();
         String out = Shell.execScript(
-                "command -v zstd >/dev/null 2>&1 && echo hi | zstd -q -c >/dev/null 2>&1 "
-                        + "&& echo ZST_OK || echo ZST_BAD\n");
-        return out.contains("ZST_OK");
+                "command -v zstd >/dev/null 2>&1 && echo hi | zstd -q -c >/dev/null 2>&1 && echo ZST_OK\n"
+                        + "command -v gzip >/dev/null 2>&1 && echo hi | gzip -6 -c >/dev/null 2>&1 && echo GZ_OK\n"
+                        + "command -v bzip2 >/dev/null 2>&1 && echo hi | bzip2 -9 -c >/dev/null 2>&1 && echo BZ_OK\n");
+        if (out.contains("ZST_OK")) r.add("zst");
+        if (out.contains("GZ_OK")) r.add("gz");
+        if (out.contains("BZ_OK")) r.add("bz2");
+        r.add("none");
+        return r;
+    }
+
+    /** 从当前选择开始按 zstd → gzip → bzip2 → 纯打包 降级 */
+    private static java.util.List<String> degradeChain(String algo) {
+        String[] order = {"zst", "gz", "bz2", "none"};
+        java.util.List<String> r = new java.util.ArrayList<String>();
+        int at = 0;
+        for (int i = 0; i < order.length; i++) {
+            if (order[i].equals(algo)) at = i;
+        }
+        for (int i = at; i < order.length; i++) r.add(order[i]);
+        return r;
+    }
+
+    /**
+     * 给某个空间里的某个应用立刻做一份备份，不涉及另一个空间。
+     * 先停止该应用，避免把写到一半的数据库复制走；原数据一个字节都不动。
+     * @return "OK <备份路径>|<实际算法>" 或 "ERR_xxx"
+     */
+    public static String backupNow(int user, String pkg, String algo, int level) {
+        String src = "/data/user/" + user + "/" + pkg;
+        String ts = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
+        String bak = src + ".cubclone-bak-" + ts;
+
+        StringBuilder s = new StringBuilder();
+        s.append("am force-stop --user ").append(user).append(" '").append(pkg).append("'\n");
+        s.append("[ -d '").append(src).append("' ] || { echo ERR_NO_SRC; exit 1; }\n");
+        // 锁屏后 CE 密钥被驱逐，复制会写到一半失败
+        s.append("touch '").append(src).append("/.cc-probe' 2>/dev/null || { echo ERR_LOCKED; exit 1; }\n");
+        s.append("rm -f '").append(src).append("/.cc-probe'\n");
+        s.append("cp -a '").append(src).append("' '").append(bak).append("' || { ")
+                .append("rm -rf '").append(bak).append("'; echo ERR_CP; exit 1; }\n");
+        s.append("rm -rf '").append(bak).append("/cache' '").append(bak).append("/code_cache'\n");
+        s.append("echo CUB_OK '").append(bak).append("'\n");
+
+        android.util.Log.i("CubClone", "backupNow " + pkg + " user=" + user);
+        String out = Shell.execScript(s.toString());
+        int i = out.indexOf("CUB_OK ");
+        if (i < 0) {
+            for (String line : out.split("\n")) {
+                String t = line.trim();
+                if (t.startsWith("ERR")) return t;
+            }
+            return "ERR " + out.trim();
+        }
+        String bakPath = out.substring(i + 7).trim();
+        if (algo == null || algo.length() == 0 || "none".equals(algo)) {
+            return "OK " + bakPath + "|none";
+        }
+        Backup nb = new Backup(user, pkg, bakPath, 0, "", "");
+        String zr = compress(nb, algo, level);
+        if (zr.startsWith("OK ")) {
+            String rest = zr.substring(3).trim();
+            int bar = rest.lastIndexOf('|');
+            return "OK " + (bar > 0 ? rest.substring(0, bar) : rest)
+                    + "|" + (bar > 0 ? rest.substring(bar + 1) : algo);
+        }
+        // 压缩失败不影响备份本身，目录形态照样能恢复
+        return "OK " + bakPath + "|";
     }
 
     /** 各算法的默认级别（与各自官方默认一致） */
@@ -294,7 +359,8 @@ public final class AppData {
      * 把目录形态的备份打包，可指定级别。
      * 用 `tar -cf - | <压缩器> -<级别>` 而不是 tar 的 -z/-Z/-j：
      * toybox tar 的选项不接受级别参数，管道才能真正给到压缩器。
-     * 失败按 zstd → gzip → 纯 tar 降级（本机 zstd 二进制实测不可用）。
+     * 失败按 zstd → gzip → bzip2 → 纯打包 逐级降级（本机 zstd 二进制实测不可用）。
+     * 用户选的级别只用在用户选的那个算法上，降级后的算法用各自默认档。
      * 打包并校验通过后才删原目录；任何一步失败都保留原样。
      * @return "OK <包路径> <实际算法>" 或 "ERR_xxx"
      */
@@ -321,21 +387,24 @@ public final class AppData {
         s.append("  fi\n");
         s.append("  rm -f \"$O\"; return 1\n");
         s.append("}\n");
-        if ("zst".equals(algo)) {
-            // 20 级以上 zstd 要求 --ultra，否则直接拒绝
-            String zcmd = lv > 19 ? ("zstd --ultra -" + lv + " -q -c")
-                    : ("zstd -" + lv + " -q -c");
-            s.append("command -v zstd >/dev/null 2>&1 && pack \"").append(zcmd)
-                    .append("\" \"$SRC.tar.zst\" zst Z && exit 0\n");
+        for (String a : degradeChain(algo)) {
+            int use = a.equals(algo) ? lv : defaultLevel(a);
+            if ("zst".equals(a)) {
+                // 20 级以上 zstd 要求 --ultra，否则直接拒绝
+                String zcmd = use > 19 ? ("zstd --ultra -" + use + " -q -c")
+                        : ("zstd -" + use + " -q -c");
+                s.append("command -v zstd >/dev/null 2>&1 && pack \"").append(zcmd)
+                        .append("\" \"$SRC.tar.zst\" zst Z && exit 0\n");
+            } else if ("gz".equals(a)) {
+                s.append("command -v gzip >/dev/null 2>&1 && pack \"gzip -").append(use)
+                        .append("\" \"$SRC.tar.gz\" gz z && exit 0\n");
+            } else if ("bz2".equals(a)) {
+                s.append("command -v bzip2 >/dev/null 2>&1 && pack \"bzip2 -").append(use)
+                        .append("\" \"$SRC.tar.bz2\" bz2 j && exit 0\n");
+            } else {
+                s.append("pack \"\" \"$SRC.tar\" tar \"\" && exit 0\n");
+            }
         }
-        if ("zst".equals(algo) || "gz".equals(algo)) {
-            s.append("pack \"gzip -").append("zst".equals(algo) ? String.valueOf(defaultLevel("gz")) : String.valueOf(lv))
-                    .append("\" \"$SRC.tar.gz\" gz z && exit 0\n");
-        }
-        if ("bz2".equals(algo)) {
-            s.append("pack \"bzip2 -").append(lv).append("\" \"$SRC.tar.bz2\" bz2 j && exit 0\n");
-        }
-        s.append("pack \"\" \"$SRC.tar\" tar \"\" && exit 0\n");
         s.append("echo ERR_PACK\n");
 
         String out = Shell.execScript(s.toString());

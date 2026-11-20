@@ -29,6 +29,7 @@ public final class Shell {
     public static boolean checkRoot() {
         String out = raw("su", "-c", "id");
         rootOk = out.contains("uid=0");
+        Root.setAvailable(rootOk);
         // 出问题时这一行能直接看出是「su 没找到」还是「授权被拒」
         android.util.Log.i("CubClone", "checkRoot=" + rootOk + " out=" + out.trim());
         return rootOk;

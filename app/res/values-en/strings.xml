@@ -183,7 +183,27 @@ Owner data is not touched.</string>
     <string name="clone_disabled">Disabled %1$s</string>
     <string name="clone_hidden_ok">Hidden %1$s (restore in settings)</string>
     <string name="hidden_title">Hidden apps (%1$d)</string>
-    <string name="sec_backup">Pre-clone backups</string>
+    <string name="sec_backup">Data backup</string>
+    <string name="sec_root">Root features</string>
+    <string name="root_master">Enable root features</string>
+    <string name="root_master_hint">Turning this off hides every feature that needs root. Space creation and clone enable/disable keep working through Shizuku.</string>
+    <string name="root_sec_features">Features</string>
+    <string name="root_feat_clone">Copy data across spaces</string>
+    <string name="root_feat_clone_hint">Long-press an app → Copy data to…: copies app data from one space to another, including runtime permissions.</string>
+    <string name="root_feat_backup">Data backup</string>
+    <string name="root_feat_backup_hint">Long-press an app → Back up data, plus the backup list in settings (restore / export / delete). Backups live under /data/user and require root.</string>
+    <string name="root_short_ok">available</string>
+    <string name="root_short_bad">no root</string>
+    <string name="root_status_checking">Checking root…</string>
+    <string name="root_status_ok">Root: available</string>
+    <string name="root_status_bad">Root: unavailable. With Shizuku only, these entries stay hidden.</string>
+    <string name="root_need">Root required, currently unavailable</string>
+    <string name="menu_backup_data">Back up data</string>
+    <string name="backup_now_title">Back up app data</string>
+    <string name="backup_now_msg">The app will be stopped first, then its current data is backed up in full. Existing data is not touched.</string>
+    <string name="backup_creating">Backing up…</string>
+    <string name="backup_now_ok">Backed up to %1$s</string>
+    <string name="backup_algo_auto">%1$s is unavailable on this device, switched to %2$s</string>
     <string name="backup_scanning">Scanning backups…</string>
     <string name="backup_empty">No backups</string>
     <string name="backup_need_root">Root required: backups live under /data/user, which Shizuku cannot read</string>
@@ -199,25 +219,24 @@ Owner data is not touched.</string>
     <string name="backup_delete_ok">Deleted</string>
     <string name="backup_fail">Failed: %1$s</string>
     <string name="backup_algo_pick">Choose compression</string>
-    <string name="backup_algo_row">Compress clone backups</string>
+    <string name="backup_algo_row">Backup compression</string>
     <string name="backup_algo_saved">Set to %1$s</string>
     <string name="backup_empty_hint">No backups yet.
 
-Every time you clone app data, the destination\u2019s existing data is kept here first — compress, restore or export it from this page.</string>
+Every time you clone app data, the destination\u2019s existing data is kept here first — you can also long-press an app to back it up at any time. Compress, restore or export it from this page.</string>
     <string name="backup_algo_title">Compression: %1$s</string>
     <string name="backup_algo_zst">zstd</string>
     <string name="backup_algo_gz">gzip</string>
     <string name="backup_algo_bz2">bzip2</string>
     <string name="backup_algo_none">No compression (plain tar)</string>
     <string name="backup_level_title">%1$s level</string>
-    <string name="backup_level_def">Level %1$d (algorithm default)</string>
     <string name="backup_level_item">Level %1$d</string>
     <string name="backup_level_note">Higher level saves more space but is slower. zstd 1–22 (--ultra above 19, default 3), gzip 1–9 (default 6), bzip2 1–9 (default 9).</string>
     <string name="backup_compress">Compress</string>
     <string name="backup_compress_msg">Packs this backup into an archive and removes the original folder. Needs extra space while packing. Restoring unpacks automatically.</string>
     <string name="backup_compressing">Compressing…</string>
     <string name="backup_compress_ok">Compressed to %1$s</string>
-    <string name="backup_compress_fallback">zstd is not usable here — used %1$s instead</string>
+    <string name="backup_compress_fallback">Selected algorithm is unavailable — used %1$s instead</string>
     <string name="backup_packed">compressed</string>
     <string name="backup_search_hint">Search apps</string>
     <string name="backup_filter_all">All spaces</string>

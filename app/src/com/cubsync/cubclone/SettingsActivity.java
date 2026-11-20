@@ -60,6 +60,9 @@ public class SettingsActivity extends Activity {
     private LinearLayout spaceList;
     private TextView hiddenCount;
     private TextView imePickCount;
+    /** 需要 root 的两个入口：备份列表按 Root 开关决定出不出现 */
+    private View backupEntry, rootEntry;
+    private TextView rootEntryState;
     private TextView spaceWarn;
     /** 分身存储是否已知不可用（只测一次，结果缓存） */
     private Integer storageState;
@@ -81,6 +84,7 @@ public class SettingsActivity extends Activity {
         // 从主界面建完/删完空间回来要重读：原来只在 onCreate 拉一次，
         // Activity 还在栈里就一直显示旧数据（川：创建了新空间设置里不刷新）
         if (Shell.ready()) loadSpaces();
+        applyRootGates();
     }
 
     @Override
@@ -126,9 +130,21 @@ public class SettingsActivity extends Activity {
         findViewById(R.id.hidden_entry).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { showHiddenManager(); }
         });
-        findViewById(R.id.backup_entry).setOnClickListener(new View.OnClickListener() {
+        backupEntry = findViewById(R.id.backup_entry);
+        rootEntry = findViewById(R.id.root_entry);
+        rootEntryState = findViewById(R.id.root_entry_state);
+        backupEntry.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
+                if (!Root.on(SettingsActivity.this, Root.BACKUP)) {
+                    toast(getString(R.string.root_need));
+                    return;
+                }
                 startActivity(new android.content.Intent(SettingsActivity.this, BackupActivity.class));
+            }
+        });
+        rootEntry.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                startActivity(new android.content.Intent(SettingsActivity.this, RootActivity.class));
             }
         });
         renderHiddenCard();
@@ -335,10 +351,11 @@ public class SettingsActivity extends Activity {
         for (int id : new int[]{R.id.recent_show_label, R.id.sys_keep_label,
                 R.id.manage_foreign_label, R.id.space_badge_label, R.id.show_disabled_label,
                 R.id.keep_extra_label, R.id.uninstall_extra_label, R.id.hidden_sys_label,
-                R.id.hidden_entry_label, R.id.backup_entry_label}) {
+                R.id.hidden_entry_label, R.id.backup_entry_label, R.id.root_entry_label}) {
             TextView t = findViewById(id);
             if (t != null) t.setTextColor(fgColor);
         }
+        if (rootEntryState != null) rootEntryState.setTextColor(secColor);
         TextView mfh = findViewById(R.id.manage_foreign_hint);
         if (mfh != null) mfh.setTextColor(secColor);
         TextView sbh = findViewById(R.id.space_badge_hint);
@@ -573,6 +590,21 @@ public class SettingsActivity extends Activity {
                 }
             };
 
+    /**
+     * Root 功能的入口门控：只用 Shizuku 时「数据备份」直接不出现；
+     * 「Root 功能」这一行始终在，否则没 root 时连开关页都进不去。
+     */
+    private void applyRootGates() {
+        if (backupEntry != null) {
+            backupEntry.setVisibility(Root.on(this, Root.BACKUP) ? View.VISIBLE : View.GONE);
+        }
+        if (rootEntryState != null) {
+            rootEntryState.setText(Root.available()
+                    ? R.string.root_short_ok : R.string.root_short_bad);
+            rootEntryState.setTextColor(secColor);
+        }
+    }
+
     private void checkPerm() {
         permRoot.setText(R.string.perm_checking);
         permShizuku.setText(R.string.perm_checking);
@@ -610,6 +642,7 @@ public class SettingsActivity extends Activity {
         }
         // 提权刚就绪时补算一次存储检测（首次进页面时可能还没拿到 Shizuku）
         if (Shell.ready() && storageState == null) renderStorageWarn();
+        applyRootGates();
     }
 
     private void askShizuku() {

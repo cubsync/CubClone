@@ -244,6 +244,12 @@ Every time you clone app data, the destination\u2019s existing data is kept here
     <string name="backup_filter_reset">Clear filter</string>
     <string name="backup_filter_count">%1$d spaces</string>
     <string name="backup_no_match">No matching backups</string>
+    <string name="backup_algo_bad">unavailable</string>
+    <string name="backup_pick_space">Choose space</string>
+    <string name="backup_batch_title">Back up apps in %1$s</string>
+    <string name="backup_batch_empty">No third-party apps to back up in this space</string>
+    <string name="backup_batch_none">No apps selected</string>
+    <string name="backup_batch_running">Backing up %1$d/%2$d</string>
     <string name="backup_sel_title">Select backups</string>
     <string name="backup_sel_count">%1$d selected</string>
     <string name="backup_sel_all">Select all</string>

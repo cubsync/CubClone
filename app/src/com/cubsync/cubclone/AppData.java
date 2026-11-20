@@ -283,6 +283,14 @@ public final class AppData {
         return r;
     }
 
+    /** 从 algo 起找第一个本机可用的算法；usable 为 null 时按链路第一项算 */
+    public static String nextUsable(String algo, java.util.List<String> usable) {
+        for (String a : degradeChain(algo)) {
+            if (usable == null || usable.contains(a)) return a;
+        }
+        return "none";
+    }
+
     /**
      * 给某个空间里的某个应用立刻做一份备份，不涉及另一个空间。
      * 先停止该应用，避免把写到一半的数据库复制走；原数据一个字节都不动。

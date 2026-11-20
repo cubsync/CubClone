@@ -1914,7 +1914,8 @@ public class MainActivity extends Activity {
     }
     /** 空间显示名：0 是主空间，其它是分身空间的名字 */
     private String spaceLabel(int uid) {
-        return uid == 0 ? getString(R.string.space_main) : CloneStore.nameOf(this, uid);
+        String n = uid == 0 ? getString(R.string.space_main) : CloneStore.nameOf(this, uid);
+        return n + " (" + uid + ")";
     }
 
     /**

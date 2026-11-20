@@ -7,9 +7,15 @@
 ## [Unreleased]
 
 ### 变更
+- 主界面长按主空间应用改为弹菜单（与分身行长按一致），第一项是「批量创建分身」进多选；
+  菜单里还能选目标空间创建分身、看应用信息、一次移除该应用的全部分身。
+  移除只动分身，绝不碰主空间的应用和数据。
+- 修复模块的说明文字与实际行为对齐（原来还写着放行 fuse ioctl，那是 2.1 的做法、已移除）。
 - 分身共享存储修复模块升到 2.2（`cubclone-sdcardfs-fix.zip`，id 与名称不变，刷入即覆盖旧版）：
   ① 让 vold 走纯 FUSE（分身卷才挂得上、相册与主空间同一份）；
   ② 把 sdcardfs 时代留下的文件属主一次性迁成 FUSE 形态。
+  等解锁用 inotifyd（Android 自带）事件驱动：`/data` 上目录一出现就开工，零轮询；
+  覆盖主空间与各分身空间，解锁时 `/data` 被重新挂载会按当前缺哪一层重挂监听。
 - 根因（设备实测）：纯 FUSE 下所有文件读写都由 MediaProvider 进程代理，它操作底层文件时
   受 POSIX 约束。sdcardfs 时代建的文件属主是 `media_rw(1023)`，MediaProvider 只是 other，
   `ftruncate` 直接 EPERM，SQLite 报 `4618 SQLITE_IOERR_SHMOPEN`，应用打不开自己的库

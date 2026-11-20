@@ -154,6 +154,14 @@ Owner data is not touched.</string>
     <string name="menu_hide">Hide</string>
     <string name="menu_open">Open</string>
     <string name="menu_remove">Remove from space</string>
+    <string name="menu_batch_create">Batch create clones</string>
+    <string name="menu_create_in">Create clone (choose space)</string>
+    <string name="menu_app_info">App info</string>
+    <string name="menu_remove_all">Remove all clones (%1$d)</string>
+    <string name="remove_all_title">Remove all clones</string>
+    <string name="remove_all_msg">%1$s will be uninstalled from %2$d spaces and its data in those clones will be deleted. The app and data in the main space are untouched.</string>
+    <string name="removed_all">Removed %1$d clones</string>
+    <string name="app_info_failed">Cannot open app info</string>
     <string name="clone_hidden_hint">This clone is disabled; long-press to enable</string>
     <string name="clone_enabled">Enabled %1$s</string>
     <string name="clone_enabling">Enabling %1$s</string>
@@ -208,7 +216,7 @@ Owner data is not touched.</string>
     <string name="space_storage_broken">Shared space storage unavailable: this kernel\u0027s sdcardfs is incompatible with clone spaces, so the gallery stays empty. Tap to generate the fix module</string>
     <string name="space_storage_fixed">Shared space storage available · Tap to regenerate the fix module</string>
     <string name="fix_module_title">Generate fix module</string>
-    <string name="fix_module_msg">A zip named cubclone-sdcardfs-fix.zip will be written to the Download folder (an existing one is overwritten). Flash it in APatch / KernelSU / Magisk and reboot.\n\nThe module does two things:\n1. Switches external storage to pure FUSE mounting — with sdcardfs in the kernel a clone volume cannot be mounted at all, which is the root cause;\n2. Allows one fuse-file ioctl that the system policy blocks by default — without it some apps cannot open their own databases on pure FUSE (imports fail). The module never touches files or data.\n\nDevices whose kernel has no sdcardfs are rejected at install time and nothing is left behind.\n\nNote: ROM OTA updates usually require re-flashing the module.</string>
+    <string name="fix_module_msg">A zip named cubclone-sdcardfs-fix.zip will be written to the Download folder (an existing one is overwritten). Flash it in APatch / KernelSU / Magisk and reboot.\n\nThe module does two things:\n1. Switches external storage to pure FUSE mounting — with sdcardfs in the kernel a clone volume cannot be mounted at all, which is the root cause;\n2. On pure FUSE every read and write is proxied by the system media provider, which cannot modify files left over from the sdcardfs era; apps then fail to open their own databases (import errors, 0-byte exports, endless loading). Once the device is unlocked the module re-owns those legacy files to the local media provider — owner only, no change to content or location, runs once and leaves a marker.\n\nDevices whose kernel has no sdcardfs are rejected at install time and nothing is left behind.\n\nNote: ROM OTA updates usually require re-flashing the module.</string>
     <string name="fix_module_working">Generating…</string>
     <string name="fix_module_done">Generated: %1$s</string>
     <string name="fix_module_failed">Failed to generate</string>

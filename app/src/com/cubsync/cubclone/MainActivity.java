@@ -1194,14 +1194,7 @@ public class MainActivity extends Activity {
                     public void onClick(View v) { openPrimary(g); }
                 });
                 base.setOnLongClickListener(new View.OnLongClickListener() {
-                    public boolean onLongClick(View v) {
-                        multi = true;
-                        selected.clear();
-                        selected.add(g.pkg);
-                        multiBar.setVisibility(View.VISIBLE);
-                        render();
-                        return true;
-                    }
+                    public boolean onLongClick(View v) { baseMenu(g); return true; }
                 });
             }
             card.addView(base);
@@ -1809,6 +1802,99 @@ public class MainActivity extends Activity {
                                 else confirmRemove(c, g);
                             }
                         })
+                .show();
+    }
+
+    /**
+     * 主应用行长按菜单：形态和分身行一致，第一个动作是多选批量创建。
+     * 只提供「对分身做点什么」，绝不放卸载/清数据这类会动主空间真实数据的项。
+     */
+    private void baseMenu(final Group g) {
+        final java.util.List<String> items = new java.util.ArrayList<String>();
+        final java.util.List<Integer> acts = new java.util.ArrayList<Integer>();
+        items.add(getString(R.string.menu_batch_create)); acts.add(1);
+        items.add(getString(R.string.menu_create_in)); acts.add(2);
+        items.add(getString(R.string.menu_app_info)); acts.add(3);
+        int cnt = 0;
+        for (Clone c : g.clones) {
+            if (c.foreign && !sp().getBoolean("manage_foreign", false)) continue;
+            cnt++;
+        }
+        if (cnt > 0) { items.add(getString(R.string.menu_remove_all, cnt)); acts.add(4); }
+        new AlertDialog.Builder(this)
+                .setTitle(g.label)
+                .setItems(items.toArray(new String[0]),
+                        new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface d, int which) {
+                                int a = acts.get(which).intValue();
+                                if (a == 1) {
+                                    multi = true;
+                                    selected.clear();
+                                    selected.add(g.pkg);
+                                    multiBar.setVisibility(View.VISIBLE);
+                                    render();
+                                } else if (a == 2) {
+                                    pickSpaceFor(g);
+                                } else if (a == 3) {
+                                    openAppInfo(g.pkg);
+                                } else {
+                                    confirmRemoveAll(g);
+                                }
+                            }
+                        })
+                .show();
+    }
+
+    /** 跳到系统的应用详情页（只读，不改任何东西） */
+    private void openAppInfo(String pkg) {
+        try {
+            Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            i.setData(android.net.Uri.parse("package:" + pkg));
+            startActivity(i);
+        } catch (Throwable t) {
+            toast(getString(R.string.app_info_failed));
+        }
+    }
+
+    /** 把该应用在所有可管理空间里的分身一次卸掉；只卸应用，不动用户、不动主空间 */
+    private void confirmRemoveAll(final Group g) {
+        final java.util.List<Clone> list = new java.util.ArrayList<Clone>();
+        final boolean foreign = sp().getBoolean("manage_foreign", false);
+        for (Clone c : g.clones) {
+            if (c.foreign && !foreign) continue;
+            list.add(c);
+        }
+        if (list.isEmpty()) return;
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.remove_all_title)
+                .setMessage(getString(R.string.remove_all_msg, g.label, list.size()))
+                .setPositiveButton(R.string.delete_clone_btn, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        new Thread(new Runnable() {
+                            public void run() {
+                                int n = 0;
+                                for (Clone c : list) {
+                                    // 与单个移除同一套闸：不碰非自建空间
+                                    if (!Launcher.safe(c.uid)) continue;
+                                    if (!CloneStore.isOurs(null, c.uid)
+                                            && !sp().getBoolean("manage_foreign", false)) continue;
+                                    Launcher.uninstall(c.uid, g.pkg);
+                                    CloneStore.unmarkKept(MainActivity.this, c.uid, g.pkg);
+                                    unpinShortcut(MainActivity.this, c.uid, g.pkg);
+                                    n++;
+                                }
+                                final int done = n;
+                                runOnUiThread(new Runnable() {
+                                    public void run() {
+                                        say(getString(R.string.removed_all, done));
+                                        refresh();
+                                    }
+                                });
+                            }
+                        }).start();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 

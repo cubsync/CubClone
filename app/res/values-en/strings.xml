@@ -250,6 +250,9 @@ Every time you clone app data, the destination\u2019s existing data is kept here
     <string name="backup_batch_empty">No third-party apps to back up in this space</string>
     <string name="backup_batch_none">No apps selected</string>
     <string name="backup_batch_running">Backing up %1$d/%2$d</string>
+    <string name="batch_backup_title">Batch backup</string>
+    <string name="batch_backup_go">Back up</string>
+    <string name="backup_invert">Invert</string>
     <string name="backup_sel_title">Select backups</string>
     <string name="backup_sel_count">%1$d selected</string>
     <string name="backup_sel_all">Select all</string>

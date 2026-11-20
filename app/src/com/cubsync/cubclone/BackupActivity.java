@@ -63,8 +63,6 @@ public class BackupActivity extends Activity {
     private boolean rootOk = false;
     /** 本机实测可用的压缩算法（boot 时刷新）；null = 还没测过，别乱标 */
     private java.util.List<String> usable;
-    /** 备份可选空间：主空间 + 本机分身空间 */
-    private final List<Integer> spaces = new ArrayList<Integer>();
 
     private Adapter adapter;
     private int fg = 0xFF1B1B1F;
@@ -100,7 +98,8 @@ public class BackupActivity extends Activity {
                     toast(getString(R.string.backup_need_root));
                     return;
                 }
-                pickBackupSpace();
+                startActivity(new android.content.Intent(
+                        BackupActivity.this, BatchBackupActivity.class));
             }
         });
         btnBack.setOnClickListener(new View.OnClickListener() {
@@ -149,6 +148,8 @@ public class BackupActivity extends Activity {
         super.onResume();
         applyChrome();
         renderAlgo();
+        // 从批量备份页回来要看到新出来的备份
+        if (rootOk) reloadList();
     }
 
     public void onBackPressed() {
@@ -163,11 +164,10 @@ public class BackupActivity extends Activity {
                 final boolean ok = Shell.checkRoot();
                 // 打开页面只实测一次可用算法（换机器/刷 ROM 会变），
                 // 真正降级发生在用户选算法的时候，那里才弹 toast
-                final List<Integer> sps = new ArrayList<Integer>();
-                sps.add(Integer.valueOf(0));
                 if (ok) {
                     usable = AppData.usableAlgos();
-                    for (Integer u : CloneStore.listSpaceUids()) sps.add(u);
+                    // 预热空间名缓存，列表每行就不用再起一次 shell
+                    CloneStore.listSpaceUids();
                 }
                 final List<AppData.Backup> r = ok ? AppData.listBackups()
                         : new ArrayList<AppData.Backup>();
@@ -181,8 +181,6 @@ public class BackupActivity extends Activity {
                             hint.setTextColor(sec);
                         }
                         algoRow.setAlpha(ok ? 1f : 0.45f);
-                        spaces.clear();
-                        spaces.addAll(sps);
                         all.clear();
                         all.addAll(r);
                         refilter();
@@ -525,13 +523,20 @@ public class BackupActivity extends Activity {
         final boolean canZip = hasDir;
         String[] acts = canZip
                 ? new String[]{getString(R.string.backup_sel_delete),
-                        getString(R.string.backup_sel_compress)}
-                : new String[]{getString(R.string.backup_sel_delete)};
+                        getString(R.string.backup_sel_compress),
+                        getString(R.string.backup_invert)}
+                : new String[]{getString(R.string.backup_sel_delete),
+                        getString(R.string.backup_invert)};
 
         new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.backup_sel_count, sel.size()))
                 .setItems(acts, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
+                        int invertAt = canZip ? 2 : 1;
+                        if (which == invertAt) {
+                            invertSelection();
+                            return;
+                        }
                         if (which == 0) {
                             new AlertDialog.Builder(BackupActivity.this)
                                     .setTitle(R.string.backup_delete)
@@ -598,175 +603,14 @@ public class BackupActivity extends Activity {
         }).start();
     }
 
-    // ── 批量备份 ─────────────────────────────────────────────────────
-    /** 先选空间，再从这个空间已装的第三方应用里多选 */
-    private void pickBackupSpace() {
-        if (spaces.isEmpty()) spaces.add(Integer.valueOf(0));
-        String[] items = new String[spaces.size()];
-        for (int i = 0; i < spaces.size(); i++) {
-            items[i] = spaceLabel(spaces.get(i).intValue());
+    /** 反选：只看当前过滤出来的这一批，避免把看不见的也选上 */
+    private void invertSelection() {
+        for (AppData.Backup b : shown) {
+            if (selected.contains(b.path)) selected.remove(b.path);
+            else selected.add(b.path);
         }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.backup_pick_space)
-                .setItems(items, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int which) {
-                        pickBackupApps(spaces.get(which).intValue());
-                    }
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
-    }
-
-    private void pickBackupApps(final int user) {
-        toast(getString(R.string.backup_working));
-        new Thread(new Runnable() {
-            public void run() {
-                java.util.TreeSet<String> uniq = new java.util.TreeSet<String>();
-                String out = Shell.exec("pm list packages -3 --user " + user + " 2>/dev/null");
-                for (String line : out.split("\n")) {
-                    String t = line.trim();
-                    if (t.startsWith("package:")) uniq.add(t.substring(8).trim());
-                }
-                java.util.List<String> names = new ArrayList<String>(uniq);
-                String[] labs = new String[names.size()];
-                for (int i = 0; i < names.size(); i++) labs[i] = labelOf(names.get(i));
-                java.util.List<Integer> order = new ArrayList<Integer>();
-                for (int i = 0; i < names.size(); i++) order.add(Integer.valueOf(i));
-                java.util.Collections.sort(order, new java.util.Comparator<Integer>() {
-                    public int compare(Integer a, Integer b) {
-                        String x = labelOf(names.get(a.intValue()));
-                        String y = labelOf(names.get(b.intValue()));
-                        return x.compareToIgnoreCase(y);
-                    }
-                });
-                final java.util.List<String> pkgs = new ArrayList<String>();
-                final java.util.List<String> labels = new ArrayList<String>();
-                for (Integer i : order) {
-                    pkgs.add(names.get(i.intValue()));
-                    labels.add(labs[i.intValue()]);
-                }
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        showAppPicker(user, pkgs, labels);
-                    }
-                });
-            }
-        }).start();
-    }
-
-    private void showAppPicker(final int user, final List<String> pkgs, final List<String> labels) {
-        if (pkgs.isEmpty()) {
-            toast(getString(R.string.backup_batch_empty));
-            return;
-        }
-        final java.util.Set<String> checked = new HashSet<String>();
-        final List<Integer> shownIdx = new ArrayList<Integer>();
-        final android.widget.ArrayAdapter<String> ad = new android.widget.ArrayAdapter<String>(
-                this, android.R.layout.simple_list_item_multiple_choice);
-        final ListView lv = new ListView(this);
-        lv.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-        lv.setAdapter(ad);
-        final EditText q = new EditText(this);
-        q.setSingleLine(true);
-        q.setHint(R.string.backup_search_hint);
-
-        float d = getResources().getDisplayMetrics().density;
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding((int) (16 * d), (int) (8 * d), (int) (16 * d), 0);
-        box.addView(q, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        box.addView(lv, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, (int) (360 * d)));
-
-        fillApps(ad, lv, shownIdx, checked, pkgs, labels, "");
-        lv.setOnItemClickListener(new android.widget.AdapterView.OnItemClickListener() {
-            public void onItemClick(android.widget.AdapterView<?> p, View v, int pos, long id) {
-                String pk = pkgs.get(shownIdx.get(pos).intValue());
-                if (checked.contains(pk)) checked.remove(pk);
-                else checked.add(pk);
-            }
-        });
-        q.addTextChangedListener(new TextWatcher() {
-            public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
-
-            public void onTextChanged(CharSequence s, int a, int b, int c) {
-                fillApps(ad, lv, shownIdx, checked, pkgs, labels,
-                        s.toString().trim().toLowerCase());
-            }
-
-            public void afterTextChanged(Editable s) { }
-        });
-
-        new AlertDialog.Builder(this)
-                .setTitle(getString(R.string.backup_batch_title, spaceLabel(user)))
-                .setView(box)
-                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface dlg, int w) {
-                        List<String> sel = new ArrayList<String>();
-                        for (String p : pkgs) {
-                            if (checked.contains(p)) sel.add(p);
-                        }
-                        if (sel.isEmpty()) {
-                            toast(getString(R.string.backup_batch_none));
-                            return;
-                        }
-                        runBatchBackup(user, sel);
-                    }
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
-    }
-
-    /** 过滤时重建列表，勾选状态从 checked 里恢复，不会因为搜索丢选中 */
-    private void fillApps(android.widget.ArrayAdapter<String> ad, ListView lv,
-                          List<Integer> shownIdx, java.util.Set<String> checked,
-                          List<String> pkgs, List<String> labels, String q) {
-        shownIdx.clear();
-        ad.clear();
-        for (int i = 0; i < pkgs.size(); i++) {
-            if (q.length() > 0 && !labels.get(i).toLowerCase().contains(q)
-                    && !pkgs.get(i).toLowerCase().contains(q)) continue;
-            shownIdx.add(Integer.valueOf(i));
-            ad.add(labels.get(i));
-        }
-        ad.notifyDataSetChanged();
-        for (int i = 0; i < shownIdx.size(); i++) {
-            lv.setItemChecked(i, checked.contains(pkgs.get(shownIdx.get(i).intValue())));
-        }
-    }
-
-    private void runBatchBackup(final int user, final List<String> pkgs) {
-        // 备份要整目录复制，期间锁屏会驱逐 CE 密钥
-        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        final String algo = currentAlgo();
-        final int lv = currentLevel(algo);
-        new Thread(new Runnable() {
-            public void run() {
-                int ok = 0, bad = 0;
-                for (int i = 0; i < pkgs.size(); i++) {
-                    final int no = i + 1, total = pkgs.size();
-                    runOnUiThread(new Runnable() {
-                        public void run() {
-                            title.setText(getString(R.string.backup_batch_running, no, total));
-                        }
-                    });
-                    String r = AppData.backupNow(user, pkgs.get(i), algo, lv);
-                    if (r.startsWith("OK ")) ok++;
-                    else bad++;
-                }
-                final int fok = ok, fbad = bad;
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        getWindow().clearFlags(
-                                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                        title.setText(R.string.sec_backup);
-                        toast(getString(R.string.backup_done_many, fok, fbad));
-                        boot();
-                    }
-                });
-            }
-        }).start();
+        adapter.notifyDataSetChanged();
+        renderMultiBar();
     }
 
     // ── 列表 ─────────────────────────────────────────────────────────

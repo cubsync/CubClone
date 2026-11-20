@@ -250,6 +250,9 @@
     <string name="backup_batch_empty">这个空间没有可备份的第三方应用</string>
     <string name="backup_batch_none">没有选中应用</string>
     <string name="backup_batch_running">正在备份 %1$d/%2$d</string>
+    <string name="batch_backup_title">批量备份</string>
+    <string name="batch_backup_go">开始备份</string>
+    <string name="backup_invert">反选</string>
     <string name="backup_sel_title">选择备份</string>
     <string name="backup_sel_count">已选 %1$d 项</string>
     <string name="backup_sel_all">全选</string>

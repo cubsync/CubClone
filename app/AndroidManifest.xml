@@ -39,6 +39,12 @@
             android:exported="false"
             android:label="数据备份" />
 
+        <!-- 批量备份：选空间 → 勾应用 → 一次跑完 -->
+        <activity
+            android:name=".BatchBackupActivity"
+            android:exported="false"
+            android:label="批量备份" />
+
         <!-- Root 功能：总开关 + 单项开关 -->
         <activity
             android:name=".RootActivity"

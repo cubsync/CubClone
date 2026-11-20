@@ -289,7 +289,7 @@ public class BatchBackupActivity extends Activity {
         renderBar();
     }
 
-    // ── 备份 ─────────────────────────────────────────────────────────
+    // ── 开始：跳到过程页 ─────────────────────────────────────────────
     private void startBatch() {
         if (running) return;
         final List<String> sel = new ArrayList<String>();
@@ -300,40 +300,12 @@ public class BatchBackupActivity extends Activity {
             toast(getString(R.string.backup_batch_none));
             return;
         }
-        final String algo = sp().getString("backup_algo", "zst");
-        final int lv = sp().getInt("backup_level_" + algo, AppData.defaultLevel(algo));
-        running = true;
-        renderBar();
-        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        new Thread(new Runnable() {
-            public void run() {
-                int ok = 0, bad = 0;
-                for (int i = 0; i < sel.size(); i++) {
-                    final int no = i + 1, total = sel.size();
-                    runOnUiThread(new Runnable() {
-                        public void run() {
-                            title.setText(getString(R.string.backup_batch_running, no, total));
-                        }
-                    });
-                    String r = AppData.backupNow(user, sel.get(i), algo, lv);
-                    if (r.startsWith("OK ")) ok++;
-                    else bad++;
-                }
-                final int fok = ok, fbad = bad;
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        running = false;
-                        getWindow().clearFlags(
-                                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                        title.setText(R.string.batch_backup_title);
-                        toast(getString(R.string.backup_done_many, fok, fbad));
-                        checked.clear();
-                        adapter.notifyDataSetChanged();
-                        renderBar();
-                    }
-                });
-            }
-        }).start();
+        android.content.Intent it = new android.content.Intent(this, BatchRunActivity.class);
+        it.putExtra(BatchRunActivity.EXTRA_MODE, BatchRunActivity.MODE_BACKUP);
+        it.putExtra(BatchRunActivity.EXTRA_USER, user);
+        it.putExtra(BatchRunActivity.EXTRA_PKGS, sel.toArray(new String[sel.size()]));
+        startActivity(it);
+        finish();   // 选完就退，回来时备份页 onResume 会重扫列表
     }
 
     // ── 列表适配 ─────────────────────────────────────────────────────

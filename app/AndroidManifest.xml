@@ -47,6 +47,11 @@
 
         <!-- Root 功能：总开关 + 单项开关 -->
         <activity
+            android:name=".BatchRunActivity"
+            android:exported="false"
+            android:label="批量任务" />
+
+        <activity
             android:name=".RootActivity"
             android:exported="false"
             android:label="Root 功能" />

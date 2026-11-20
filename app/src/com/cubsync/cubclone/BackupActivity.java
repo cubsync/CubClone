@@ -47,6 +47,7 @@ public class BackupActivity extends Activity {
     private TextView algoArrow;
     private EditText search;
     private TextView filter;
+    private TextView sortTv;
     private TextView addBtn;
     /** 备份目录那一行：点开选目录，换目录会把旧备份一起搬过去 */
     private LinearLayout dirRow;
@@ -62,6 +63,8 @@ public class BackupActivity extends Activity {
     private TextView progText;
     private TextView selAll;
     private TextView selMore;
+
+    private static final int REQ_PICK_DIR = 701;
 
     private final List<AppData.Backup> all = new ArrayList<AppData.Backup>();
     private final List<AppData.Backup> shown = new ArrayList<AppData.Backup>();
@@ -98,12 +101,16 @@ public class BackupActivity extends Activity {
         empty = findViewById(R.id.bk_empty);
         search = findViewById(R.id.bk_search);
         filter = findViewById(R.id.bk_filter);
+        sortTv = findViewById(R.id.bk_sort);
         addBtn = findViewById(R.id.bk_add);
         dirRow = findViewById(R.id.bk_dir_row);
         dirLabel = findViewById(R.id.bk_dir_label);
         dirValue = findViewById(R.id.bk_dir_value);
         dirArrow = findViewById(R.id.bk_dir_arrow);
         selInv = findViewById(R.id.bk_sel_inv);
+        dirValue.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { pickBackupDir(); }
+        });
         dirRow.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { pickBackupDir(); }
         });
@@ -144,6 +151,9 @@ public class BackupActivity extends Activity {
         });
         filter.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { pickFilter(); }
+        });
+        sortTv.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { pickSort(); }
         });
         selAll.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { toggleSelectAll(); }
@@ -258,6 +268,8 @@ public class BackupActivity extends Activity {
         search.setTextColor(fg);
         search.setHintTextColor(sec);
         filter.setTextColor(accent);
+        sortTv.setTextColor(accent);
+        sortTv.setText(sortShort());
         selCount.setTextColor(sec);
         selAll.setTextColor(accent);
         selInv.setTextColor(accent);
@@ -413,6 +425,7 @@ public class BackupActivity extends Activity {
 
     // ── 搜索 / 空间筛选 ───────────────────────────────────────────────
     private void refilter() {
+        sortAll();
         shown.clear();
         for (AppData.Backup b : all) {
             if (!filterUsers.isEmpty() && !filterUsers.contains(Integer.valueOf(b.user))) continue;
@@ -490,6 +503,69 @@ public class BackupActivity extends Activity {
                         filterUsers.clear();
                         search.setText("");
                         query = "";
+                        refilter();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    // ── 排序 ─────────────────────────────────────────────────────────
+    private String currentSort() {
+        return sp().getString("backup_sort", "time_desc");
+    }
+
+    /** 顶栏只放得下短标签 */
+    private String sortShort() {
+        String k = currentSort();
+        if ("time_asc".equals(k)) return getString(R.string.backup_sort_time_asc_short);
+        if ("name".equals(k)) return getString(R.string.backup_sort_name);
+        if ("size".equals(k)) return getString(R.string.backup_sort_size_short);
+        if ("space".equals(k)) return getString(R.string.backup_sort_space);
+        return getString(R.string.backup_sort_time_desc_short);
+    }
+
+    /** 默认按时间倒序：刚做的备份排最上面，和备份工具的惯例一致 */
+    private void sortAll() {
+        final String key = currentSort();
+        java.util.Collections.sort(all, new java.util.Comparator<AppData.Backup>() {
+            public int compare(AppData.Backup a, AppData.Backup b) {
+                if ("name".equals(key)) {
+                    int c = labelOf(a.pkg).compareToIgnoreCase(labelOf(b.pkg));
+                    return c != 0 ? c : b.ts.compareTo(a.ts);
+                }
+                if ("size".equals(key)) {
+                    int c = Long.valueOf(b.sizeKb).compareTo(Long.valueOf(a.sizeKb));
+                    return c != 0 ? c : b.ts.compareTo(a.ts);
+                }
+                if ("space".equals(key)) {
+                    int c = Integer.valueOf(a.user).compareTo(Integer.valueOf(b.user));
+                    return c != 0 ? c : b.ts.compareTo(a.ts);
+                }
+                if ("time_asc".equals(key)) return a.ts.compareTo(b.ts);
+                return b.ts.compareTo(a.ts);     // time_desc
+            }
+        });
+    }
+
+    private void pickSort() {
+        final String[] keys = {"time_desc", "time_asc", "name", "size", "space"};
+        String[] items = {
+                getString(R.string.backup_sort_time_desc),
+                getString(R.string.backup_sort_time_asc),
+                getString(R.string.backup_sort_name),
+                getString(R.string.backup_sort_size),
+                getString(R.string.backup_sort_space),
+        };
+        int cur = 0;
+        for (int i = 0; i < keys.length; i++) if (keys[i].equals(currentSort())) cur = i;
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.backup_sort)
+                .setSingleChoiceItems(items, cur, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        d.dismiss();
+                        sp().edit().putString("backup_sort", keys[which]).apply();
+                        sortTv.setText(sortShort());
                         refilter();
                     }
                 })
@@ -630,47 +706,25 @@ public class BackupActivity extends Activity {
      * 批量导出：串行 cp，每导完一个刷一次进度。
      * 导出位置沿用单条的 Download/CubClone-backup，一次只动一个文件。
      */
-        /**
-     * 批量恢复。同一空间同一应用有多份时**只恢复最新的那份**：
-     * 按 ts 从旧到新依次恢复，结果是旧的覆盖新的，等于白跑还丢了新数据。
-     * ts 是 yyyyMMdd-HHmmss，字典序就是时间序。
-     */
+        /** 批量恢复走独立过程页：那里有进度、逐项状态、失败筛选和日志 */
     private void jobManyRestore(final List<AppData.Backup> sel) {
-        final java.util.LinkedHashMap<String, AppData.Backup> newest =
-                new java.util.LinkedHashMap<String, AppData.Backup>();
-        for (AppData.Backup b : sel) {
-            String key = b.user + "/" + b.pkg;
-            AppData.Backup old = newest.get(key);
-            if (old == null || b.ts.compareTo(old.ts) > 0) newest.put(key, b);
-        }
-        final int skipped = sel.size() - newest.size();
-        final List<AppData.Backup> todo = new ArrayList<AppData.Backup>(newest.values());
-        showProgress(0, todo.size(), R.string.backup_restoring);
-        new Thread(new Runnable() {
-            public void run() {
-                int ok = 0, bad = 0;
-                for (int i = 0; i < todo.size(); i++) {
-                    AppData.Backup b = todo.get(i);
-                    int appId = appIdOf(b.pkg);
-                    String r = appId < 0 ? "ERR_NO_APP" : AppData.restore(b, appId);
-                    if (r.startsWith("OK")) ok++;
-                    else bad++;
-                    showProgress(i + 1, todo.size(), R.string.backup_restoring);
-                }
-                final int fok = ok, fbad = bad;
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        hideProgress();
-                        toast(getString(R.string.backup_restore_many_done, fok, fbad));
-                        if (skipped > 0) {
-                            toast(getString(R.string.backup_restore_many_skip, skipped));
-                        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.backup_sel_restore)
+                .setMessage(getString(R.string.batch_restore_confirm, sel.size()))
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        String[] paths = new String[sel.size()];
+                        for (int i = 0; i < sel.size(); i++) paths[i] = sel.get(i).path;
+                        android.content.Intent it = new android.content.Intent(
+                                BackupActivity.this, BatchRunActivity.class);
+                        it.putExtra(BatchRunActivity.EXTRA_MODE, BatchRunActivity.MODE_RESTORE);
+                        it.putExtra(BatchRunActivity.EXTRA_PATHS, paths);
+                        startActivity(it);
                         exitMulti();
-                        boot();
                     }
-                });
-            }
-        }).start();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private void jobManyDelete(final List<AppData.Backup> sel) {
@@ -901,64 +955,67 @@ public class BackupActivity extends Activity {
         if (dirValue != null) dirValue.setText(AppData.root());
     }
 
-    /** 从当前目录的父级开始浏览 /sdcard：root 直读目录树，不需要 SAF */
+    /** 系统文件选择器：能选已有目录，也能当场新建一个 */
     private void pickBackupDir() {
         if (!rootOk) {
             toast(getString(R.string.backup_need_root));
             return;
         }
-        String cur = AppData.root();
-        int slash = cur.lastIndexOf('/');
-        String start = slash > 0 ? cur.substring(0, slash) : "/sdcard";
-        browseDir(start);
+        android.content.Intent it = new android.content.Intent(
+                android.content.Intent.ACTION_OPEN_DOCUMENT_TREE);
+        it.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(it, REQ_PICK_DIR);
+        } catch (Throwable t) {
+            toast(getString(R.string.backup_fail, "NO_PICKER"));
+        }
     }
 
-    private void browseDir(final String dir) {
-        new Thread(new Runnable() {
-            public void run() {
-                final List<String> subs = new ArrayList<String>();
-                String out = Shell.execScript("ls -1p '" + dir + "' 2>/dev/null\n");
-                for (String line : out.split("\n")) {
-                    String n = line.trim();
-                    if (n.length() == 0 || !n.endsWith("/")) continue;
-                    n = n.substring(0, n.length() - 1);
-                    if (n.startsWith(".")) continue;
-                    subs.add(n);
-                }
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        boolean atTop = "/sdcard".equals(dir) || "/storage/emulated/0".equals(dir);
-                        final List<String> items = new ArrayList<String>();
-                        final List<String> targets = new ArrayList<String>();
-                        if (!atTop) {
-                            int slash = dir.lastIndexOf('/');
-                            if (slash > 0) {
-                                items.add("‹ " + getString(R.string.backup_dir_up));
-                                targets.add(dir.substring(0, slash));
-                            }
-                        }
-                        for (String n : subs) {
-                            items.add(n + "/");
-                            targets.add(dir + "/" + n);
-                        }
-                        items.add(getString(R.string.backup_dir_use));
-                        targets.add(dir);
-                        new AlertDialog.Builder(BackupActivity.this)
-                                .setTitle(dir)
-                                .setItems(items.toArray(new String[items.size()]),
-                                        new DialogInterface.OnClickListener() {
-                                            public void onClick(DialogInterface d, int which) {
-                                                String t = targets.get(which);
-                                                if (t.equals(dir)) useDir(dir);
-                                                else browseDir(t);
-                                            }
-                                        })
-                                .setNegativeButton(android.R.string.cancel, null)
-                                .show();
-                    }
-                });
+    /**
+     * SAF 给的 tree uri 转成文件系统路径：我们的备份/恢复都走 root 的 shell，
+     * 它只认路径。`primary:Download/x` → /storage/emulated/0/Download/x；
+     * `1234-ABCD:x` → /storage/1234-ABCD/x。
+     */
+    private String pathOfTree(android.net.Uri uri) {
+        try {
+            String docId = android.provider.DocumentsContract.getTreeDocumentId(uri);
+            int colon = docId.indexOf(':');
+            if (colon <= 0) return null;
+            String vol = docId.substring(0, colon);
+            String rel = docId.substring(colon + 1);
+            String base;
+            if ("primary".equalsIgnoreCase(vol)) {
+                base = android.os.Environment.getExternalStorageDirectory().getAbsolutePath();
+            } else if ("home".equalsIgnoreCase(vol)) {
+                base = android.os.Environment.getExternalStorageDirectory().getAbsolutePath();
+            } else {
+                base = "/storage/" + vol;
             }
-        }).start();
+            return rel.length() == 0 ? base : base + "/" + rel;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    protected void onActivityResult(int req, int res, android.content.Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req != REQ_PICK_DIR || res != RESULT_OK || data == null || data.getData() == null) return;
+        final android.net.Uri uri = data.getData();
+        String path = pathOfTree(uri);
+        if (path == null || path.length() == 0) {
+            toast(getString(R.string.backup_dir_bad));
+            return;
+        }
+        // 记住授权，免得下次系统再问一次
+        try {
+            getContentResolver().takePersistableUriPermission(uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            | android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        } catch (Throwable ignored) {
+        }
+        useDir(path);
     }
 
     /** 换目录：旧目录里的备份一起搬过来，免得列表突然空了、东西还散在两处 */

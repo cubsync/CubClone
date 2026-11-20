@@ -604,6 +604,46 @@ public final class AppData {
      * 换备份目录时把旧目录里的备份搬过去。同一分区，mv 只是改名。
      * @return "OK <搬了几个>" 或 "ERR_xxx"
      */
+    /**
+     * 从备份路径反解出 Backup。UI 之间只传路径，省得序列化整个对象。
+     * 两种命名都认：新包 `<包>-<U>-<ts>.tar*`、老包 `<包>.cubclone-bak-<ts>[.tar*]` 或目录。
+     * @return null = 认不出来
+     */
+    public static Backup fromPath(String path) {
+        if (path == null || path.length() == 0) return null;
+        String name = path.substring(path.lastIndexOf('/') + 1);
+        int dot = name.indexOf(".tar");
+        String tail = dot > 0 ? name.substring(dot) : "";
+        String base = dot > 0 ? name.substring(0, dot) : name;
+        int k = base.indexOf(".cubclone-bak-");
+        if (k > 0) {
+            int user = userOfPath(path);
+            if (user < 0) return null;
+            return new Backup(user, base.substring(0, k), path, 0, base.substring(k + 14), algoOf(tail));
+        }
+        String[] p = parseExported(name);
+        if (p == null) return null;
+        int user;
+        try {
+            user = Integer.parseInt(p[1]);
+        } catch (Throwable t) {
+            return null;
+        }
+        return new Backup(user, p[0], path, 0, p[2], algoOf(p[3]));
+    }
+
+    private static int userOfPath(String path) {
+        if (!path.startsWith("/data/user/")) return -1;
+        String rest = path.substring("/data/user/".length());
+        int slash = rest.indexOf('/');
+        if (slash <= 0) return -1;
+        try {
+            return Integer.parseInt(rest.substring(0, slash));
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
     public static String moveBackups(String from, String to) {
         if (from == null || to == null || from.length() == 0 || from.equals(to)) return "OK 0";
         StringBuilder s = new StringBuilder();

@@ -196,6 +196,11 @@ public class MainActivity extends Activity {
         langAtCreate = Locales.tag(this);
         setContentView(R.layout.activity_main);
 
+        // 打开应用＝用户已解锁这个事件：顺手补做 Android/media 属主迁移（模块脚本拿不到解锁时机）
+        new Thread(new Runnable() {
+            public void run() { CloneStore.migrateMediaOwners(); }
+        }, "media-owner-migrate").start();
+
         listBox = findViewById(R.id.clone_app_list);
         emptyView = findViewById(R.id.not_find_app);
         status = findViewById(R.id.status);
@@ -1184,6 +1189,10 @@ public class MainActivity extends Activity {
                 act.setOnClickListener(new View.OnClickListener() {
                     public void onClick(View v) { createClone(g); }
                 });
+                // 长按：自己挑装到哪个空间（点＝自动挑最老的空闲空间）
+                act.setOnLongClickListener(new View.OnLongClickListener() {
+                    public boolean onLongClick(View v) { pickSpaceFor(g); return true; }
+                });
                 base.setOnClickListener(new View.OnClickListener() {
                     public void onClick(View v) { openPrimary(g); }
                 });
@@ -1565,23 +1574,83 @@ public class MainActivity extends Activity {
                     public void run() {
                         askSpaceName(new NameCb() {
                             public void onName(final String name) {
-                                new Thread(new Runnable() {
-                                    public void run() {
-                                        String out = Shell.exec(CLI + " create '" + CloneStore.cloneName(name) + "'");
-                                        Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
-                                        int uid = m.find() ? Integer.parseInt(m.group(1)) : -1;
-                                        if (uid <= 0) {
-                                            final String msg = failMsg(out.trim());
-                                            runOnUiThread(new Runnable() {
-                                                public void run() { say(msg); }
-                                            });
-                                            return;
-                                        }
-                                        installIntoClone(g, uid, false, name);
-                                    }
-                                }).start();
+                                createSpaceWith(g, name);
                             }
                         }, null);
+                    }
+                });
+            }
+        }).start();
+    }
+
+    /** 建一个新空间，然后把 g 装进去 */
+    private void createSpaceWith(final Group g, final String name) {
+        new Thread(new Runnable() {
+            public void run() {
+                String out = Shell.exec(CLI + " create '" + CloneStore.cloneName(name) + "'");
+                Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
+                int uid = m.find() ? Integer.parseInt(m.group(1)) : -1;
+                if (uid <= 0) {
+                    final String msg = failMsg(out.trim());
+                    runOnUiThread(new Runnable() {
+                        public void run() { say(msg); }
+                    });
+                    return;
+                }
+                installIntoClone(g, uid, false, name);
+            }
+        }).start();
+    }
+
+    /**
+     * 长按「创建分身」：自己选装到哪个空间。
+     * 点＝自动（最老的、还没装它的空间），长按＝手选；这样常用路径不用每次点弹窗。
+     */
+    private void pickSpaceFor(final Group g) {
+        if (!Shell.ready()) {
+            say(getString(R.string.need_perm));
+            return;
+        }
+        say("正在读取分身空间…");
+        new Thread(new Runnable() {
+            public void run() {
+                final List<Integer> spaces = CloneStore.listSpaceUids();
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        final String[] items = new String[spaces.size() + 1];
+                        for (int i = 0; i < spaces.size(); i++) {
+                            int u = spaces.get(i).intValue();
+                            java.util.Set<String> kept = CloneStore.keptPkgs(MainActivity.this, u);
+                            boolean has = kept != null && kept.contains(g.pkg);
+                            items[i] = CloneStore.nameOf(MainActivity.this, u)
+                                    + " · uid " + u + " · "
+                                    + getString(has ? R.string.space_has_app : R.string.space_free);
+                        }
+                        items[spaces.size()] = getString(R.string.new_space_option);
+                        new AlertDialog.Builder(MainActivity.this)
+                                .setTitle(getString(R.string.pick_space_for_title, g.label))
+                                .setItems(items, new DialogInterface.OnClickListener() {
+                                    public void onClick(DialogInterface d, int which) {
+                                        if (which == spaces.size()) {
+                                            askSpaceName(new NameCb() {
+                                                public void onName(String name) {
+                                                    createSpaceWith(g, name);
+                                                }
+                                            }, null);
+                                            return;
+                                        }
+                                        int uid = spaces.get(which).intValue();
+                                        java.util.Set<String> kept =
+                                                CloneStore.keptPkgs(MainActivity.this, uid);
+                                        if (kept != null && kept.contains(g.pkg)) {
+                                            toast(getString(R.string.space_has_app_hint, g.label));
+                                            return;
+                                        }
+                                        installIntoClone(g, uid, true, "");
+                                    }
+                                })
+                                .setNegativeButton(android.R.string.cancel, null)
+                                .show();
                     }
                 });
             }

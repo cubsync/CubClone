@@ -633,6 +633,60 @@ public final class CloneStore {
         return null;
     }
 
+    private static volatile boolean migratedOnce = false;
+
+    /**
+     * 把 /data/media/0/Android/media/&lt;包&gt; 从 sdcardfs 形态（media_rw:扩展组 2775）
+     * 迁成 FUSE 形态（&lt;包uid&gt;:media_rw）。
+     *
+     * 这件事必须在**用户解锁之后**做，而模块脚本只有开机一个时机（脚本里等多久都等不到，
+     * 日志实测是 skip）。所以放到应用启动这个「解锁后」的事件里，幂等、每次启动最多跑一次。
+     *
+     * @return 改动数；不适用/没权限返回 -1
+     */
+    static int migrateMediaOwners() {
+        if (migratedOnce) return 0;
+        if (!Shell.ready()) return -1;
+        Integer st = storageState();
+        if (st == null || st.intValue() != 2) return -1;   // 只在本机走纯 FUSE 时才有意义
+        migratedOnce = true;
+        String script =
+                "B=/data/media/0/Android/media\n"
+                + "P=/data/system/packages.list\n"
+                + "L=/data/adb/cubclone-sdcardfs-fix.log\n"
+                + "if [ ! -d \"$B\" ] || [ ! -f \"$P\" ]; then echo N=-1; exit 0; fi\n"
+                + "n=0\n"
+                + "for d in \"$B\"/*; do\n"
+                + "  [ -d \"$d\" ] || continue\n"
+                + "  pkg=${d##*/}\n"
+                + "  u=$(awk -v p=\"$pkg\" '$1==p{print $2; exit}' \"$P\" 2>/dev/null)\n"
+                + "  [ -n \"$u\" ] || continue\n"
+                + "  c=$(stat -c %u \"$d\" 2>/dev/null)\n"
+                + "  [ \"$c\" = \"$u\" ] && continue\n"
+                + "  if chown -R \"$u:media_rw\" \"$d\" 2>/dev/null; then\n"
+                + "    n=$((n+1))\n"
+                + "    echo \"$(date '+%F %T') [app] chown $pkg $c -> $u\" >> \"$L\" 2>/dev/null\n"
+                + "  fi\n"
+                + "done\n"
+                + "echo N=$n\n";
+        String b64 = android.util.Base64.encodeToString(
+                script.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                android.util.Base64.NO_WRAP);
+        String out = Shell.exec("echo " + b64 + " | base64 -d | sh");
+        int i = out.indexOf("N=");
+        if (i < 0) return -1;
+        try {
+            int n = Integer.parseInt(out.substring(i + 2).trim().split("\\s+")[0]);
+            if (n > 0) {
+                Shell.exec("echo \"$(date '+%F %T') [app] migrate done, changed=" + n
+                        + "\" >> /data/adb/cubclone-sdcardfs-fix.log");
+            }
+            return n;
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
     // ---------------- 「生成修复模块」 ----------------
     // 模块做两件事：
     // ① 让 vold / MediaProvider 不再走 sdcardfs 分支（纯 FUSE）。内核带 sdcardfs 时，
@@ -689,40 +743,9 @@ public final class CloneStore {
             + "AFTER=$(\"$RP\" external_storage.sdcardfs.enabled 2>/dev/null)\n"
             + "say \"external_storage.sdcardfs.enabled: [$BEFORE] -> [$AFTER]\"\n";
 
-    /**
-     * service.sh：late_start 阶段跑属主迁移（post-fs-data 时 /data/media/0 往往还没就绪，
-     * 实测会直接 skip）。这里一直等到目录出现（设备解锁后才有），再逐包 chown，幂等。
-     */
-    private static final String MODULE_SVC =
-            "#!/system/bin/sh\n"
-            + "# CubClone 分身共享存储：把 sdcardfs 时代建的 Android/media/<包> 迁成 FUSE 形态\n"
-            + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
-            + "NOW=$(date '+%F %T')\n"
-            + "say() { echo \"$NOW [svc] $*\" >> \"$LOG\"; }\n"
-            + "\n"
-            + "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then exit 0; fi\n"
-            + "\n"
-            + "BASE=/data/media/0/Android/media\n"
-            + "PKGLIST=/data/system/packages.list\n"
-            + "i=0\n"
-            + "while [ ! -d \"$BASE\" ]; do\n"
-            + "  sleep 2; i=$((i+1))\n"
-            + "  if [ $((i % 150)) -eq 0 ]; then say \"waiting: $BASE 还没出现（$((i/30)) 分钟，设备可能未解锁）\"; fi\n"
-            + "  [ $i -ge 10800 ] && { say \"give up: 等了 6 小时 $BASE 仍未出现\"; exit 0; }\n"
-            + "done\n"
-            + "if [ ! -f \"$PKGLIST\" ]; then say \"skip: $PKGLIST 不存在\"; exit 0; fi\n"
-            + "\n"
-            + "n=0\n"
-            + "for d in \"$BASE\"/*; do\n"
-            + "  [ -d \"$d\" ] || continue\n"
-            + "  pkg=${d##*/}\n"
-            + "  uid=$(awk -v p=\"$pkg\" '$1==p{print $2; exit}' \"$PKGLIST\" 2>/dev/null)\n"
-            + "  [ -n \"$uid\" ] || { say \"skip $pkg (not installed)\"; continue; }\n"
-            + "  cur=$(stat -c %u \"$d\" 2>/dev/null)\n"
-            + "  [ \"$cur\" = \"$uid\" ] && continue\n"
-            + "  chown -R \"$uid:media_rw\" \"$d\" 2>/dev/null && n=$((n+1)) && say \"chown $pkg $cur -> $uid\"\n"
-            + "done\n"
-            + "say \"migrate done, changed=$n\"\n";
+    // 属主迁移不放模块里：模块脚本只有「开机」一个时机，而 /data/media/0/Android/media
+    // 要用户解锁后才出现 —— 实测开机后停在锁屏，脚本等多久都是白等（日志里是 skip）。
+    // 「解锁后」真正的事件是用户打开本应用，所以改由 migrateMediaOwners() 在启动时补做。
 
     /** 卸载只记一行：属性只改内存，重启回原值；属主不回滚（迁回 sdcardfs 形态反而会坏） */
     private static final String MODULE_UNINSTALL =
@@ -744,10 +767,9 @@ public final class CloneStore {
             + "ui_print \"- 内核带 sdcardfs，继续安装\"\n"
             + "if command -v set_perm >/dev/null 2>&1; then\n"
             + "  set_perm $MODPATH/post-fs-data.sh 0 0 0755\n"
-            + "  set_perm $MODPATH/service.sh 0 0 0755\n"
             + "  set_perm $MODPATH/uninstall.sh 0 0 0755\n"
             + "else\n"
-            + "  chmod 0755 $MODPATH/post-fs-data.sh $MODPATH/service.sh $MODPATH/uninstall.sh\n"
+            + "  chmod 0755 $MODPATH/post-fs-data.sh $MODPATH/uninstall.sh\n"
             + "fi\n"
             + "ui_print \"- 安装完成，重启后分身空间与主空间共用同一份存储\"\n";
 
@@ -759,16 +781,16 @@ public final class CloneStore {
             + "     （和内核没有 sdcardfs 驱动的机型同一条分支）。内核带 sdcardfs 时，vold 给分身\n"
             + "     用户 bind Android/data 会被 FUSE 拒掉（EACCES），整卷回滚成 unmountable，\n"
             + "     分身里根本没有外部存储。关掉后分身卷正常挂上，且与主空间共用同一份文件。\n"
-            + "  2. 把 /data/media/0/Android/media/<包> 的属主从 sdcardfs 形态\n"
-            + "     （media_rw:<包扩展组> 2775）迁成 FUSE 形态（<包uid>:media_rw）。\n"
-            + "     不迁的话，切成 FUSE 后 root 和别的应用都写不进这些老目录\n"
-            + "     （实测第三方支付、文件管理器应用写入失败）。\n"
+            + "  2. 另外，主空间 /data/media/0/Android/media/<包> 的属主要从 sdcardfs 形态\n"
+            + "     （media_rw:<扩展组> 2775）迁成 FUSE 形态（<包uid>:media_rw），否则切成 FUSE 后\n"
+            + "     root 和别的应用都写不进这些老目录。这一步不在模块里做：模块只有开机一个时机，\n"
+            + "     那时设备还没解锁、目录还不存在。由 CubClone 应用在启动时自动补做。\n"
             + "\n"
             + "刷入时就会检查，不满足直接拒绝安装、不留任何东西：\n"
             + "  内核没有 sdcardfs 驱动 -> 拒绝：本机不需要\n"
             + "\n"
-            + "用法：在 APatch / KernelSU / Magisk 里刷入本 zip，重启手机，解锁后检查。\n"
-            + "  执行记录在 /data/adb/cubclone-sdcardfs-fix.log，能看到属性前后值与逐包 chown 记录。\n"
+            + "用法：在 APatch / KernelSU / Magisk 里刷入本 zip，重启手机，解锁后打开一次 CubClone。\n"
+            + "  模块执行记录在 /data/adb/cubclone-sdcardfs-fix.log，属主迁移的记录也追加在这里。\n"
             + "\n"
             + "卸载：管理器里移除模块，重启即恢复原状（属性只改内存，不落盘）。\n"
             + "  属主不会回滚：迁回 sdcardfs 形态在纯 FUSE 下反而写不进去。\n"
@@ -827,7 +849,6 @@ public final class CloneStore {
             putEntry(zos, "module.prop", MODULE_PROP);
             putEntry(zos, "system.prop", MODULE_SYSPROP);
             putEntry(zos, "post-fs-data.sh", MODULE_PFD);
-            putEntry(zos, "service.sh", MODULE_SVC);
             putEntry(zos, "uninstall.sh", MODULE_UNINSTALL);
             putEntry(zos, "customize.sh", MODULE_CUSTOMIZE);
             putEntry(zos, "README.txt", MODULE_README);
@@ -1166,25 +1187,19 @@ public final class CloneStore {
     }
 
     /**
-     * 能装这个应用的空间（我们自己建的、且还没有它），按已有分身数升序。
+     * 能装这个应用的空间（我们自己建的、且还没有它），按 uid 升序 —— 老空间先用。
+     * 以前按「已装分身数」升序排，结果每次都塞进最新那个空空间，看起来像「总建到最后一个」。
      * ⚠判断「空间里已经有它」只能用登记表：新建空间时系统会把主身份的全部包灌进来
      * （红米 180 个、一加 378 个），按包列表算的话每个空间都「已经有它」，永远不肯复用。
      */
     static java.util.List<Integer> reusableSpaces(Context c, String pkg) {
-        final Map<Integer, Integer> n = new HashMap<Integer, Integer>();
         java.util.List<Integer> out = new ArrayList<Integer>();
         for (int uid : listSpaceUids()) {
             Set<String> kept = keptPkgs(c, uid);
             if (kept != null && kept.contains(pkg)) continue;
-            n.put(Integer.valueOf(uid), Integer.valueOf(kept == null ? 0 : kept.size()));
             out.add(Integer.valueOf(uid));
         }
-        Collections.sort(out, new Comparator<Integer>() {
-            public int compare(Integer a, Integer b) {
-                int d = n.get(a).intValue() - n.get(b).intValue();
-                return d != 0 ? d : a.intValue() - b.intValue();
-            }
-        });
+        Collections.sort(out);
         return out;
     }
 }

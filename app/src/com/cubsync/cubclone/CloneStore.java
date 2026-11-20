@@ -691,7 +691,7 @@ public final class CloneStore {
 
     /**
      * service.sh：late_start 阶段跑属主迁移（post-fs-data 时 /data/media/0 往往还没就绪，
-     * 实测会直接 skip）。等目录出现最多 30 秒，然后逐包 chown，幂等。
+     * 实测会直接 skip）。这里一直等到目录出现（设备解锁后才有），再逐包 chown，幂等。
      */
     private static final String MODULE_SVC =
             "#!/system/bin/sh\n"
@@ -705,8 +705,11 @@ public final class CloneStore {
             + "BASE=/data/media/0/Android/media\n"
             + "PKGLIST=/data/system/packages.list\n"
             + "i=0\n"
-            + "while [ ! -d \"$BASE\" ] && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done\n"
-            + "if [ ! -d \"$BASE\" ]; then say \"skip: $BASE 30 秒内没出现\"; exit 0; fi\n"
+            + "while [ ! -d \"$BASE\" ]; do\n"
+            + "  sleep 2; i=$((i+1))\n"
+            + "  if [ $((i % 150)) -eq 0 ]; then say \"waiting: $BASE 还没出现（$((i/30)) 分钟，设备可能未解锁）\"; fi\n"
+            + "  [ $i -ge 10800 ] && { say \"give up: 等了 6 小时 $BASE 仍未出现\"; exit 0; }\n"
+            + "done\n"
             + "if [ ! -f \"$PKGLIST\" ]; then say \"skip: $PKGLIST 不存在\"; exit 0; fi\n"
             + "\n"
             + "n=0\n"

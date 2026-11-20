@@ -84,11 +84,11 @@ release 点成正式。
 | 平台 | 产物 |
 |---|---|
 | Android（收版） | `dist/CubClone-<版本号>.apk`（预发布带后缀，如 `CubClone-0.7.0-beta.1.apk`），签名用仓库外的密钥库（见 build.sh 的 `$CUBCLONE_SIGNING`） |
-| Android（测试包） | `dist/CubClone-<版本号>-test-<短提交号>.apk`，与设备上 `versionName` 的 `+<短提交号>` 后缀一一对应 |
+| Android（测试包） | `dist/CubClone-<版本号>+<短提交号>.apk` —— 与应用内「关于」显示的 `versionName` 完全一致 |
 | 桌面 | 暂无 |
 
 产物名带版本号，出到仓库根的 `dist/`；`build/` 放中间件。两者都在 `.gitignore` 里，不入库。
-每出一个测试包，同版本的旧 `-test-*.apk` 当场删掉；手机 `Download` 里也只留最新那一个。
+每出一个测试包，同版本的旧 `+*.apk` 当场删掉；手机 `Download` 里也只留最新那一个。
 
 开发期构建在 `versionName` 末尾追加 `+<短提交号>`（SemVer §5 的构建元数据，如 `0.6.52+d5940d7`，
 有未提交改动时带 `-dirty`）。设置页「关于」直接读 `versionName`，所以设备上一眼能看出装的是哪次提交。

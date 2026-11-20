@@ -285,6 +285,8 @@
     <string name="pick_spaces_title">装到哪些空间</string>
     <string name="new_space_option">＋ 新建一个空间</string>
     <string name="batch_result">成功 %1$d · 跳过 %2$d · 失败 %3$d</string>
+    <string name="batch_create_done">已向 %1$d 个空间创建分身</string>
+    <string name="batch_skip_has_app">%1$s 已在部分空间存在，已跳过</string>
     <string name="batch_none_selected">先勾选要分身的应用</string>
 
     <string name="grid_view">网格视图</string>

@@ -1607,38 +1607,63 @@ public class MainActivity extends Activity {
                 final List<Integer> spaces = CloneStore.listSpaceUids();
                 runOnUiThread(new Runnable() {
                     public void run() {
-                        final String[] items = new String[spaces.size() + 1];
+                        // 多选：一次勾几个空间一起建；已经有这个应用的空间照旧提示、跳过
+                        final String[] items = new String[spaces.size()];
+                        final boolean[] has = new boolean[spaces.size()];
                         for (int i = 0; i < spaces.size(); i++) {
                             int u = spaces.get(i).intValue();
                             java.util.Set<String> kept = CloneStore.keptPkgs(MainActivity.this, u);
-                            boolean has = kept != null && kept.contains(g.pkg);
-                            items[i] = CloneStore.nameOf(MainActivity.this, u)
-                                    + " · uid " + u + " · "
-                                    + getString(has ? R.string.space_has_app : R.string.space_free);
+                            has[i] = kept != null && kept.contains(g.pkg);
+                            items[i] = spaceLabel(u) + " · "
+                                    + getString(has[i] ? R.string.space_has_app : R.string.space_free);
                         }
-                        items[spaces.size()] = getString(R.string.new_space_option);
+                        final boolean[] checked = new boolean[spaces.size()];
                         new AlertDialog.Builder(MainActivity.this)
                                 .setTitle(getString(R.string.pick_space_for_title, g.label))
-                                .setItems(items, new DialogInterface.OnClickListener() {
-                                    public void onClick(DialogInterface d, int which) {
-                                        if (which == spaces.size()) {
-                                            askSpaceName(new NameCb() {
-                                                public void onName(String name) {
-                                                    createSpaceWith(g, name);
+                                .setMultiChoiceItems(items, checked,
+                                        new DialogInterface.OnMultiChoiceClickListener() {
+                                            public void onClick(DialogInterface d,
+                                                    int which, boolean isChecked) {
+                                                checked[which] = isChecked;
+                                            }
+                                        })
+                                .setPositiveButton(android.R.string.ok,
+                                        new DialogInterface.OnClickListener() {
+                                            public void onClick(DialogInterface d, int w) {
+                                                List<Integer> targets = new ArrayList<Integer>();
+                                                boolean skipped = false;
+                                                for (int i = 0; i < checked.length; i++) {
+                                                    if (!checked[i]) continue;
+                                                    if (has[i]) {
+                                                        skipped = true;
+                                                        continue;
+                                                    }
+                                                    targets.add(spaces.get(i));
                                                 }
-                                            }, null);
-                                            return;
-                                        }
-                                        int uid = spaces.get(which).intValue();
-                                        java.util.Set<String> kept =
-                                                CloneStore.keptPkgs(MainActivity.this, uid);
-                                        if (kept != null && kept.contains(g.pkg)) {
-                                            toast(getString(R.string.space_has_app_hint, g.label));
-                                            return;
-                                        }
-                                        installIntoClone(g, uid, true, "");
-                                    }
-                                })
+                                                if (targets.isEmpty()) {
+                                                    toast(skipped
+                                                            ? getString(R.string.space_has_app_hint,
+                                                                    g.label)
+                                                            : getString(R.string.batch_none_selected));
+                                                    return;
+                                                }
+                                                if (skipped) {
+                                                    toast(getString(R.string.batch_skip_has_app,
+                                                            g.label));
+                                                }
+                                                installIntoClones(g, targets);
+                                            }
+                                        })
+                                .setNeutralButton(R.string.new_space_option,
+                                        new DialogInterface.OnClickListener() {
+                                            public void onClick(DialogInterface d, int w) {
+                                                askSpaceName(new NameCb() {
+                                                    public void onName(String name) {
+                                                        createSpaceWith(g, name);
+                                                    }
+                                                }, null);
+                                            }
+                                        })
                                 .setNegativeButton(android.R.string.cancel, null)
                                 .show();
                     }
@@ -1666,6 +1691,23 @@ public class MainActivity extends Activity {
                     }
                 })
                 .show();
+    }
+
+    /** 一次装进多个已有空间：串行执行，避免同时起一堆 pm 命令 */
+    private void installIntoClones(final Group g, final List<Integer> uids) {
+        new Thread(new Runnable() {
+            public void run() {
+                for (Integer u : uids) {
+                    installIntoClone(g, u.intValue(), true, "");
+                }
+                final int n = uids.size();
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        say(getString(R.string.batch_create_done, n));
+                    }
+                });
+            }
+        }).start();
     }
 
     /** 拿到空间 uid 后：登记归属 → 装应用 → 精简 → 反馈 */

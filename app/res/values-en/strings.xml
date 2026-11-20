@@ -285,6 +285,8 @@ Every time you clone app data, the destination\u2019s existing data is kept here
     <string name="pick_spaces_title">Add to spaces</string>
     <string name="new_space_option">+ New space</string>
     <string name="batch_result">Done %1$d · skipped %2$d · failed %3$d</string>
+    <string name="batch_create_done">Clones created in %1$d spaces</string>
+    <string name="batch_skip_has_app">%1$s already exists in some spaces and was skipped</string>
     <string name="batch_none_selected">Pick apps first</string>
 
     <string name="grid_view">Grid view</string>

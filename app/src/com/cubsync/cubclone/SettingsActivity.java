@@ -1318,11 +1318,24 @@ public class SettingsActivity extends Activity {
     /** 生成修复模块到 Download（模块内容由应用现场拼，不单独维护模块包） */
     /** 数据备份：扫 /data/user/<空间>/<包>.cubclone-bak-<时间戳> */
     private void showBackups() {
-        if (!Shell.rootOk) {
-            toast(getString(R.string.backup_need_root));
+        // 实时探一次：静态字段是启动时的快照，授权晚了就一直是 false
+        if (!Shell.checkRoot()) {
+            android.widget.Toast.makeText(this, getString(R.string.backup_need_root),
+                    android.widget.Toast.LENGTH_LONG).show();
             return;
         }
-        final java.util.List<AppData.Backup> list = AppData.listBackups();
+        toast(getString(R.string.backup_scanning));
+        new Thread(new Runnable() {
+            public void run() {
+                final java.util.List<AppData.Backup> list = AppData.listBackups();
+                runOnUiThread(new Runnable() {
+                    public void run() { showBackupList(list); }
+                });
+            }
+        }).start();
+    }
+
+    private void showBackupList(final java.util.List<AppData.Backup> list) {
         if (list.isEmpty()) {
             toast(getString(R.string.backup_empty));
             return;

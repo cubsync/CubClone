@@ -1962,7 +1962,8 @@ public class MainActivity extends Activity {
 
     private void confirmCopyData(final Group g, final int srcUser,
                                  final java.util.List<Integer> dstUsers) {
-        if (!Shell.ready()) {
+        // 数据在 /data/user 下，Shizuku 的 shell 身份读写不了，必须实打实拿到 root
+        if (!Shell.checkRoot()) {
             toast(getString(R.string.copy_data_no_root));
             return;
         }

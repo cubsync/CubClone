@@ -58,6 +58,8 @@ public final class AppData {
         s.append("echo CUB_OK '").append(bak).append("'\n");
 
         String out = Shell.execWithRoot(s.toString());
+        android.util.Log.i("CubClone", "copy " + pkg + " " + srcUser + "->" + dstUser
+                + " out=" + out.trim());
         int i = out.indexOf("CUB_OK ");
         if (i >= 0) return "OK " + out.substring(i + 7).trim();
         for (String line : out.split("\n")) {

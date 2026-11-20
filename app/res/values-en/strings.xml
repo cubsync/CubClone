@@ -184,6 +184,7 @@ Owner data is not touched.</string>
     <string name="clone_hidden_ok">Hidden %1$s (restore in settings)</string>
     <string name="hidden_title">Hidden apps (%1$d)</string>
     <string name="sec_backup">Data backups</string>
+    <string name="backup_scanning">Scanning backups…</string>
     <string name="backup_empty">No backups</string>
     <string name="backup_need_root">Root required: backups live under /data/user, which Shizuku cannot read</string>
     <string name="backup_restore">Restore this backup</string>

@@ -184,6 +184,7 @@
     <string name="clone_hidden_ok">已隐藏 %1$s（设置里可恢复）</string>
     <string name="hidden_title">已隐藏的应用（%1$d）</string>
     <string name="sec_backup">数据备份</string>
+    <string name="backup_scanning">正在扫描备份…</string>
     <string name="backup_empty">没有备份</string>
     <string name="backup_need_root">需要 root：备份目录在 /data/user 下，Shizuku 读不到</string>
     <string name="backup_restore">恢复这份备份</string>

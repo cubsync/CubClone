@@ -33,6 +33,12 @@
             android:exported="false"
             android:label="设置" />
 
+        <!-- 数据备份：列表 + 每项操作 -->
+        <activity
+            android:name=".BackupActivity"
+            android:exported="false"
+            android:label="数据备份" />
+
         <!-- 桌面快捷方式落地页：收到 uid/pkg 后直接启动分身里的应用 -->
         <activity
             android:name=".LaunchProxyActivity"

@@ -2017,7 +2017,9 @@ public class MainActivity extends Activity {
                                     Integer.valueOf(dstUsers.size())));
                         }
                     });
-                    String r = AppData.copy(srcUser, dst, g.pkg, appId);
+                    String algo = sp().getString("backup_algo", "zst");
+                    int lv = sp().getInt("backup_level_" + algo, AppData.defaultLevel(algo));
+                    String r = AppData.copy(srcUser, dst, g.pkg, appId, algo, lv);
                     if (r.startsWith("OK")) {
                         ok++;
                         lastBak = r.length() > 3 ? r.substring(3).trim() : "";

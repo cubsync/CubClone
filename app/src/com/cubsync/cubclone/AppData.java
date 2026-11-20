@@ -22,6 +22,14 @@ public final class AppData {
      * @return "OK &lt;备份路径&gt;" 或 "ERR_xxx" / "ERR &lt;原文&gt;"
      */
     public static String copy(int srcUser, int dstUser, String pkg, int appId) {
+        return copy(srcUser, dstUser, pkg, appId, "none", 0);
+    }
+
+    /**
+     * @param algo 复制完成后把这份备份压缩成包（"none" 或 null 表示只留目录）
+     */
+    public static String copy(int srcUser, int dstUser, String pkg, int appId,
+                              String algo, int level) {
         String src = "/data/user/" + srcUser + "/" + pkg;
         String dst = "/data/user/" + dstUser + "/" + pkg;
         String ts = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
@@ -62,7 +70,22 @@ public final class AppData {
         android.util.Log.i("CubClone", "copy " + pkg + " " + srcUser + "->" + dstUser
                 + " out=" + out.trim());
         int i = out.indexOf("CUB_OK ");
-        if (i >= 0) return "OK " + out.substring(i + 7).trim();
+        if (i >= 0) {
+            String bakPath = out.substring(i + 7).trim();
+            // 复制成功后按设置把这份备份压成包；压缩失败不影响复制结果，
+            // 目录形态的备份照样能恢复
+            if (algo != null && algo.length() > 0 && !"none".equals(algo)) {
+                Backup nb = new Backup(dstUser, pkg, bakPath, 0, "", "");
+                String zr = compress(nb, algo, level);
+                android.util.Log.i("CubClone", "auto compress " + bakPath + " -> " + zr);
+                if (zr.startsWith("OK ")) {
+                    String rest = zr.substring(3).trim();
+                    int bar = rest.lastIndexOf('|');
+                    return "OK " + (bar > 0 ? rest.substring(0, bar) : rest);
+                }
+            }
+            return "OK " + bakPath;
+        }
         for (String line : out.split("\n")) {
             String t = line.trim();
             if (t.startsWith("ERR")) return t;

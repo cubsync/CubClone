@@ -199,6 +199,11 @@ Owner data is not touched.</string>
     <string name="backup_delete_ok">Deleted</string>
     <string name="backup_fail">Failed: %1$s</string>
     <string name="backup_algo_pick">Choose compression</string>
+    <string name="backup_algo_row">Compress clone backups</string>
+    <string name="backup_algo_saved">Set to %1$s</string>
+    <string name="backup_empty_hint">No backups yet.
+
+Every time you clone app data, the destination\u2019s existing data is kept here first — compress, restore or export it from this page.</string>
     <string name="backup_algo_title">Compression: %1$s</string>
     <string name="backup_algo_zst">zstd</string>
     <string name="backup_algo_gz">gzip</string>

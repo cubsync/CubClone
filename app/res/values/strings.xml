@@ -199,6 +199,11 @@
     <string name="backup_delete_ok">已删除</string>
     <string name="backup_fail">操作失败：%1$s</string>
     <string name="backup_algo_pick">选择压缩算法</string>
+    <string name="backup_algo_row">克隆时的备份压缩</string>
+    <string name="backup_algo_saved">已设为 %1$s</string>
+    <string name="backup_empty_hint">还没有备份。
+
+每次克隆数据时，目标空间原来的数据会自动留一份在这里，可以选择压缩、恢复或导出。</string>
     <string name="backup_algo_title">压缩方式：%1$s</string>
     <string name="backup_algo_zst">zstd</string>
     <string name="backup_algo_gz">gzip</string>

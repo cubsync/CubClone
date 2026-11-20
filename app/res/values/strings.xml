@@ -208,7 +208,7 @@
     <string name="space_storage_broken">分身共享存储不可用：本机内核的 sdcardfs 与分身不兼容，相册会空白。点这里生成修复模块</string>
     <string name="space_storage_fixed">分身共享存储可用 · 点这里可重新生成修复模块</string>
     <string name="fix_module_title">生成修复模块</string>
-    <string name="fix_module_msg">会生成 cubclone-sdcardfs-fix.zip 到 Download 目录（同名文件直接覆盖）。用 APatch / KernelSU / Magisk 刷入后重启。\n\n模块做两件事：\n① 让系统的外部存储改用纯 FUSE 挂载 —— 内核带 sdcardfs 时分身卷挂不上，这是根因；\n② 主空间 Android/media 目录的属主迁移在模块里完成（开机后等设备解锁、共享存储出现时自动跑）—— 不迁的话，切过去后这些目录的跨应用写入会失效。\n\n内核没有 sdcardfs 的机型在刷入时会被直接拒绝，不会留下任何东西。\n\n注意：ROM OTA 升级后模块通常要重刷一次。</string>
+    <string name="fix_module_msg">会生成 cubclone-sdcardfs-fix.zip 到 Download 目录（同名文件直接覆盖）。用 APatch / KernelSU / Magisk 刷入后重启。\n\n模块做两件事：\n① 让系统的外部存储改用纯 FUSE 挂载 —— 内核带 sdcardfs 时分身卷挂不上，这是根因；\n② 放开系统对 fuse 文件的一个 ioctl —— 否则部分应用在纯 FUSE 下打不开自己的数据库（导入配置会报错）。模块不动任何文件和数据。\n\n内核没有 sdcardfs 的机型在刷入时会被直接拒绝，不会留下任何东西。\n\n注意：ROM OTA 升级后模块通常要重刷一次。</string>
     <string name="fix_module_working">正在生成…</string>
     <string name="fix_module_done">已生成：%1$s</string>
     <string name="fix_module_failed">生成失败</string>

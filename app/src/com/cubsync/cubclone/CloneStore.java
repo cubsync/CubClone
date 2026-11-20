@@ -640,9 +640,9 @@ public final class CloneStore {
     //    vold 给 clone 用户 bind Android/data 会先 UnmountTree(target)，而 target 在 FUSE
     //    视图里被 MediaProvider 按「不该由我管」直接回 EACCES —— 整卷回滚成 unmountable。
     //    关掉后 clone 卷正常挂上，且与主空间共用同一份存储（相册是同一份文件）。
-    // ② 把 /data/media/0/Android/media/<包> 从 sdcardfs 形态（media_rw:<扩展组> 2775）
-    //    迁成 FUSE 形态（<包uid>:media_rw）。不迁的话切成 FUSE 后 root 和别的应用都写不进去
-    //    （实测第三方支付、文件管理器应用写入失败）。
+    // ② 切到纯 FUSE 后，应用对 /sdcard 上的文件发 f2fs ioctl 会被 A16 默认策略拒掉，
+    //    部分应用的数据库因此打不开（实测导入配置失败）。模块只放开这一个 ioctl。
+    // ⛔ 模块不碰任何文件：不改属主、不搬数据、不动主空间内容。
     // 判据只用「/proc/filesystems 里有 sdcardfs」：静态、BFU 也可见。
     // ⛔ 不能拿 mount 或卷状态当判据 —— 脚本跑在 post-fs-data，那时还没解锁，一条挂载都没有。
 
@@ -651,12 +651,12 @@ public final class CloneStore {
     private static final String MODULE_PROP =
             "id=cubclone_sdcardfs_fix\n"
             + "name=CubClone 分身存储修复\n"
-            + "version=2.0\n"
-            + "versionCode=3\n"
+            + "version=2.1\n"
+            + "versionCode=4\n"
             + "author=cubsync\n"
             + "description=内核带 sdcardfs 的机型上，让 vold/MediaProvider 走纯 FUSE，"
-            + "恢复分身空间与主空间共用的存储（相册、文件同一份）。安装后会把 Android/media "
-            + "下 sdcardfs 时代建的目录属主迁移成 FUSE 形态，避免主空间跨应用写入失效。"
+            + "恢复分身空间与主空间共用的存储（相册、文件同一份）。另放开一个 f2fs ioctl，"
+            + "避免应用在 FUSE 上打不开数据库。只改系统行为，不动任何文件和数据。"
             + "仅适用于内核带 sdcardfs 的设备；不含该驱动的机型会被拒绝安装。\n";
 
     /** 管理器若在更早阶段应用 system.prop，这里也备一份，双保险（内容与脚本一致） */
@@ -688,42 +688,20 @@ public final class CloneStore {
             + "BEFORE=$(\"$RP\" external_storage.sdcardfs.enabled 2>/dev/null)\n"
             + "\"$RP\" external_storage.sdcardfs.enabled false\n"
             + "AFTER=$(\"$RP\" external_storage.sdcardfs.enabled 2>/dev/null)\n"
-            + "say \"external_storage.sdcardfs.enabled: [$BEFORE] -> [$AFTER]\"\n";
-
-    /**
-     * service.sh：late_start 阶段做属主迁移，一直等到共享存储出现（设备解锁后才有）。
-     * 这件事只能 root 做（chown 到别的应用 uid，shell 没有 CAP_CHOWN），所以留在模块里：
-     * 应用全程只用 Shizuku，不需要 root 授权。
-     */
-    private static final String MODULE_SVC =
-            "#!/system/bin/sh\n"
-            + "# CubClone 分身共享存储：把 sdcardfs 时代建的 Android/media/<包> 迁成 FUSE 形态\n"
-            + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
-            + "say() { echo \"$(date '+%F %T') [svc] $*\" >> \"$LOG\"; }\n"
+            + "say \"external_storage.sdcardfs.enabled: [$BEFORE] -> [$AFTER]\"\n"
             + "\n"
-            + "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then exit 0; fi\n"
-            + "\n"
-            + "BASE=/data/media/0/Android/media\n"
-            + "PKGLIST=/data/system/packages.list\n"
-            + "i=0\n"
-            + "while [ ! -d \"$BASE\" ]; do\n"
-            + "  sleep 2; i=$((i+1))\n"
-            + "  if [ $((i % 150)) -eq 0 ]; then say \"waiting: $BASE 还没出现（$((i/30)) 分钟，设备可能未解锁）\"; fi\n"
-            + "  [ $i -ge 10800 ] && { say \"give up: 等了 6 小时 $BASE 仍未出现\"; exit 0; }\n"
+            + "# 切到纯 FUSE 后，部分应用仍会对 /sdcard 上的文件发 f2fs ioctl；A16 的默认策略\n"
+            + "# 不允许 untrusted_app 这么做，会让它们的数据库直接打不开（实测第三方应用导入配置失败）。\n"
+            + "# 只放开这一个 ioctl，不碰任何文件、不碰属主。\n"
+            + "POL=\"\"\n"
+            + "for p in /data/adb/ap/bin/magiskpolicy /data/adb/ksu/bin/magiskpolicy /data/adb/magisk/magiskpolicy; do\n"
+            + "  if [ -x \"$p\" ]; then POL=\"$p\"; break; fi\n"
             + "done\n"
-            + "if [ ! -f \"$PKGLIST\" ]; then say \"skip: $PKGLIST 不存在\"; exit 0; fi\n"
-            + "\n"
-            + "n=0\n"
-            + "for d in \"$BASE\"/*; do\n"
-            + "  [ -d \"$d\" ] || continue\n"
-            + "  pkg=${d##*/}\n"
-            + "  uid=$(awk -v p=\"$pkg\" '$1==p{print $2; exit}' \"$PKGLIST\" 2>/dev/null)\n"
-            + "  [ -n \"$uid\" ] || { say \"skip $pkg (not installed)\"; continue; }\n"
-            + "  cur=$(stat -c %u \"$d\" 2>/dev/null)\n"
-            + "  [ \"$cur\" = \"$uid\" ] && continue\n"
-            + "  chown -R \"$uid:media_rw\" \"$d\" 2>/dev/null && n=$((n+1)) && say \"chown $pkg $cur -> $uid\"\n"
-            + "done\n"
-            + "say \"migrate done, changed=$n\"\n";
+            + "if [ -n \"$POL\" ]; then\n"
+            + "  OUT=$(\"$POL\" --live \"allowxperm untrusted_app fuse file ioctl 0xf50c\" 2>&1)\n"
+            + "  if [ -z \"$OUT\" ]; then say 'sepolicy: allow untrusted_app fuse file ioctl 0xf50c';\n"
+            + "  else say \"sepolicy: 放行失败 $OUT\"; fi\n"
+            + "else say 'sepolicy: 找不到 magiskpolicy，未放行'; fi\n";
 
     /** 卸载只记一行：属性只改内存，重启回原值；属主不回滚（迁回 sdcardfs 形态反而会坏） */
     private static final String MODULE_UNINSTALL =
@@ -745,10 +723,9 @@ public final class CloneStore {
             + "ui_print \"- 内核带 sdcardfs，继续安装\"\n"
             + "if command -v set_perm >/dev/null 2>&1; then\n"
             + "  set_perm $MODPATH/post-fs-data.sh 0 0 0755\n"
-            + "  set_perm $MODPATH/service.sh 0 0 0755\n"
             + "  set_perm $MODPATH/uninstall.sh 0 0 0755\n"
             + "else\n"
-            + "  chmod 0755 $MODPATH/post-fs-data.sh $MODPATH/service.sh $MODPATH/uninstall.sh\n"
+            + "  chmod 0755 $MODPATH/post-fs-data.sh $MODPATH/uninstall.sh\n"
             + "fi\n"
             + "ui_print \"- 安装完成，重启后分身空间与主空间共用同一份存储\"\n";
 
@@ -760,19 +737,20 @@ public final class CloneStore {
             + "     （和内核没有 sdcardfs 驱动的机型同一条分支）。内核带 sdcardfs 时，vold 给分身\n"
             + "     用户 bind Android/data 会被 FUSE 拒掉（EACCES），整卷回滚成 unmountable，\n"
             + "     分身里根本没有外部存储。关掉后分身卷正常挂上，且与主空间共用同一份文件。\n"
-            + "  2. 另外，主空间 /data/media/0/Android/media/<包> 的属主要从 sdcardfs 形态\n"
-            + "     （media_rw:<扩展组> 2775）迁成 FUSE 形态（<包uid>:media_rw），否则切成 FUSE 后\n"
-            + "     root 和别的应用都写不进这些老目录。这一步由 service.sh 在开机后等设备解锁、\n"
-            + "     共享存储出现时自动完成，不需要打开应用。\n"
+            + "  2. 放开 untrusted_app 对 fuse 文件的一个 ioctl（0xf50c）：切到纯 FUSE 后，\n"
+            + "     部分应用仍按老习惯对 /sdcard 上的文件发 f2fs ioctl，被系统策略拒掉后\n"
+            + "     它们自己的数据库会打不开（表现为导出 0 字节、导入报错）。只放开这一个，\n"
+            + "     不放宽其它任何限制。\n"
+            + "\n"
+            + "不做什么：不改任何文件的属主、不搬动、不删除主空间里的任何东西。\n"
             + "\n"
             + "刷入时就会检查，不满足直接拒绝安装、不留任何东西：\n"
             + "  内核没有 sdcardfs 驱动 -> 拒绝：本机不需要\n"
             + "\n"
-            + "用法：在 APatch / KernelSU / Magisk 里刷入本 zip，重启手机，解锁后打开一次 CubClone。\n"
-            + "  模块执行记录在 /data/adb/cubclone-sdcardfs-fix.log，属主迁移的记录也追加在这里。\n"
+            + "用法：在 APatch / KernelSU / Magisk 里刷入本 zip，重启手机即可。\n"
+            + "  模块执行记录在 /data/adb/cubclone-sdcardfs-fix.log，每条动作都会写进去。\n"
             + "\n"
-            + "卸载：管理器里移除模块，重启即恢复原状（属性只改内存，不落盘）。\n"
-            + "  属主不会回滚：迁回 sdcardfs 形态在纯 FUSE 下反而写不进去。\n"
+            + "卸载：管理器里移除模块，重启即完全恢复原状（属性与政策都只改内存，不落盘）。\n"
             + "\n"
             + "注意：ROM OTA 升级后 Magisk/APatch 模块通常要重刷一次。\n";
 
@@ -828,7 +806,6 @@ public final class CloneStore {
             putEntry(zos, "module.prop", MODULE_PROP);
             putEntry(zos, "system.prop", MODULE_SYSPROP);
             putEntry(zos, "post-fs-data.sh", MODULE_PFD);
-            putEntry(zos, "service.sh", MODULE_SVC);
             putEntry(zos, "uninstall.sh", MODULE_UNINSTALL);
             putEntry(zos, "customize.sh", MODULE_CUSTOMIZE);
             putEntry(zos, "README.txt", MODULE_README);

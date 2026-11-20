@@ -43,6 +43,35 @@ public final class Shell {
         return "ERR 需要 root";
     }
 
+    /**
+     * 执行一段多行脚本。
+     * ⚠ 直接 `su -c "<多行脚本>"` 在部分管理器上会被重新拼参数，引号/换行可能变形
+     * （实测同样的脚本 adb 能跑、App 里 [ -d ] 却判假）。改成 base64 落盘再 sh，
+     * 命令行只剩 base64 字符，不存在任何需要转义的东西。
+     */
+    public static String execScript(String script) {
+        if (!checkRoot()) return "ERR 需要 root";
+        String b64;
+        try {
+            b64 = android.util.Base64.encodeToString(
+                    script.getBytes("UTF-8"), android.util.Base64.NO_WRAP);
+        } catch (Throwable t) {
+            return "ERR " + t;
+        }
+        // Android 15 起每个应用有自己的 app data isolation：App 进程的 namespace 里
+        // /data/user 只有自己那个用户、/data/data 只有自己那个包。直接 sh 会看不到
+        // 别的用户/别的应用（实测 [ -d /data/user/11/... ] 判假）。
+        // 所以进 init 的 mount namespace 再执行，那里能看到全部用户。
+        String cmd = "echo '" + b64 + "' | base64 -d > /data/local/tmp/.cc-run.sh"
+                + " && chmod 700 /data/local/tmp/.cc-run.sh"
+                + " && ( if command -v nsenter >/dev/null 2>&1"
+                + " && nsenter -t 1 -m -- true >/dev/null 2>&1;"
+                + " then nsenter -t 1 -m -- sh /data/local/tmp/.cc-run.sh;"
+                + " else sh /data/local/tmp/.cc-run.sh; fi )"
+                + "; rm -f /data/local/tmp/.cc-run.sh";
+        return raw("su", "-c", cmd);
+    }
+
     private static String shizuku(String cmd) {
         StringBuilder sb = new StringBuilder();
         try {

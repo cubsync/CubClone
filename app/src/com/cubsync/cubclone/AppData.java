@@ -57,7 +57,8 @@ public final class AppData {
         }
         s.append("echo CUB_OK '").append(bak).append("'\n");
 
-        String out = Shell.execWithRoot(s.toString());
+        android.util.Log.i("CubClone", "SCRIPT>>>\n" + s.toString() + "\n<<<");
+        String out = Shell.execScript(s.toString());
         android.util.Log.i("CubClone", "copy " + pkg + " " + srcUser + "->" + dstUser
                 + " out=" + out.trim());
         int i = out.indexOf("CUB_OK ");
@@ -175,7 +176,7 @@ public final class AppData {
     /** 扫各空间下的备份目录；一次 du 拿到全部大小，不逐个进目录 */
     public static java.util.List<Backup> listBackups() {
         java.util.List<Backup> r = new java.util.ArrayList<Backup>();
-        String out = Shell.execWithRoot("du -sm /data/user/*/*.cubclone-bak-* 2>/dev/null");
+        String out = Shell.execScript("du -sm /data/user/*/*.cubclone-bak-* 2>/dev/null\n");
         for (String line : out.split("\n")) {
             String t = line.trim();
             if (t.length() == 0) continue;
@@ -227,7 +228,7 @@ public final class AppData {
         }
         s.append("echo CUB_OK\n");
 
-        String out = Shell.execWithRoot(s.toString());
+        String out = Shell.execScript(s.toString());
         if (out.contains("CUB_OK")) return "OK";
         for (String line : out.split("\n")) {
             String t = line.trim();
@@ -246,7 +247,7 @@ public final class AppData {
         s.append("rm -rf '").append(dst).append("'\n");
         s.append("cp -a '").append(b.path).append("' '").append(dst).append("' || { echo ERR_CP; exit 1; }\n");
         s.append("echo CUB_OK '").append(dst).append("'\n");
-        String out = Shell.execWithRoot(s.toString());
+        String out = Shell.execScript(s.toString());
         int i = out.indexOf("CUB_OK ");
         if (i >= 0) return "OK " + out.substring(i + 7).trim();
         for (String line : out.split("\n")) {
@@ -257,7 +258,7 @@ public final class AppData {
     }
 
     public static String delete(Backup b) {
-        String out = Shell.execWithRoot("rm -rf '" + b.path + "' 2>&1 && echo CUB_OK");
+        String out = Shell.execScript("rm -rf '" + b.path + "' 2>&1 && echo CUB_OK\n");
         return out.contains("CUB_OK") ? "OK" : "ERR " + out.trim();
     }
 
@@ -272,7 +273,7 @@ public final class AppData {
                 "/data/user_de/" + user + "/" + pkg,
         };
         for (String p : paths) {
-            String out = Shell.execWithRoot("ls -Zd '" + p + "' 2>/dev/null");
+            String out = Shell.execScript("ls -Zd '" + p + "' 2>/dev/null\n");
             java.util.regex.Matcher m =
                     java.util.regex.Pattern.compile("u:object_r:[^\\s]+").matcher(out);
             if (m.find()) return m.group();

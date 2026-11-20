@@ -1,14 +1,10 @@
-# 构建产物
-out/
-app/out/
+# 构建产物：中间件 build/，交付物 dist/，都不入库
+build/
+dist/
 *.apk
 *.idsig
 
-# 设备端 jar（由 proto/build.sh 生成）
-app/assets/cubclone.jar
-proto/classes/
-proto/dexout/
-proto/*.jar
+# 设备端 jar 由 proto/build.sh 生成到 build/，不落在源码目录
 
 # 签名凭据 —— ⛔绝不进仓库（clone 权限等于泄露）
 *.keystore

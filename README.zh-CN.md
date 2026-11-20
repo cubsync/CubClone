@@ -50,6 +50,8 @@ CubClone（分身空间）是一个 Android 应用多开工具。它不虚拟化
 
 环境：Android SDK build-tools 35.0.0 + platform android-36、JDK 21。
 
+产物：`dist/CubClone-<版本号>.apk`，中间件在 `build/`；两者都不入库。
+
 Shizuku 的 API class 内置在 `app/libs/`（取自官方发行版），对应的 AIDL 源在 `app/libs/aidl`。
 
 

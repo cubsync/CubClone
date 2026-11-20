@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 构建 分身空间.apk —— 不用 gradle
+# 构建 APK（无需 gradle）
+# 中间件：build/app/   交付物：dist/CubClone-<versionName>.apk
 set -eu
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
@@ -9,15 +10,21 @@ AJ="$SDK/platforms/android-36/android.jar"
 JAVA_HOME="${JAVA_HOME:-D:/Dev/Java/Env/jdk-21.0.12.1+1}"
 export JAVA_HOME
 
-[ -f "$AJ" ] || { echo "缺 android.jar: $AJ"; exit 1; }
+OUT=../build/app
+DIST=../dist
+JAR=../build/cubclone.jar
 
-mkdir -p assets
-cp -f ../proto/cubclone.jar assets/cubclone.jar
-rm -rf out
-mkdir -p out/classes out/dex out/gen out/res
+[ -f "$AJ" ] || { echo "缺 android.jar: $AJ"; exit 1; }
+[ -f "$JAR" ] || { echo "缺 CLI jar: $JAR（先跑 proto/build.sh）"; exit 1; }
+
+rm -rf "$OUT"
+mkdir -p "$OUT/assets" "$OUT/classes" "$OUT/dex" "$OUT/gen"
+
+cp -r assets/. "$OUT/assets/"
+cp -f "$JAR" "$OUT/assets/cubclone.jar"
 
 echo "[1/7] aapt2 compile"
-"$BT/aapt2.exe" compile --dir res -o out/res.zip
+"$BT/aapt2.exe" compile --dir res -o "$OUT/res.zip"
 
 # 版本号唯一真源＝AndroidManifest 的 versionName；versionCode 由它推导，见 docs/VERSIONING.md
 # 正式版 0.7.0 -> 70000。预发布占用本版本号下 100 个槽之前的那段，保证「预发布 < 正式版」且单调：
@@ -47,10 +54,10 @@ case "$VCODE" in ''|*[!0-9]*) echo "versionCode 计算失败: [$VCODE]（version
 echo "    版本 $VNAME  versionCode $VCODE（由 versionName 推导）"
 
 echo "[2/7] aapt2 link（出 base.apk + R.java）"
-"$BT/aapt2.exe" link -o out/base.apk -I "$AJ" \
-  --manifest AndroidManifest.xml -A assets -R out/res.zip \
+"$BT/aapt2.exe" link -o "$OUT/base.apk" -I "$AJ" \
+  --manifest AndroidManifest.xml -A "$OUT/assets" -R "$OUT/res.zip" \
   --auto-add-overlay \
-  --java out/gen \
+  --java "$OUT/gen" \
   --version-code "$VCODE" --version-name "$VNAME" \
   --min-sdk-version 29 --target-sdk-version 33
 
@@ -59,20 +66,20 @@ echo "[3/7] javac"
 CP="$AJ;libs/api-classes.jar;libs/provider-classes.jar"
 # libs/gen 是 aidl 生成的 moe.shizuku.server 接口（ShizukuProvider 依赖）
 "$JAVA_HOME/bin/javac.exe" -J-Dfile.encoding=UTF-8 -source 8 -target 8 -nowarn \
-  -cp "$CP" -d out/classes $(find src libs/gen out/gen -name "*.java")
+  -cp "$CP" -d "$OUT/classes" $(find src libs/gen "$OUT/gen" -name "*.java")
 
 echo "[4/7] d8"
 # class 文件逐个传参会超 Windows 命令行长度，先打包成 jar 再喂 d8
-"$JAVA_HOME/bin/jar.exe" cf out/classes.jar -C out/classes .
-"$BT/d8.bat" --lib "$AJ" --min-api 29 --output out/dex \
-  out/classes.jar libs/api-classes.jar libs/provider-classes.jar
+"$JAVA_HOME/bin/jar.exe" cf "$OUT/classes.jar" -C "$OUT/classes" .
+"$BT/d8.bat" --lib "$AJ" --min-api 29 --output "$OUT/dex" \
+  "$OUT/classes.jar" libs/api-classes.jar libs/provider-classes.jar
 
 echo "[5/7] 塞 dex"
-cp out/dex/classes.dex out/classes.dex
-"$JAVA_HOME/bin/jar.exe" uf out/base.apk -C out classes.dex
+cp "$OUT/dex/classes.dex" "$OUT/classes.dex"
+"$JAVA_HOME/bin/jar.exe" uf "$OUT/base.apk" -C "$OUT" classes.dex
 
 echo "[6/7] zipalign"
-"$BT/zipalign.exe" -f 4 out/base.apk out/aligned.apk
+"$BT/zipalign.exe" -f 4 "$OUT/base.apk" "$OUT/aligned.apk"
 
 echo "[7/7] 签名"
 # 签名凭据在本机（⛔不进仓库）：storeFile/storePassword/keyAlias/keyPassword
@@ -84,8 +91,10 @@ SP=$(sed -n 's/^storePassword=//p' "$PROPS")
 AL=$(sed -n 's/^keyAlias=//p' "$PROPS")
 KP=$(sed -n 's/^keyPassword=//p' "$PROPS")
 [ -n "$KS" ] && [ -f "$KS" ] || { echo "keystore 不存在: $KS"; exit 1; }
+mkdir -p "$DIST"
+APK="$DIST/CubClone-$VNAME.apk"
 "$BT/apksigner.bat" sign --ks "$KS" --ks-key-alias "$AL" \
-  --ks-pass "pass:$SP" --key-pass "pass:$KP" --out "分身空间.apk" out/aligned.apk
+  --ks-pass "pass:$SP" --key-pass "pass:$KP" --out "$APK" "$OUT/aligned.apk"
 
-ls -lh "分身空间.apk"
+ls -lh "$APK"
 echo OK

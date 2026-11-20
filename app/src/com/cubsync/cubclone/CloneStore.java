@@ -640,9 +640,13 @@ public final class CloneStore {
     //    vold 给 clone 用户 bind Android/data 会先 UnmountTree(target)，而 target 在 FUSE
     //    视图里被 MediaProvider 按「不该由我管」直接回 EACCES —— 整卷回滚成 unmountable。
     //    关掉后 clone 卷正常挂上，且与主空间共用同一份存储（相册是同一份文件）。
-    // ② 切到纯 FUSE 后，应用对 /sdcard 上的文件发 f2fs ioctl 会被 A16 默认策略拒掉，
-    //    部分应用的数据库因此打不开（实测导入配置失败）。模块只放开这一个 ioctl。
-    // ⛔ 模块不碰任何文件：不改属主、不搬数据、不动主空间内容。
+    // ② 切到纯 FUSE 后，所有文件读写由 MediaProvider 进程代理。它操作底层文件时受 POSIX
+    //    约束：sdcardfs 时代建的文件属主是 media_rw(1023)，MediaProvider 只是 other，
+    //    ftruncate 直接 EPERM → SQLite 报 4618 SQLITE_IOERR_SHMOPEN，应用打不开库。
+    //    原生 FUSE 机型（无 sdcardfs 的机器）文件属主本来就是 MediaProvider 自己，所以没这问题。
+    //    模块把 sdcardfs 时代的属主一次性迁成 FUSE 形态：顶层 Android/media/<包> 归该包，
+    //    里面的内容与共享存储其它位置归本机 MediaProvider 的 uid。
+    // ⛔ 只改属主，不动内容、不搬动、不删除。
     // 判据只用「/proc/filesystems 里有 sdcardfs」：静态、BFU 也可见。
     // ⛔ 不能拿 mount 或卷状态当判据 —— 脚本跑在 post-fs-data，那时还没解锁，一条挂载都没有。
 
@@ -651,12 +655,13 @@ public final class CloneStore {
     private static final String MODULE_PROP =
             "id=cubclone_sdcardfs_fix\n"
             + "name=CubClone 分身存储修复\n"
-            + "version=2.1\n"
-            + "versionCode=4\n"
+            + "version=2.2\n"
+            + "versionCode=5\n"
             + "author=cubsync\n"
             + "description=内核带 sdcardfs 的机型上，让 vold/MediaProvider 走纯 FUSE，"
-            + "恢复分身空间与主空间共用的存储（相册、文件同一份）。另放开一个 f2fs ioctl，"
-            + "避免应用在 FUSE 上打不开数据库。只改系统行为，不动任何文件和数据。"
+            + "恢复分身空间与主空间共用的存储（相册、文件同一份）。切到 FUSE 后文件由 "
+            + "MediaProvider 代理读写，sdcardfs 时代留下的属主会让它改不动这些文件，"
+            + "模块会把这些属主一次性迁成 FUSE 形态。只改属主，不动文件内容和位置。"
             + "仅适用于内核带 sdcardfs 的设备；不含该驱动的机型会被拒绝安装。\n";
 
     /** 管理器若在更早阶段应用 system.prop，这里也备一份，双保险（内容与脚本一致） */
@@ -688,27 +693,77 @@ public final class CloneStore {
             + "BEFORE=$(\"$RP\" external_storage.sdcardfs.enabled 2>/dev/null)\n"
             + "\"$RP\" external_storage.sdcardfs.enabled false\n"
             + "AFTER=$(\"$RP\" external_storage.sdcardfs.enabled 2>/dev/null)\n"
-            + "say \"external_storage.sdcardfs.enabled: [$BEFORE] -> [$AFTER]\"\n"
+            + "say \"external_storage.sdcardfs.enabled: [$BEFORE] -> [$AFTER]\"\n";
+
+    /**
+     * service.sh：把 sdcardfs 时代的属主迁成 FUSE 形态（只跑一次）。
+     *
+     * 纯 FUSE 下所有文件读写都由 MediaProvider 进程代理，它必须能改这些文件。原生 FUSE
+     * 机型上文件属主本来就是它（8A 实测：DCIM 里的照片、Android/media/&lt;包&gt; 里的库，
+     * 属主都是 com.android.providers.media.module 的 uid）；sdcardfs 时代是 media_rw(1023)，
+     * MediaProvider 只是 other，ftruncate 直接 EPERM，SQLite 报 4618 打不开库。
+     *
+     * 规则（与原生 FUSE 机型一致，不按应用猜归属）：
+     *   ① Android/media/&lt;包&gt; 顶层目录 → 该包 uid（scoped storage 的隔离边界）
+     *   ② 该目录里的内容、共享存储其它位置 → 本机 MediaProvider 的 uid
+     * 只改属主，不动内容、不搬动、不删除；成功后留标记，之后开机不再遍历。
+     */
+    private static final String MODULE_SVC =
+            "#!/system/bin/sh\n"
+            + "# CubClone 分身共享存储：把 sdcardfs 时代的属主迁成 FUSE 形态（只跑一次）\n"
+            + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
+            + "NOW=$(date '+%F %T')\n"
+            + "say() { echo \"$NOW [svc] $*\" >> \"$LOG\"; }\n"
             + "\n"
-            + "# 切到纯 FUSE 后，部分应用仍会对 /sdcard 上的文件发 f2fs ioctl；A16 的默认策略\n"
-            + "# 不允许 untrusted_app 这么做，会让它们的数据库直接打不开（实测第三方应用导入配置失败）。\n"
-            + "# 只放开这一个 ioctl，不碰任何文件、不碰属主。\n"
-            + "POL=\"\"\n"
-            + "for p in /data/adb/ap/bin/magiskpolicy /data/adb/ksu/bin/magiskpolicy /data/adb/magisk/magiskpolicy; do\n"
-            + "  if [ -x \"$p\" ]; then POL=\"$p\"; break; fi\n"
+            + "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then exit 0; fi\n"
+            + "\n"
+            + "FLAG=/data/adb/cubclone-sdcardfs-fix.migrated\n"
+            + "[ -f \"$FLAG\" ] && exit 0\n"
+            + "\n"
+            + "PKGLIST=/data/system/packages.list\n"
+            + "i=0\n"
+            + "while [ ! -d /data/media/0/Android/media ]; do\n"
+            + "  sleep 2; i=$((i+1))\n"
+            + "  [ $i -ge 300 ] && { say 'migrate: 10 分钟内共享存储没就绪，下次开机再试'; exit 0; }\n"
             + "done\n"
-            + "if [ -n \"$POL\" ]; then\n"
-            + "  OUT=$(\"$POL\" --live \"allowxperm untrusted_app fuse file ioctl 0xf50c\" 2>&1)\n"
-            + "  if [ -z \"$OUT\" ]; then say 'sepolicy: allow untrusted_app fuse file ioctl 0xf50c';\n"
-            + "  else say \"sepolicy: 放行失败 $OUT\"; fi\n"
-            + "else say 'sepolicy: 找不到 magiskpolicy，未放行'; fi\n";
+            + "\n"
+            + "MP=$(awk '$1==\"com.android.providers.media.module\"{print $2; exit}' \"$PKGLIST\" 2>/dev/null)\n"
+            + "[ -n \"$MP\" ] || { say 'migrate: 找不到 MediaProvider 的 uid，跳过'; exit 0; }\n"
+            + "say \"migrate: MediaProvider uid=$MP\"\n"
+            + "\n"
+            + "n=0\n"
+            + "for BASE in /data/media/*; do\n"
+            + "  U=${BASE##*/}\n"
+            + "  case \"$U\" in ''|*[!0-9]*) continue;; esac\n"
+            + "  [ -d \"$BASE/Android/media\" ] || continue\n"
+            + "  MPU=$((MP + U * 100000))\n"
+            + "  if [ ! -r \"$BASE/Android/media\" ]; then say \"migrate: user $U 暂不可读，跳过\"; continue; fi\n"
+            + "  for d in \"$BASE\"/Android/media/*; do\n"
+            + "    [ -d \"$d\" ] || continue\n"
+            + "    pkg=${d##*/}\n"
+            + "    puid=$(awk -v p=\"$pkg\" '$1==p{print $2; exit}' \"$PKGLIST\" 2>/dev/null)\n"
+            + "    # 包目录里的内容全部归 MediaProvider；顶层目录本身保持/改回该包 uid\n"
+            + "    find \"$d\" -mindepth 1 -exec chown \"$MPU:$MPU\" {} + 2>/dev/null\n"
+            + "    [ -n \"$puid\" ] && chown \"$puid:1023\" \"$d\" 2>/dev/null && n=$((n+1))\n"
+            + "  done\n"
+            + "  for x in \"$BASE\"/*; do\n"
+            + "    case \"${x##*/}\" in Android) continue;; esac\n"
+            + "    find \"$x\" -exec chown \"$MPU:$MPU\" {} + 2>/dev/null\n"
+            + "  done\n"
+            + "  say \"migrate: user $U -> $MPU done\"\n"
+            + "done\n"
+            + "\n"
+            + "say \"migrate done, top-dir changed=$n\"\n"
+            + "touch \"$FLAG\"\n";
 
     /** 卸载只记一行：属性只改内存，重启回原值；属主不回滚（迁回 sdcardfs 形态反而会坏） */
     private static final String MODULE_UNINSTALL =
             "#!/system/bin/sh\n"
             + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
             + "echo \"$(date '+%F %T') [uninstall] 模块已卸载；"
-            + "external_storage.sdcardfs.enabled 只改内存，重启后自动恢复原值\" >> \"$LOG\"\n";
+            + "external_storage.sdcardfs.enabled 只改内存，重启后自动恢复原值\" >> \"$LOG\"\n"
+            + "# 清迁移标记：重新刷入时会再走一遍（幂等，已迁的不会再动）\n"
+            + "rm -f /data/adb/cubclone-sdcardfs-fix.migrated\n";
 
     /** 安装阶段把特征检查做完：不符条件直接 abort，模块不落地 */
     private static final String MODULE_CUSTOMIZE =
@@ -723,9 +778,10 @@ public final class CloneStore {
             + "ui_print \"- 内核带 sdcardfs，继续安装\"\n"
             + "if command -v set_perm >/dev/null 2>&1; then\n"
             + "  set_perm $MODPATH/post-fs-data.sh 0 0 0755\n"
+            + "  set_perm $MODPATH/service.sh 0 0 0755\n"
             + "  set_perm $MODPATH/uninstall.sh 0 0 0755\n"
             + "else\n"
-            + "  chmod 0755 $MODPATH/post-fs-data.sh $MODPATH/uninstall.sh\n"
+            + "  chmod 0755 $MODPATH/post-fs-data.sh $MODPATH/service.sh $MODPATH/uninstall.sh\n"
             + "fi\n"
             + "ui_print \"- 安装完成，重启后分身空间与主空间共用同一份存储\"\n";
 
@@ -737,20 +793,28 @@ public final class CloneStore {
             + "     （和内核没有 sdcardfs 驱动的机型同一条分支）。内核带 sdcardfs 时，vold 给分身\n"
             + "     用户 bind Android/data 会被 FUSE 拒掉（EACCES），整卷回滚成 unmountable，\n"
             + "     分身里根本没有外部存储。关掉后分身卷正常挂上，且与主空间共用同一份文件。\n"
-            + "  2. 放开 untrusted_app 对 fuse 文件的一个 ioctl（0xf50c）：切到纯 FUSE 后，\n"
-            + "     部分应用仍按老习惯对 /sdcard 上的文件发 f2fs ioctl，被系统策略拒掉后\n"
-            + "     它们自己的数据库会打不开（表现为导出 0 字节、导入报错）。只放开这一个，\n"
-            + "     不放宽其它任何限制。\n"
+            + "  2. 把 sdcardfs 时代留下的文件属主迁成 FUSE 形态（只跑一次）。\n"
+            + "     纯 FUSE 下所有读写都由 MediaProvider 进程代理，它操作底层文件时受 POSIX 约束：\n"
+            + "     属主是 media_rw(1023) 的文件它只是 other，改不动，于是 SQLite 报 4618\n"
+            + "     SQLITE_IOERR_SHMOPEN，应用打不开自己的库（导出 0 字节、导入报错、界面一直加载中）。\n"
+            + "     原生 FUSE 机型上这些文件属主本来就是 MediaProvider 自己，所以没这个问题。\n"
+            + "     迁移规则（与原生 FUSE 机型一致，不按应用猜归属）：\n"
+            + "       · Android/media/<包名> 顶层目录 -> 该包自己的 uid\n"
+            + "       · 该目录里的内容、共享存储其它位置 -> 本机 MediaProvider 的 uid\n"
+            + "       · Android/data、Android/obb 完全不动（它们是直挂，不走 FUSE）\n"
             + "\n"
-            + "不做什么：不改任何文件的属主、不搬动、不删除主空间里的任何东西。\n"
+            + "不做什么：不改文件内容、不搬动、不删除，只改属主。\n"
             + "\n"
             + "刷入时就会检查，不满足直接拒绝安装、不留任何东西：\n"
             + "  内核没有 sdcardfs 驱动 -> 拒绝：本机不需要\n"
             + "\n"
             + "用法：在 APatch / KernelSU / Magisk 里刷入本 zip，重启手机即可。\n"
-            + "  模块执行记录在 /data/adb/cubclone-sdcardfs-fix.log，每条动作都会写进去。\n"
+            + "  迁移只在首次开机跑一次，成功后在 /data/adb/cubclone-sdcardfs-fix.migrated 留标记；\n"
+            + "  执行记录在 /data/adb/cubclone-sdcardfs-fix.log，每条动作都会写进去。\n"
             + "\n"
-            + "卸载：管理器里移除模块，重启即完全恢复原状（属性与政策都只改内存，不落盘）。\n"
+            + "卸载：管理器里移除模块，重启即恢复 sdcardfs 分支。属性只改内存；\n"
+            + "  已迁的属主不回滚（迁回 media_rw 反而会让应用重新打不开库，且属主本来就不影响\n"
+            + "  sdcardfs 分支的读写）。\n"
             + "\n"
             + "注意：ROM OTA 升级后 Magisk/APatch 模块通常要重刷一次。\n";
 
@@ -806,6 +870,7 @@ public final class CloneStore {
             putEntry(zos, "module.prop", MODULE_PROP);
             putEntry(zos, "system.prop", MODULE_SYSPROP);
             putEntry(zos, "post-fs-data.sh", MODULE_PFD);
+            putEntry(zos, "service.sh", MODULE_SVC);
             putEntry(zos, "uninstall.sh", MODULE_UNINSTALL);
             putEntry(zos, "customize.sh", MODULE_CUSTOMIZE);
             putEntry(zos, "README.txt", MODULE_README);

@@ -7,14 +7,18 @@
 ## [Unreleased]
 
 ### 变更
-- 分身共享存储修复模块升到 2.1（`cubclone-sdcardfs-fix.zip`，id 与名称不变，刷入即覆盖旧版）：
-  只做两件系统行为上的事 —— 让 vold 走纯 FUSE（分身卷才挂得上、相册与主空间同一份），
-  以及放开一个 `fuse` 文件上的 ioctl（`0xf50c`）。后者是实测出来的：Android 16 的默认策略
-  不允许普通应用对 FUSE 文件发这个 ioctl，会让把数据库放在 `/sdcard` 上的应用直接打不开库
-  （表现为导出 0 字节、导入报错）。
-- 模块不再改动任何文件的属主、不搬动也不删除主空间里的任何东西。上一版在
-  `Android/media` 下做的属主迁移已移除：实测同一个库在 OP12（原生纯 FUSE、属主形态相同）
-  完全正常，说明问题不在属主。
+- 分身共享存储修复模块升到 2.2（`cubclone-sdcardfs-fix.zip`，id 与名称不变，刷入即覆盖旧版）：
+  ① 让 vold 走纯 FUSE（分身卷才挂得上、相册与主空间同一份）；
+  ② 把 sdcardfs 时代留下的文件属主一次性迁成 FUSE 形态。
+- 根因（设备实测）：纯 FUSE 下所有文件读写都由 MediaProvider 进程代理，它操作底层文件时
+  受 POSIX 约束。sdcardfs 时代建的文件属主是 `media_rw(1023)`，MediaProvider 只是 other，
+  `ftruncate` 直接 EPERM，SQLite 报 `4618 SQLITE_IOERR_SHMOPEN`，应用打不开自己的库
+  （导出 0 字节、导入报错、界面一直加载中）。原生 FUSE 机型上这些文件属主本来就是
+  MediaProvider 自己，所以没有这个问题。
+- 迁移规则与原生 FUSE 机型一致，不按应用猜归属：`Android/media/<包名>` 顶层目录归该包 uid，
+  里面的内容与共享存储其它位置归本机 MediaProvider 的 uid；`Android/data`、`Android/obb`
+  完全不动。只改属主，不动内容、不搬动、不删除；只跑一次，成功留标记。
+- 移除 2.1 的 `fuse` ioctl 放行：8A 上同样有这条 avc 却功能正常，说明它不是原因。
 
 ### 修复
 - 新建空间时如果 clone 共享存储挂不上、又没刷修复模块，自动降级为独立存储（普通用户），

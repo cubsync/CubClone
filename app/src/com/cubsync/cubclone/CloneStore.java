@@ -641,7 +641,7 @@ public final class CloneStore {
     //    关掉后 clone 卷正常挂上，且与主空间共用同一份存储（相册是同一份文件）。
     // ② 把 /data/media/0/Android/media/<包> 从 sdcardfs 形态（media_rw:<扩展组> 2775）
     //    迁成 FUSE 形态（<包uid>:media_rw）。不迁的话切成 FUSE 后 root 和别的应用都写不进去
-    //    （实测支付宝芝麻粒保存不了配置、MT 管理器删不掉目录）。
+    //    （实测第三方支付、文件管理器应用写入失败）。
     // 判据只用「/proc/filesystems 里有 sdcardfs」：静态、BFU 也可见。
     // ⛔ 不能拿 mount 或卷状态当判据 —— 脚本跑在 post-fs-data，那时还没解锁，一条挂载都没有。
 
@@ -759,7 +759,7 @@ public final class CloneStore {
             + "  2. 把 /data/media/0/Android/media/<包> 的属主从 sdcardfs 形态\n"
             + "     （media_rw:<包扩展组> 2775）迁成 FUSE 形态（<包uid>:media_rw）。\n"
             + "     不迁的话，切成 FUSE 后 root 和别的应用都写不进这些老目录\n"
-            + "     （实测支付宝芝麻粒保存不了配置、MT 管理器删不掉目录）。\n"
+            + "     （实测第三方支付、文件管理器应用写入失败）。\n"
             + "\n"
             + "刷入时就会检查，不满足直接拒绝安装、不留任何东西：\n"
             + "  内核没有 sdcardfs 驱动 -> 拒绝：本机不需要\n"

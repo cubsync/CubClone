@@ -213,13 +213,13 @@ Owner data is not touched.</string>
     <string name="backup_restore_msg">This backup replaces the current data; the current data is kept as a new backup, so nothing is lost.</string>
     <string name="backup_delete_msg">This cannot be undone.</string>
     <string name="backup_working">Working…</string>
-    <string name="backup_exporting">Exporting…</string>
+    <string name="backup_exporting">Exporting</string>
     <string name="backup_restore_ok">Restored</string>
     <string name="backup_export_ok">Exported to %1$s</string>
     <string name="backup_delete_ok">Deleted</string>
     <string name="backup_fail">Failed: %1$s</string>
     <string name="backup_algo_pick">Choose compression</string>
-    <string name="backup_algo_row">Backup compression</string>
+    <string name="backup_algo_row">Compression algorithm</string>
     <string name="backup_algo_saved">Set to %1$s</string>
     <string name="backup_empty_hint">No backups yet.
 
@@ -234,7 +234,7 @@ Every time you clone app data, the destination\u2019s existing data is kept here
     <string name="backup_level_note">Higher level saves more space but is slower. zstd 1–22 (--ultra above 19, default 3), gzip 1–9 (default 6), bzip2 1–9 (default 9).</string>
     <string name="backup_compress">Compress</string>
     <string name="backup_compress_msg">Packs this backup into an archive and removes the original folder. Needs extra space while packing. Restoring unpacks automatically.</string>
-    <string name="backup_compressing">Compressing…</string>
+    <string name="backup_compressing">Compressing</string>
     <string name="backup_compress_ok">Compressed to %1$s</string>
     <string name="backup_compress_fallback">Selected algorithm is unavailable — used %1$s instead</string>
     <string name="backup_packed">compressed</string>
@@ -260,6 +260,7 @@ Every time you clone app data, the destination\u2019s existing data is kept here
     <string name="backup_sel_empty">Nothing selected</string>
     <string name="backup_sel_delete">Delete</string>
     <string name="backup_sel_compress">Compress</string>
+    <string name="backup_export_many_done">Exported %1$d, failed %2$d (Download/CubClone-backup)</string>
     <string name="backup_delete_many_msg">Delete %1$d selected backups? This cannot be undone.</string>
     <string name="backup_delete_many_ok">Deleted %1$s items</string>
     <string name="backup_done_many">%1$d done, %2$d failed</string>

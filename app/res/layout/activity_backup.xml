@@ -158,6 +158,35 @@
             android:textSize="18sp" />
     </LinearLayout>
 
+    <!-- 导出 / 压缩时的进度：批量任务才显示 -->
+    <LinearLayout
+        android:id="@+id/bk_progress"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone">
+
+        <ProgressBar
+            android:id="@+id/bk_progress_bar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="100" />
+
+        <TextView
+            android:id="@+id/bk_progress_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:textSize="13sp" />
+    </LinearLayout>
+
     <View
         android:id="@+id/bk_divider"
         android:layout_width="match_parent"

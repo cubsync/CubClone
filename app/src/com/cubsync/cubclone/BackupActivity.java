@@ -49,6 +49,10 @@ public class BackupActivity extends Activity {
     private TextView filter;
     private TextView addBtn;
     private TextView selCount;
+    /** 批量任务的进度：bk_progress 整行藏在 algo_row 下面，任务跑起来才显示 */
+    private android.view.View progWrap;
+    private android.widget.ProgressBar progBar;
+    private TextView progText;
     private TextView selAll;
     private TextView selMore;
 
@@ -88,6 +92,9 @@ public class BackupActivity extends Activity {
         search = findViewById(R.id.bk_search);
         filter = findViewById(R.id.bk_filter);
         addBtn = findViewById(R.id.bk_add);
+        progWrap = findViewById(R.id.bk_progress);
+        progBar = findViewById(R.id.bk_progress_bar);
+        progText = findViewById(R.id.bk_progress_text);
         selCount = findViewById(R.id.bk_sel_count);
         selAll = findViewById(R.id.bk_sel_all);
         selMore = findViewById(R.id.bk_sel_more);
@@ -162,10 +169,17 @@ public class BackupActivity extends Activity {
         new Thread(new Runnable() {
             public void run() {
                 final boolean ok = Shell.checkRoot();
-                // 打开页面只实测一次可用算法（换机器/刷 ROM 会变），
-                // 真正降级发生在用户选算法的时候，那里才弹 toast
+                // 打开页面实测一次可用算法（换机器/刷 ROM 会变）
                 if (ok) {
                     usable = AppData.usableAlgos();
+                    // 选中的算法本机跑不起来就静默换成本机实际可用的那个并存回：
+                    // 主界面只报「实际在用」的，不能再出现「zstd（本机不可用）」这种自相矛盾的显示。
+                    // 这里不弹 toast —— 只是打开页面，弹了太吵；用户主动选算法时才提示。
+                    String cur = currentAlgo();
+                    if (!"none".equals(cur) && !usable.contains(cur)) {
+                        sp().edit().putString("backup_algo",
+                                AppData.nextUsable(cur, usable)).apply();
+                    }
                     // 预热空间名缓存，列表每行就不用再起一次 shell
                     CloneStore.listSpaceUids();
                 }
@@ -247,13 +261,14 @@ public class BackupActivity extends Activity {
         return getString(R.string.backup_algo_none);
     }
 
-    /** 主界面只报实际用的算法和级别，不标「默认档」——那会被当成推荐值 */
+    /**
+     * 主界面只报实际在用的算法和级别：不标「默认档」（会被当成推荐值），
+     * 也不标「本机不可用」（boot 已经把它换成能用的那个了）。
+     */
     private String algoSummary() {
         String a = currentAlgo();
         if ("none".equals(a)) return algoName(a);
-        String n = algoName(a);
-        if (!algoUsable(a)) n = n + "（" + getString(R.string.backup_algo_bad) + "）";
-        return n + " · " + getString(R.string.backup_level_item, currentLevel(a));
+        return algoName(a) + " · " + getString(R.string.backup_level_item, currentLevel(a));
     }
 
     private boolean algoUsable(String a) {
@@ -521,23 +536,33 @@ public class BackupActivity extends Activity {
         boolean hasDir = false;
         for (AppData.Backup b : sel) if (!b.packed()) hasDir = true;
         final boolean canZip = hasDir;
+        // 顺序：导出 / 压缩（只有目录形态才有）/ 删除 / 反选
         String[] acts = canZip
-                ? new String[]{getString(R.string.backup_sel_delete),
+                ? new String[]{getString(R.string.backup_export),
                         getString(R.string.backup_sel_compress),
+                        getString(R.string.backup_sel_delete),
                         getString(R.string.backup_invert)}
-                : new String[]{getString(R.string.backup_sel_delete),
+                : new String[]{getString(R.string.backup_export),
+                        getString(R.string.backup_sel_delete),
                         getString(R.string.backup_invert)};
+        final int iExport = 0;
+        final int iCompress = canZip ? 1 : -1;
+        final int iDelete = canZip ? 2 : 1;
+        final int iInvert = canZip ? 3 : 2;
 
         new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.backup_sel_count, sel.size()))
                 .setItems(acts, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
-                        int invertAt = canZip ? 2 : 1;
-                        if (which == invertAt) {
+                        if (which == iInvert) {
                             invertSelection();
                             return;
                         }
-                        if (which == 0) {
+                        if (which == iExport) {
+                            jobManyExport(sel);
+                            return;
+                        }
+                        if (which == iDelete) {
                             new AlertDialog.Builder(BackupActivity.this)
                                     .setTitle(R.string.backup_delete)
                                     .setMessage(getString(R.string.backup_delete_many_msg, sel.size()))
@@ -556,6 +581,51 @@ public class BackupActivity extends Activity {
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    /** 进度行：done/total 同时喂进度条和右边的「3/12」 */
+    private void showProgress(final int done, final int total, final int labelRes) {
+        runOnUiThread(new Runnable() {
+            public void run() {
+                progWrap.setVisibility(android.view.View.VISIBLE);
+                progBar.setMax(total);
+                progBar.setProgress(done);
+                progText.setText(getString(labelRes) + " " + done + "/" + total);
+            }
+        });
+    }
+
+    private void hideProgress() {
+        progWrap.setVisibility(android.view.View.GONE);
+    }
+
+    /**
+     * 批量导出：串行 cp，每导完一个刷一次进度。
+     * 导出位置沿用单条的 Download/CubClone-backup，一次只动一个文件。
+     */
+    private void jobManyExport(final List<AppData.Backup> sel) {
+        final int total = sel.size();
+        showProgress(0, total, R.string.backup_exporting);
+        new Thread(new Runnable() {
+            public void run() {
+                int ok = 0, bad = 0;
+                for (int i = 0; i < total; i++) {
+                    String r = AppData.export(sel.get(i));
+                    if (r.startsWith("OK")) ok++;
+                    else bad++;
+                    showProgress(i + 1, total, R.string.backup_exporting);
+                }
+                final int fok = ok, fbad = bad;
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        hideProgress();
+                        toast(getString(R.string.backup_export_many_done, fok, fbad));
+                        exitMulti();
+                        boot();
+                    }
+                });
+            }
+        }).start();
     }
 
     private void jobManyDelete(final List<AppData.Backup> sel) {
@@ -579,21 +649,24 @@ public class BackupActivity extends Activity {
     }
 
     private void jobManyCompress(final List<AppData.Backup> sel) {
-        toast(getString(R.string.backup_compressing));
+        showProgress(0, sel.size(), R.string.backup_compressing);
         new Thread(new Runnable() {
             public void run() {
                 final String algo = currentAlgo();
                 final int lv = currentLevel(algo);
-                int ok = 0, bad = 0;
+                int ok = 0, bad = 0, done = 0;
                 for (AppData.Backup b : sel) {
                     if (b.packed()) continue;
                     String r = AppData.compress(b, algo, lv);
                     if (r.startsWith("OK")) ok++;
                     else bad++;
+                    done++;
+                    showProgress(done, sel.size(), R.string.backup_compressing);
                 }
                 final int fok = ok, fbad = bad;
                 runOnUiThread(new Runnable() {
                     public void run() {
+                        hideProgress();
                         toast(getString(R.string.backup_done_many, fok, fbad));
                         exitMulti();
                         boot();

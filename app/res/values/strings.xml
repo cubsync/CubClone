@@ -213,13 +213,13 @@
     <string name="backup_restore_msg">会用这份备份替换当前数据；当前数据会另存为一份新备份，不会丢。</string>
     <string name="backup_delete_msg">删除后无法恢复。</string>
     <string name="backup_working">正在处理…</string>
-    <string name="backup_exporting">正在导出…</string>
+    <string name="backup_exporting">正在导出</string>
     <string name="backup_restore_ok">已恢复</string>
     <string name="backup_export_ok">已导出到 %1$s</string>
     <string name="backup_delete_ok">已删除</string>
     <string name="backup_fail">操作失败：%1$s</string>
     <string name="backup_algo_pick">选择压缩算法</string>
-    <string name="backup_algo_row">备份压缩</string>
+    <string name="backup_algo_row">压缩算法</string>
     <string name="backup_algo_saved">已设为 %1$s</string>
     <string name="backup_empty_hint">还没有备份。
 
@@ -234,7 +234,7 @@
     <string name="backup_level_note">级别越高越省空间、越慢。范围：zstd 1–22（20 以上走 --ultra）、gzip 1–9、bzip2 1–9。不选时用各算法上游默认：zstd 3、gzip 6、bzip2 9。</string>
     <string name="backup_compress">压缩归档</string>
     <string name="backup_compress_msg">会把这份备份打包成压缩包，成功后删除原目录（打包期间需要额外一份空间）。恢复时自动解包。</string>
-    <string name="backup_compressing">正在压缩…</string>
+    <string name="backup_compressing">正在压缩</string>
     <string name="backup_compress_ok">已压缩为 %1$s</string>
     <string name="backup_compress_fallback">选定算法不可用，已改用 %1$s</string>
     <string name="backup_packed">已压缩</string>
@@ -260,6 +260,7 @@
     <string name="backup_sel_empty">还没有选中任何备份</string>
     <string name="backup_sel_delete">删除</string>
     <string name="backup_sel_compress">压缩</string>
+    <string name="backup_export_many_done">已导出 %1$d 个，失败 %2$d 个（Download/CubClone-backup）</string>
     <string name="backup_delete_many_msg">删除选中的 %1$d 份备份？删除后无法恢复。</string>
     <string name="backup_delete_many_ok">已删除 %1$s 项</string>
     <string name="backup_done_many">成功 %1$d 项，失败 %2$d 项</string>

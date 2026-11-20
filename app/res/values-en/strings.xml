@@ -166,6 +166,7 @@ Owner data is not touched.</string>
     <string name="copy_data_working">Copying data of %1$s…</string>
     <string name="copy_data_ok">Data copied. Old data kept at %1$s</string>
     <string name="copy_data_fail">Copy failed: %1$s</string>
+    <string name="copy_data_locked">Device is locked — unlock and try again; the storage key is revoked while locked, so nothing can be written</string>
     <string name="copy_data_no_root">root required: app data lives under /data/user, the Shizuku shell identity cannot read or write it</string>
     <string name="copy_data_no_clone">%1$s is installed in this space only — nothing else to copy to</string>
     <string name="remove_all_title">Remove all clones</string>

@@ -37,6 +37,10 @@ public final class AppData {
         s.append("am force-stop --user ").append(dstUser).append(" '").append(pkg).append("'\n");
         s.append("[ -d '").append(src).append("' ] || { echo ERR_NO_SRC; exit 1; }\n");
         s.append("[ -d '").append(dst).append("' ] || { echo ERR_NO_DST; exit 1; }\n");
+        // 锁屏后 CE 存储的密钥被驱逐，新建文件会 ENOKEY：先探一下再动手，
+        // 否则 cp 到一半失败、回滚也可能跟着失败
+        s.append("touch '").append(dst).append("/.cc-probe' 2>/dev/null || { echo ERR_LOCKED; exit 1; }\n");
+        s.append("rm -f '").append(dst).append("/.cc-probe'\n");
         s.append("mv '").append(dst).append("' '").append(bak).append("' || { echo ERR_MV; exit 1; }\n");
         s.append("cp -a '").append(src).append("' '").append(dst).append("' || { ")
                 .append("rm -rf '").append(dst).append("'; mv '").append(bak).append("' '")

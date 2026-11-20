@@ -1958,6 +1958,8 @@ public class MainActivity extends Activity {
 
     private void runCopyData(final Group g, final int srcUser, final int dstUser) {
         say(getString(R.string.copy_data_working, g.label));
+        // 锁屏会驱逐 CE 密钥，复制中途锁屏就写不进去；复制期间保持屏幕常亮
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         new Thread(new Runnable() {
             public void run() {
                 int appId;
@@ -1966,16 +1968,24 @@ public class MainActivity extends Activity {
                 } catch (Throwable t) {
                     final String m = getString(R.string.copy_data_fail, t.toString());
                     runOnUiThread(new Runnable() {
-                        public void run() { toast(m); }
+                        public void run() {
+                            getWindow().clearFlags(
+                                    android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                            toast(m);
+                        }
                     });
                     return;
                 }
                 final String r = AppData.copy(srcUser, dstUser, g.pkg, appId);
                 runOnUiThread(new Runnable() {
                     public void run() {
+                        getWindow().clearFlags(
+                                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                         if (r.startsWith("OK")) {
                             String bak = r.length() > 3 ? r.substring(3).trim() : "";
                             say(getString(R.string.copy_data_ok, bak));
+                        } else if (r.startsWith("ERR_LOCKED")) {
+                            toast(getString(R.string.copy_data_locked));
                         } else {
                             toast(getString(R.string.copy_data_fail, r));
                         }

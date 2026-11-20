@@ -7,7 +7,7 @@
 ## [Unreleased]
 
 ### 变更
-- 分身共享存储修复模块升级到 2.0（`cubclone-shared-storage.zip`，模块 id 仍是 `cubclone_sdcardfs_fix`，
+- 分身共享存储修复模块升级到 2.0（`cubclone-sdcardfs-fix.zip`，模块 id 与名称都不变，
   刷入即覆盖 1.x）：
   除了让系统改用纯 FUSE 挂载（分身卷才挂得上、相册与主空间同一份），还会在开机后把
   `Android/media` 下 sdcardfs 时代建的目录属主迁移成 FUSE 形态。只有前者会打断主空间

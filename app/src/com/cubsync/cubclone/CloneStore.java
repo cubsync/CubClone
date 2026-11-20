@@ -645,11 +645,11 @@ public final class CloneStore {
     // 判据只用「/proc/filesystems 里有 sdcardfs」：静态、BFU 也可见。
     // ⛔ 不能拿 mount 或卷状态当判据 —— 脚本跑在 post-fs-data，那时还没解锁，一条挂载都没有。
 
-    // id 沿用 1.1 的 cubclone_sdcardfs_fix：模块 id 是升级主键，换 id 会变成两个模块同时生效，
-    // 2.0 就覆盖不到已经刷过 1.x 的机器。name 才是给人看的。
+    // id 与 name 都是模块在用户设备上的身份，1.x 发出去之后就不再动：换 id 会变成两个模块并存，
+    // 换 name 会让用户在管理器里看到模块「改名」。只有 version / versionCode 可以前进。
     private static final String MODULE_PROP =
             "id=cubclone_sdcardfs_fix\n"
-            + "name=CubClone 分身共享存储\n"
+            + "name=CubClone 分身存储修复\n"
             + "version=2.0\n"
             + "versionCode=3\n"
             + "author=cubsync\n"
@@ -669,7 +669,7 @@ public final class CloneStore {
     private static final String MODULE_PFD =
             "#!/system/bin/sh\n"
             + "# CubClone 分身共享存储：让 vold 走纯 FUSE（clone 卷才挂得上）\n"
-            + "LOG=/data/adb/cubclone-shared-storage.log\n"
+            + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
             + "NOW=$(date '+%F %T')\n"
             + "say() { echo \"$NOW [pfd] $*\" >> \"$LOG\"; }\n"
             + "\n"
@@ -696,7 +696,7 @@ public final class CloneStore {
     private static final String MODULE_SVC =
             "#!/system/bin/sh\n"
             + "# CubClone 分身共享存储：把 sdcardfs 时代建的 Android/media/<包> 迁成 FUSE 形态\n"
-            + "LOG=/data/adb/cubclone-shared-storage.log\n"
+            + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
             + "NOW=$(date '+%F %T')\n"
             + "say() { echo \"$NOW [svc] $*\" >> \"$LOG\"; }\n"
             + "\n"
@@ -724,7 +724,7 @@ public final class CloneStore {
     /** 卸载只记一行：属性只改内存，重启回原值；属主不回滚（迁回 sdcardfs 形态反而会坏） */
     private static final String MODULE_UNINSTALL =
             "#!/system/bin/sh\n"
-            + "LOG=/data/adb/cubclone-shared-storage.log\n"
+            + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
             + "echo \"$(date '+%F %T') [uninstall] 模块已卸载；"
             + "external_storage.sdcardfs.enabled 只改内存，重启后自动恢复原值\" >> \"$LOG\"\n";
 
@@ -765,7 +765,7 @@ public final class CloneStore {
             + "  内核没有 sdcardfs 驱动 -> 拒绝：本机不需要\n"
             + "\n"
             + "用法：在 APatch / KernelSU / Magisk 里刷入本 zip，重启手机，解锁后检查。\n"
-            + "  执行记录在 /data/adb/cubclone-shared-storage.log，能看到属性前后值与逐包 chown 记录。\n"
+            + "  执行记录在 /data/adb/cubclone-sdcardfs-fix.log，能看到属性前后值与逐包 chown 记录。\n"
             + "\n"
             + "卸载：管理器里移除模块，重启即恢复原状（属性只改内存，不落盘）。\n"
             + "  属主不会回滚：迁回 sdcardfs 形态在纯 FUSE 下反而写不进去。\n"
@@ -780,17 +780,20 @@ public final class CloneStore {
         try {
             byte[] zip = buildFixModuleZip();
             if (zip == null) return null;
-            String name = "cubclone-shared-storage.zip";
+            // 文件名跟 1.x 一致：用户上一版就是这个包名，重新生成要原地覆盖，不能在 Download 里多出一份。
+            // cubclone-shared-storage.zip 是 2.0 测试期用错的名字，一并清掉。
+            String name = "cubclone-sdcardfs-fix.zip";
             android.net.Uri col = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI;
-            // 先删掉 Download 里已有的同名/带 (1) 后缀的旧副本，否则 MediaStore 会另存成 (1).zip
-            try {
-                c.getContentResolver().delete(col,
-                        "(" + android.provider.MediaStore.MediaColumns.DISPLAY_NAME + "=?"
-                        + " OR " + android.provider.MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ?)"
-                        + " AND " + android.provider.MediaStore.MediaColumns.RELATIVE_PATH + "=?",
-                        new String[]{name, "cubclone-shared-storage (%).zip",
-                                android.os.Environment.DIRECTORY_DOWNLOADS + "/"});
-            } catch (Throwable ignored) {
+            for (String base : new String[]{"cubclone-sdcardfs-fix", "cubclone-shared-storage"}) {
+                try {
+                    c.getContentResolver().delete(col,
+                            "(" + android.provider.MediaStore.MediaColumns.DISPLAY_NAME + "=?"
+                            + " OR " + android.provider.MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ?)"
+                            + " AND " + android.provider.MediaStore.MediaColumns.RELATIVE_PATH + "=?",
+                            new String[]{base + ".zip", base + " (%).zip",
+                                    android.os.Environment.DIRECTORY_DOWNLOADS + "/"});
+                } catch (Throwable ignored) {
+                }
             }
             android.content.ContentValues v = new android.content.ContentValues();
             v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);

@@ -266,6 +266,14 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="backup_batch_empty">No third-party apps to back up in this space</string>
     <string name="backup_batch_none">No apps selected</string>
     <string name="backup_batch_running">Backing up %1$d/%2$d</string>
+    <string name="batch_leave_title">Still running</string>
+    <string name="batch_leave_msg">Leaving stops the remaining items. Backups already made are kept, and the log keeps what finished.</string>
+    <string name="batch_leave_ok">Stop and leave</string>
+    <string name="batch_leave_stay">Keep waiting</string>
+    <string name="backup_log">Log</string>
+    <string name="backup_log_empty">No batch log yet</string>
+    <string name="backup_log_title">Last batch run</string>
+    <string name="backup_scope_note">Backs up private app data (CE + DE); APK, OBB and Android/media are not included</string>
     <string name="batch_restore_title">Batch restore</string>
     <string name="batch_backing_n">Backing up %1$d/%2$d</string>
     <string name="batch_restoring_n">Restoring %1$d/%2$d</string>

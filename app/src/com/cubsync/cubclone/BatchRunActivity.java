@@ -50,6 +50,9 @@ public class BatchRunActivity extends Activity {
     private static final int ST_BAD = 3;
     private static final int ST_SKIP = 4;
 
+    /** 上一次批量任务的日志，备份页从这里读 */
+    public static final String LOG_NAME = "batch-last.log";
+
     private static final int FILTER_ALL = 0;
     private static final int FILTER_OK = 1;
     private static final int FILTER_BAD = 2;
@@ -60,6 +63,7 @@ public class BatchRunActivity extends Activity {
         String path;
         int state = ST_WAIT;
         String detail = "";
+        String time = "";
 
         Row(String pkg, int user, String path) {
             this.pkg = pkg;
@@ -216,8 +220,10 @@ public class BatchRunActivity extends Activity {
                         continue;
                     }
                     r.state = ST_RUN;
+                    r.time = now();
                     final int no = i + 1, total = rows.size();
                     refreshRow();
+                    scrollTo(i);
                     runOnUiThread(new Runnable() {
                         public void run() {
                             title.setText(getString(restore ? R.string.batch_restoring_n
@@ -230,6 +236,7 @@ public class BatchRunActivity extends Activity {
                     String res = restore
                             ? (bk == null ? "ERR_PATH" : AppData.restore(bk, appIdOf(r.pkg)))
                             : AppData.backupNow(r.user, r.pkg, algo, lv);
+                    r.time = now();
                     if (res.startsWith("OK")) {
                         r.state = ST_OK;
                         r.detail = restore ? spaceLabel(r.user)
@@ -252,6 +259,7 @@ public class BatchRunActivity extends Activity {
                         title.setText(restore ? getString(R.string.batch_restore_title)
                                 : getString(R.string.batch_backup_title));
                         countTv.setText("");
+                        saveLog();
                         progress.setVisibility(View.GONE);
                         filters.setVisibility(View.VISIBLE);
                         copyTv.setVisibility(View.VISIBLE);
@@ -346,20 +354,66 @@ public class BatchRunActivity extends Activity {
     }
 
     // ── 日志 ─────────────────────────────────────────────────────────
-    private void copyLog() {
+    private String now() {
+        return new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+                .format(new java.util.Date());
+    }
+
+    private String buildLog() {
         StringBuilder sb = new StringBuilder();
         sb.append(restore ? getString(R.string.batch_restore_title)
-                : getString(R.string.batch_backup_title)).append("  ")
+                : getString(R.string.batch_backup_title))
+                .append("  ")
                 .append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss",
-                        java.util.Locale.US).format(new java.util.Date())).append('\n');
+                        java.util.Locale.US).format(new java.util.Date()))
+                .append("\n\n");
         for (Row r : rows) {
-            sb.append('[').append(stateName(r.state)).append("] ")
-                    .append(labelOf(r.pkg)).append(" · ").append(spaceLabel(r.user));
-            if (r.detail.length() > 0) sb.append(" · ").append(r.detail);
+            sb.append(r.time.length() > 0 ? r.time : "--:--:--").append("  ")
+                    .append(stateName(r.state)).append("  ")
+                    .append(labelOf(r.pkg)).append("  ")
+                    .append(spaceLabel(r.user));
+            if (r.detail.length() > 0) sb.append("  ").append(r.detail);
             sb.append('\n');
         }
+        sb.append('\n').append(summaryLine()).append('\n');
+        return sb.toString();
+    }
+
+    private String summaryLine() {
+        int ok = 0, bad = 0, skip = 0;
+        for (Row r : rows) {
+            if (r.state == ST_OK) ok++;
+            else if (r.state == ST_BAD) bad++;
+            else if (r.state == ST_SKIP) skip++;
+        }
+        return getString(R.string.batch_done_summary, ok, bad)
+                + (skip > 0 ? " · " + getString(R.string.batch_skipped_n, skip) : "");
+    }
+
+    /** 落一份到应用私有目录，离开页面后还能在「数据备份」页的「日志」里翻到 */
+    private void saveLog() {
+        try {
+            java.io.File f = new java.io.File(getFilesDir(), LOG_NAME);
+            java.io.FileWriter w = new java.io.FileWriter(f, false);
+            w.write(buildLog());
+            w.close();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void scrollTo(final int index) {
+        runOnUiThread(new Runnable() {
+            public void run() {
+                int pos = shown.indexOf(Integer.valueOf(index));
+                if (pos >= 0) list.smoothScrollToPosition(pos);
+            }
+        });
+    }
+
+    private void copyLog() {
+        String text = buildLog();
         ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-        cm.setPrimaryClip(ClipData.newPlainText("CubClone", sb.toString()));
+        cm.setPrimaryClip(ClipData.newPlainText("CubClone", text));
         toast(getString(R.string.batch_log_copied));
     }
 
@@ -372,12 +426,26 @@ public class BatchRunActivity extends Activity {
     }
 
     // ── 返回 ─────────────────────────────────────────────────────────
+    /**
+     * 跑着的时候也能走，但不能一声不吭：已经备份好的文件都在，
+     * 只是这一轮剩下的不再做。日志会留下已经跑完的那部分。
+     */
     private void leave() {
-        if (running) {
-            toast(getString(R.string.batch_still_running));
+        if (!running) {
+            finish();
             return;
         }
-        finish();
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.batch_leave_title)
+                .setMessage(R.string.batch_leave_msg)
+                .setPositiveButton(R.string.batch_leave_ok, new android.content.DialogInterface.OnClickListener() {
+                    public void onClick(android.content.DialogInterface d, int w) {
+                        saveLog();
+                        finish();
+                    }
+                })
+                .setNegativeButton(R.string.batch_leave_stay, null)
+                .show();
     }
 
     public void onBackPressed() {
@@ -425,6 +493,7 @@ public class BatchRunActivity extends Activity {
             t1.setText(labelOf(r.pkg));
             t1.setTextColor(fg);
             StringBuilder sub = new StringBuilder();
+            if (r.time.length() > 0) sub.append(r.time).append("  ");
             sub.append(stateName(r.state));
             if (r.state != ST_WAIT && r.state != ST_RUN) {
                 sub.append(" · ").append(spaceLabel(r.user));

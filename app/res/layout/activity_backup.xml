@@ -34,6 +34,18 @@
             android:textSize="20sp"
             android:textStyle="bold" />
 
+        <!-- 上一次批量任务的日志 -->
+        <TextView
+            android:id="@+id/bk_log"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="@string/backup_log"
+            android:textSize="13sp" />
+
         <!-- 新建备份（批量） -->
         <TextView
             android:id="@+id/bk_add"
@@ -183,6 +195,17 @@
             android:text="&#8250;"
             android:textSize="18sp" />
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/bk_scope"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="6dp"
+        android:text="@string/backup_scope_note"
+        android:textSize="11sp" />
 
     <LinearLayout
         android:id="@+id/bk_algo_row"

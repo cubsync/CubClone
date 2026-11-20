@@ -338,27 +338,46 @@ public final class AppData {
      * 留副本要写两遍（先 cp 再压），大应用能差出十几秒。
      * @return "OK <备份路径>|<实际算法>" 或 "ERR_xxx"
      */
+        /**
+     * 给某个空间里的某个应用做一份备份，不涉及另一个空间。
+     * 先停止该应用，避免把写到一半的数据库复制走；原数据一个字节都不动。
+     *
+     * 备份范围：`/data/user/<U>/<pkg>`（CE，凭据加密存储）+ `/data/user_de/<U>/<pkg>`
+     * （DE，直接启动可用）。很多应用把账号/设备标识放 DE，只备 CE 恢复后会掉登录态。
+     * **不备** APK、OBB、`Android/media`——体积大且能从商店/文件管理器另行处理。
+     *
+     * tar 里保留 `data/user/...` / `data/user_de/...` 两级以上的路径，恢复时按原位置放回；
+     * cache/code_cache 用 --exclude 剔掉（toybox tar 支持）。
+     *
+     * @return "OK <备份路径>|<实际算法>" 或 "ERR_xxx"
+     */
     public static String backupNow(int user, String pkg, String algo, int level) {
-        String src = "/data/user/" + user + "/" + pkg;
-        String ts = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
-        String base = rootDir + "/" + pkg + "-" + user + "-" + ts;
+        String base = rootDir + "/" + pkg + "-" + user + "-"
+                + new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
         String want = (algo == null || algo.length() == 0) ? "none" : algo;
         int lv = level > 0 ? level : defaultLevel(want);
 
         StringBuilder s = new StringBuilder();
         s.append("am force-stop --user ").append(user).append(" '").append(pkg).append("'\n");
-        s.append("[ -d '").append(src).append("' ] || { echo ERR_NO_SRC; exit 1; }\n");
+        s.append("[ -d '/data/user/").append(user).append('/').append(pkg)
+                .append("' ] || { echo ERR_NO_SRC; exit 1; }\n");
         // 锁屏后 CE 密钥被驱逐，边读边压会读到一半 ENOKEY
-        s.append("touch '").append(src).append("/.cc-probe' 2>/dev/null || { echo ERR_LOCKED; exit 1; }\n");
-        s.append("rm -f '").append(src).append("/.cc-probe'\n");
+        s.append("touch '/data/user/").append(user).append('/').append(pkg)
+                .append("/.cc-probe' 2>/dev/null || { echo ERR_LOCKED; exit 1; }\n");
+        s.append("rm -f '/data/user/").append(user).append('/').append(pkg).append("/.cc-probe'\n");
         s.append("mkdir -p '").append(rootDir).append("' || { echo ERR_DIR; exit 1; }\n");
-        s.append("P='/data/user/").append(user).append("'; N='").append(pkg)
-                .append("'; B='").append(base).append("'\n");
+        // tar 从 / 出发，保留完整相对路径
+        s.append("cd /\n");
+        s.append("L='data/user/").append(user).append('/').append(pkg).append("'\n");
+        s.append("[ -d 'data/user_de/").append(user).append('/').append(pkg)
+                .append("' ] && L=\"$L data/user_de/").append(user).append('/').append(pkg).append("\"\n");
+        s.append("B='").append(base).append("'\n");
+        // $1=压缩器命令（空=纯打包）$2=扩展名 $3=tar 列表标志
         s.append("pack() {\n");
         s.append("  O=\"$B$2\"; rm -f \"$O\"\n");
-        s.append("  if [ -z \"$1\" ]; then tar -cf \"$O\" -C \"$P\" \"$N\" 2>/dev/null\n");
-        s.append("  else tar -cf - -C \"$P\" \"$N\" 2>/dev/null | $1 > \"$O\" 2>/dev/null; fi\n");
-        // tar -t 校验：管道里 tar 的失败被 gzip 吞掉了，只能反过来验包
+        s.append("  if [ -z \"$1\" ]; then tar -cf \"$O\" --exclude='*/cache' --exclude='*/code_cache' $L 2>/dev/null\n");
+        s.append("  else tar -cf - --exclude='*/cache' --exclude='*/code_cache' $L 2>/dev/null | $1 > \"$O\" 2>/dev/null; fi\n");
+        // tar -t 校验：管道里 tar 的失败被压缩器吞掉了，只能反过来验包
         s.append("  if [ -s \"$O\" ] && tar -t$3f \"$O\" >/dev/null 2>&1; then\n");
         s.append("    chown 1023:1023 \"$O\" 2>/dev/null; chmod 660 \"$O\" 2>/dev/null\n");
         s.append("    echo CUB_OK \"$O\"; return 0; fi\n");
@@ -397,6 +416,7 @@ public final class AppData {
         int dot = path.indexOf(".tar");
         return "OK " + path + "|" + (dot > 0 ? algoOf(path.substring(dot)) : "none");
     }
+
 
 
     /** 各算法的默认级别（与各自官方默认一致） */
@@ -502,8 +522,19 @@ public final class AppData {
      * 换位成功才删，失败就挪回去。
      * @return "OK" 或 "ERR_xxx"
      */
+        /**
+     * 把备份换回原位。当前数据不再另留一份：备份本来就是你要的东西，
+     * 每次恢复再复制一份只会让列表膨胀。
+     * 但也不是直接 rm：先 mv 到 /data/local/tmp（同分区改名，零成本），
+     * 换位成功才删，失败就挪回去。
+     *
+     * 两种包都认：新包内是 `data/user/<U>/<pkg>` + `data/user_de/<U>/<pkg>`，
+     * 老包内是 `<pkg>` 或 `<pkg>.cubclone-bak-<ts>`。
+     * @return "OK" 或 "ERR_xxx"
+     */
     public static String restore(Backup b, int appId) {
-        String dst = "/data/user/" + b.user + "/" + b.pkg;
+        String ce = "/data/user/" + b.user + "/" + b.pkg;
+        String de = "/data/user_de/" + b.user + "/" + b.pkg;
         long uid = (long) appId + (long) b.user * 100000L;
         String ts = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
         String ctx = contextOf(b.user, b.pkg);
@@ -511,42 +542,57 @@ public final class AppData {
         StringBuilder s = new StringBuilder();
         s.append("am force-stop --user ").append(b.user).append(" '").append(b.pkg).append("'\n");
         s.append("OLD='/data/local/tmp/cc-old-").append(ts).append("'\n");
-        s.append("rm -rf \"$OLD\"\n");
+        s.append("rm -rf \"$OLD\"; mkdir -p \"$OLD\"\n");
+        s.append("CE='").append(ce).append("'; DE='").append(de).append("'\n");
+
         if (b.packed()) {
             String tmp = "/data/local/tmp/cc-restore-" + ts;
-            // tar 顶层目录名：老包是 <包>.cubclone-bak-<ts>，新包就是 <包>
-            String nm = b.path.substring(b.path.lastIndexOf('/') + 1);
-            String inner = (b.path.startsWith("/data/user/") && b.path.contains(".cubclone-bak-"))
-                    ? nm.substring(0, nm.indexOf(".tar"))
-                    : b.pkg;
             s.append("TMP='").append(tmp).append("'\n");
             s.append("rm -rf \"$TMP\"; mkdir -p \"$TMP\" || { echo ERR_TMP; exit 1; }\n");
             s.append("tar -x").append(b.tarFlag()).append("f '").append(b.path)
                     .append("' -C \"$TMP\" || { rm -rf \"$TMP\"; echo ERR_UNPACK; exit 1; }\n");
-            s.append("[ -d \"$TMP/").append(inner).append("\" ] || { rm -rf \"$TMP\"; echo ERR_UNPACK2; exit 1; }\n");
-            s.append("[ -d '").append(dst).append("' ] && { mv '").append(dst).append("' \"$OLD\" || { ")
-                    .append("rm -rf \"$TMP\"; echo ERR_MV; exit 1; }; }\n");
-            s.append("if mv \"$TMP/").append(inner).append("\" '").append(dst).append("'; then\n");
-            s.append("  rm -rf \"$TMP\" \"$OLD\"\n");
+            // 新布局：$TMP/data/user/<U>/<pkg>
+            s.append("NCE=\"$TMP/data/user/").append(b.user).append('/').append(b.pkg).append("\"\n");
+            s.append("NDE=\"$TMP/data/user_de/").append(b.user).append('/').append(b.pkg).append("\"\n");
+            s.append("if [ -d \"$NCE\" ]; then\n");
+            s.append("  [ -d \"$CE\" ] && mv \"$CE\" \"$OLD/ce\"\n");
+            s.append("  [ -d \"$DE\" ] && mv \"$DE\" \"$OLD/de\"\n");
+            s.append("  if ! mv \"$NCE\" \"$CE\"; then\n");
+            s.append("    [ -d \"$OLD/ce\" ] && mv \"$OLD/ce\" \"$CE\"\n");
+            s.append("    [ -d \"$OLD/de\" ] && mv \"$OLD/de\" \"$DE\"\n");
+            s.append("    rm -rf \"$TMP\"; echo ERR_MV2; exit 1\n");
+            s.append("  fi\n");
+            s.append("  [ -d \"$NDE\" ] && mv \"$NDE\" \"$DE\"\n");
             s.append("else\n");
-            s.append("  [ -d \"$OLD\" ] && mv \"$OLD\" '").append(dst).append("'\n");
-            s.append("  rm -rf \"$TMP\"; echo ERR_MV2; exit 1\n");
+            // 老布局：顶层就是 <pkg> 或 <pkg>.cubclone-bak-<ts>
+            String oldInner = (b.path.startsWith("/data/user/") && b.path.contains(".cubclone-bak-"))
+                    ? b.path.substring(b.path.lastIndexOf('/') + 1).replaceFirst("\\.tar.*$", "")
+                    : b.pkg;
+            s.append("  [ -d \"$TMP/").append(oldInner).append("\" ] || { rm -rf \"$TMP\"; echo ERR_UNPACK2; exit 1; }\n");
+            s.append("  [ -d \"$CE\" ] && mv \"$CE\" \"$OLD/ce\"\n");
+            s.append("  if ! mv \"$TMP/").append(oldInner).append("\" \"$CE\"; then\n");
+            s.append("    [ -d \"$OLD/ce\" ] && mv \"$OLD/ce\" \"$CE\"\n");
+            s.append("    rm -rf \"$TMP\"; echo ERR_MV2; exit 1\n");
+            s.append("  fi\n");
             s.append("fi\n");
+            s.append("rm -rf \"$TMP\"\n");
         } else {
             s.append("[ -d '").append(b.path).append("' ] || { echo ERR_NO_BAK; exit 1; }\n");
-            s.append("[ -d '").append(dst).append("' ] && { mv '").append(dst).append("' \"$OLD\" || { ")
-                    .append("echo ERR_MV; exit 1; }; }\n");
-            s.append("if mv '").append(b.path).append("' '").append(dst).append("'; then\n");
-            s.append("  rm -rf \"$OLD\"\n");
-            s.append("else\n");
-            s.append("  [ -d \"$OLD\" ] && mv \"$OLD\" '").append(dst).append("'\n");
+            s.append("[ -d \"$CE\" ] && mv \"$CE\" \"$OLD/ce\"\n");
+            s.append("if ! mv '").append(b.path).append("' \"$CE\"; then\n");
+            s.append("  [ -d \"$OLD/ce\" ] && mv \"$OLD/ce\" \"$CE\"\n");
             s.append("  echo ERR_MV2; exit 1\n");
             s.append("fi\n");
         }
-        s.append("chown -R ").append(uid).append(":").append(uid).append(" '").append(dst).append("'\n");
+        // 两处数据都要换属主与上下文
+        s.append("for D in \"$CE\" \"$DE\"; do\n");
+        s.append("  [ -d \"$D\" ] || continue\n");
+        s.append("  chown -R ").append(uid).append(":").append(uid).append(" \"$D\"\n");
         if (ctx.length() > 0) {
-            s.append("chcon -R '").append(ctx).append("' '").append(dst).append("'\n");
+            s.append("  chcon -R '").append(ctx).append("' \"$D\"\n");
         }
+        s.append("done\n");
+        s.append("rm -rf \"$OLD\"\n");
         s.append("echo CUB_OK\n");
 
         String out = Shell.execScript(s.toString());
@@ -557,6 +603,7 @@ public final class AppData {
         }
         return "ERR " + out.trim();
     }
+
 
     /** 备份根目录默认值；用户可在「数据备份」页改成 /sdcard 下任意目录 */
     public static final String DEFAULT_ROOT = "/sdcard/Download/CubClone-backup";

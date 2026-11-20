@@ -49,11 +49,14 @@ public class BackupActivity extends Activity {
     private TextView filter;
     private TextView sortTv;
     private TextView addBtn;
+    /** 上一次批量任务的日志 */
+    private TextView logBtn;
     /** 备份目录那一行：点开选目录，换目录会把旧备份一起搬过去 */
     private LinearLayout dirRow;
     private TextView dirLabel;
     private TextView dirValue;
     private TextView dirArrow;
+    private TextView scopeTv;
     /** 多选时显示：和全选放一起，不再塞进 ⋮ 菜单 */
     private TextView selInv;
     private TextView selCount;
@@ -103,10 +106,12 @@ public class BackupActivity extends Activity {
         filter = findViewById(R.id.bk_filter);
         sortTv = findViewById(R.id.bk_sort);
         addBtn = findViewById(R.id.bk_add);
+        logBtn = findViewById(R.id.bk_log);
         dirRow = findViewById(R.id.bk_dir_row);
         dirLabel = findViewById(R.id.bk_dir_label);
         dirValue = findViewById(R.id.bk_dir_value);
         dirArrow = findViewById(R.id.bk_dir_arrow);
+        scopeTv = findViewById(R.id.bk_scope);
         selInv = findViewById(R.id.bk_sel_inv);
         dirValue.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { pickBackupDir(); }
@@ -124,6 +129,9 @@ public class BackupActivity extends Activity {
         selAll = findViewById(R.id.bk_sel_all);
         selMore = findViewById(R.id.bk_sel_more);
 
+        logBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { showLog(); }
+        });
         addBtn.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 if (!rootOk) {
@@ -274,9 +282,11 @@ public class BackupActivity extends Activity {
         selAll.setTextColor(accent);
         selInv.setTextColor(accent);
         addBtn.setTextColor(accent);
+        logBtn.setTextColor(accent);
         dirLabel.setTextColor(fg);
         dirValue.setTextColor(sec);
         dirArrow.setTextColor(sec);
+        scopeTv.setTextColor(sec);
         selMore.setTextColor(fg);
         renderDir();
         if (hint.getVisibility() == View.VISIBLE) hint.setTextColor(sec);
@@ -609,6 +619,7 @@ public class BackupActivity extends Activity {
     private void renderMultiBar() {
         int n = selected.size();
         addBtn.setVisibility((rootOk && !multi) ? View.VISIBLE : View.GONE);
+        logBtn.setVisibility((rootOk && !multi) ? View.VISIBLE : View.GONE);
         if (dirRow != null) dirRow.setVisibility(multi ? View.GONE : View.VISIBLE);
         selCount.setVisibility(multi ? View.VISIBLE : View.GONE);
         selAll.setVisibility(multi ? View.VISIBLE : View.GONE);
@@ -948,6 +959,52 @@ public class BackupActivity extends Activity {
                 });
             }
         }).start();
+    }
+
+    /** 上一次批量备份/恢复的日志，存在应用私有目录，离开过程页也留得住 */
+    private void showLog() {
+        String text = null;
+        try {
+            java.io.File f = new java.io.File(getFilesDir(), BatchRunActivity.LOG_NAME);
+            if (f.exists()) {
+                java.io.BufferedReader r = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(new java.io.FileInputStream(f), "UTF-8"));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = r.readLine()) != null) sb.append(line).append('\n');
+                r.close();
+                text = sb.toString().trim();
+            }
+        } catch (Throwable ignored) {
+        }
+        if (text == null || text.length() == 0) {
+            toast(getString(R.string.backup_log_empty));
+            return;
+        }
+        final String ft = text;
+        android.widget.ScrollView sv = new android.widget.ScrollView(this);
+        TextView tv = new TextView(this);
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        tv.setPadding(pad, pad, pad, pad);
+        tv.setTextSize(12);
+        tv.setTextIsSelectable(true);
+        tv.setTypeface(android.graphics.Typeface.MONOSPACE);
+        tv.setText(text);
+        tv.setTextColor(fg);
+        sv.addView(tv);
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.backup_log_title)
+                .setView(sv)
+                .setPositiveButton(android.R.string.ok, null)
+                .setNeutralButton(R.string.batch_copy_log, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        android.content.ClipboardManager cm = (android.content.ClipboardManager)
+                                getSystemService(CLIPBOARD_SERVICE);
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("CubClone", ft));
+                        toast(getString(R.string.batch_log_copied));
+                    }
+                })
+                .show();
     }
 
     // ── 备份目录 ─────────────────────────────────────────────────────

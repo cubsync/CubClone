@@ -266,6 +266,14 @@
     <string name="backup_batch_empty">这个空间没有可备份的第三方应用</string>
     <string name="backup_batch_none">没有选中应用</string>
     <string name="backup_batch_running">正在备份 %1$d/%2$d</string>
+    <string name="batch_leave_title">任务还在跑</string>
+    <string name="batch_leave_msg">返回会停下这一轮剩下的项。已经完成的备份都还在，日志也会保留已跑完的部分。</string>
+    <string name="batch_leave_ok">停下并返回</string>
+    <string name="batch_leave_stay">继续等</string>
+    <string name="backup_log">日志</string>
+    <string name="backup_log_empty">还没有批量任务的日志</string>
+    <string name="backup_log_title">上次批量任务</string>
+    <string name="backup_scope_note">备份应用私有数据（含 DE）；不含 APK、OBB 和 Android/media</string>
     <string name="batch_restore_title">批量恢复</string>
     <string name="batch_backing_n">正在备份 %1$d/%2$d</string>
     <string name="batch_restoring_n">正在恢复 %1$d/%2$d</string>

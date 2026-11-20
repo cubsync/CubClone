@@ -313,6 +313,10 @@ Every time you clone app data, the destination\u2019s existing data is kept here
     <string name="ime_pick_saved">Saved, applies to new spaces</string>
     <string name="space_storage_broken">Shared space storage unavailable: this kernel\u0027s sdcardfs is incompatible with clone spaces, so the gallery stays empty. Tap to generate the fix module</string>
     <string name="space_storage_fixed">Shared space storage available · Tap to regenerate the fix module</string>
+    <string name="space_storage_updatable">Fix module update available (%1$s installed, %2$s latest) · Tap to generate and flash</string>
+    <string name="space_storage_outdated">Fix module is not the latest (no version marker, 2.3 or older) · Tap to generate %1$s and flash</string>
+    <string name="fix_module_state">Installed: %1$s　Bundled: %2$s</string>
+    <string name="fix_module_state_none">Installed: no version marker (2.3 or older, or not installed)　Bundled: %1$s</string>
     <string name="fix_module_title">Generate fix module</string>
     <string name="fix_module_msg">A zip named cubclone-sdcardfs-fix.zip will be written to the Download folder (an existing one is overwritten). Flash it in APatch / KernelSU / Magisk and reboot.\n\nThe module does two things:\n1. Switches external storage to pure FUSE mounting — with sdcardfs in the kernel a clone volume cannot be mounted at all, which is the root cause;\n2. On pure FUSE every read and write is proxied by the system media provider, which cannot modify files left over from the sdcardfs era; apps then fail to open their own databases (import errors, 0-byte exports, endless loading). Once the device is unlocked the module re-owns those legacy files to the local media provider — owner only, no change to content or location, runs once and leaves a marker.\n\nDevices whose kernel has no sdcardfs are rejected at install time and nothing is left behind.\n\nNote: ROM OTA updates usually require re-flashing the module.</string>
     <string name="fix_module_working">Generating…</string>

@@ -620,6 +620,19 @@ public final class CloneStore {
      * 判据只用「驱动是否存在 + 系统里 sdcardfs 挂载数」两个客观事实，
      * 不看任何属性 —— 属性只在开机瞬间有意义，事后读出来是空（11-18 实测）。
      */
+    /**
+     * 设备上已装模块的版本，不需要任何权限。
+     * 模块 2.4 起在 system.prop / post-fs-data 里留了 sys.cubclone.module.code，
+     * 普通进程 getprop 就能读——不用 su，也不用碰 /data/adb（普通应用根本进不去）。
+     * @return {code, version}；null = 没装，或是 2.3 及更早（那时还没有这个标记）
+     */
+    public static String[] moduleInstalled() {
+        String code = Shell.raw("getprop", "sys.cubclone.module.code").trim();
+        if (!code.matches("\\d+")) return null;
+        String v = Shell.raw("getprop", "sys.cubclone.module.version").trim();
+        return new String[]{code, v.length() == 0 ? code : v};
+    }
+
     static Integer storageState() {
         if (!Shell.ready()) return null;
         String out = Shell.exec(
@@ -650,13 +663,20 @@ public final class CloneStore {
     // 判据只用「/proc/filesystems 里有 sdcardfs」：静态、BFU 也可见。
     // ⛔ 不能拿 mount 或卷状态当判据 —— 脚本跑在 post-fs-data，那时还没解锁，一条挂载都没有。
 
+    /**
+     * 模块版本：应用内置的这一份就是「最新」。模块内容有任何改动，必须同时把 code 加一，
+     * 否则用户刷了新版也会被判成「已是最新」。
+     */
+    public static final String MODULE_VERSION = "2.4";
+    public static final int MODULE_CODE = 7;
+
     // id 与 name 都是模块在用户设备上的身份，1.x 发出去之后就不再动：换 id 会变成两个模块并存，
     // 换 name 会让用户在管理器里看到模块「改名」。只有 version / versionCode 可以前进。
     private static final String MODULE_PROP =
             "id=cubclone_sdcardfs_fix\n"
             + "name=CubClone 分身存储修复\n"
-            + "version=2.4\n"
-            + "versionCode=7\n"
+            + "version=" + MODULE_VERSION + "\n"
+            + "versionCode=" + MODULE_CODE + "\n"
             + "author=cubsync\n"
             + "description=内核带 sdcardfs 的机型上，让 vold/MediaProvider 走纯 FUSE，"
             + "恢复分身空间与主空间共用的存储（相册、文件同一份）。切到 FUSE 后文件由 "
@@ -664,9 +684,15 @@ public final class CloneStore {
             + "模块会把这些属主一次性迁成 FUSE 形态。只改属主，不动文件内容和位置。"
             + "仅适用于内核带 sdcardfs 的设备；不含该驱动的机型会被拒绝安装。\n";
 
-    /** 管理器若在更早阶段应用 system.prop，这里也备一份，双保险（内容与脚本一致） */
+    /**
+     * 管理器若在更早阶段应用 system.prop，这里也备一份，双保险（内容与脚本一致）。
+     * 后两行是版本标记：应用用 getprop 就能读到模块装没装、是不是最新，
+     * 不需要 root，也不用碰 /data/adb（普通应用进不去）。
+     */
     private static final String MODULE_SYSPROP =
-            "external_storage.sdcardfs.enabled=false\n";
+            "external_storage.sdcardfs.enabled=false\n"
+            + "sys.cubclone.module.code=" + MODULE_CODE + "\n"
+            + "sys.cubclone.module.version=" + MODULE_VERSION + "\n";
 
     /**
      * post-fs-data.sh：只做属性（必须在 vold 启动前），顺带尝试一次属主迁移。
@@ -690,6 +716,9 @@ public final class CloneStore {
             + "  say '本机内核没有 sdcardfs 驱动，跳过，未做任何改动'; exit 0\n"
             + "fi\n"
             + "\n"
+            // 版本标记：system.prop 在部分管理器上不生效时这里兜一次，应用零权限 getprop 可读
+            + "\"$RP\" sys.cubclone.module.code " + MODULE_CODE + "\n"
+            + "\"$RP\" sys.cubclone.module.version " + MODULE_VERSION + "\n"
             + "BEFORE=$(\"$RP\" external_storage.sdcardfs.enabled 2>/dev/null)\n"
             + "\"$RP\" external_storage.sdcardfs.enabled false\n"
             + "AFTER=$(\"$RP\" external_storage.sdcardfs.enabled 2>/dev/null)\n"

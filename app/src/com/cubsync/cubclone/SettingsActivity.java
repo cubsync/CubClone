@@ -64,6 +64,9 @@ public class SettingsActivity extends Activity {
     private View backupEntry, rootEntry;
     private TextView rootEntryState;
     private TextView spaceWarn;
+    /** 设备上已装模块的 versionCode；-1 = 读不到（没装，或 2.3 及更早） */
+    private int moduleCode = -1;
+    private String moduleVer;
     /** 分身存储是否已知不可用（只测一次，结果缓存） */
     private Integer storageState;
     private View divider, dividerKeep, lineLook;
@@ -1369,9 +1372,13 @@ public class SettingsActivity extends Activity {
     }
 
     private void makeFixModule() {
+        // 说明里先报一句「已装哪个版本、本版内置哪个」，免得用户不知道要不要重刷
+        String state = moduleVer == null
+                ? getString(R.string.fix_module_state_none, CloneStore.MODULE_VERSION)
+                : getString(R.string.fix_module_state, moduleVer, CloneStore.MODULE_VERSION);
         new AlertDialog.Builder(this)
                 .setTitle(R.string.fix_module_title)
-                .setMessage(R.string.fix_module_msg)
+                .setMessage(state + "\n\n" + getString(R.string.fix_module_msg))
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
                         toast(getString(R.string.fix_module_working));
@@ -1400,14 +1407,26 @@ public class SettingsActivity extends Activity {
      */
     private void renderStorageWarn() {
         if (spaceWarn == null) return;
-        if (storageState != null) { applyStorageState(); return; }
-        // 检测要走提权 shell，不能放主线程；算完再显示
+        final boolean needStore = storageState == null;
+        // 检测要走提权 shell，不能放主线程；算完再显示。
+        // 模块版本每次进页面都重读：刚刷完模块回来要立刻看到「已是最新」
         new Thread(new Runnable() {
             public void run() {
-                final Integer st = CloneStore.storageState();
+                final Integer st = needStore ? CloneStore.storageState() : storageState;
+                final String[] mod = CloneStore.moduleInstalled();
                 runOnUiThread(new Runnable() {
                     public void run() {
-                        if (st == null) return;   // 提权未就绪，等 showPermState 补算
+                        if (mod == null) {
+                            moduleCode = -1;
+                            moduleVer = null;
+                        } else {
+                            moduleCode = Integer.parseInt(mod[0]);
+                            moduleVer = mod[1];
+                        }
+                        if (st == null) {   // 提权未就绪，等 showPermState 补算
+                            if (spaceWarn != null) spaceWarn.setVisibility(android.view.View.GONE);
+                            return;
+                        }
                         storageState = st;
                         applyStorageState();
                     }
@@ -1423,9 +1442,27 @@ public class SettingsActivity extends Activity {
             spaceWarn.setVisibility(View.GONE);
             return;
         }
-        boolean fixed = st == 2;
-        spaceWarn.setText(fixed ? R.string.space_storage_fixed : R.string.space_storage_broken);
-        spaceWarn.setTextColor(fixed ? 0xFF2E7D32 : 0xFFE53935);
+        if (st != 2) {                       // 1 = 共享存储坏了，还没修
+            spaceWarn.setText(R.string.space_storage_broken);
+            spaceWarn.setTextColor(0xFFE53935);
+            spaceWarn.setVisibility(View.VISIBLE);
+            return;
+        }
+        // st == 2：内核对 sdcardfs 有驱动但已经走 FUSE —— 只能是修复模块干的。
+        // 再确认这个模块是不是应用内置的这一版；不是就提示重刷。
+        if (moduleCode >= 0 && moduleCode < CloneStore.MODULE_CODE) {
+            spaceWarn.setText(getString(R.string.space_storage_updatable,
+                    moduleVer, CloneStore.MODULE_VERSION));
+            spaceWarn.setTextColor(0xFFEF6C00);
+        } else if (moduleCode < 0) {
+            // 读不到版本标记 = 2.3 及更早（那两版还不写这个标记）
+            spaceWarn.setText(getString(R.string.space_storage_outdated,
+                    CloneStore.MODULE_VERSION));
+            spaceWarn.setTextColor(0xFFEF6C00);
+        } else {
+            spaceWarn.setText(R.string.space_storage_fixed);
+            spaceWarn.setTextColor(0xFF2E7D32);
+        }
         spaceWarn.setVisibility(View.VISIBLE);
     }
 

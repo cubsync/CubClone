@@ -313,6 +313,10 @@
     <string name="ime_pick_saved">已保存，新建空间时生效</string>
     <string name="space_storage_broken">分身共享存储不可用：本机内核的 sdcardfs 与分身不兼容，相册会空白。点这里生成修复模块</string>
     <string name="space_storage_fixed">分身共享存储可用 · 点这里可重新生成修复模块</string>
+    <string name="space_storage_updatable">修复模块有更新（已装 %1$s，最新 %2$s）· 点这里生成后刷入</string>
+    <string name="space_storage_outdated">修复模块不是最新（读不到版本标记，即 2.3 或更早）· 点这里生成 %1$s 后刷入</string>
+    <string name="fix_module_state">设备上已装：%1$s　本版内置：%2$s</string>
+    <string name="fix_module_state_none">设备上已装：无版本标记（2.3 或更早，也可能没装）　本版内置：%1$s</string>
     <string name="fix_module_title">生成修复模块</string>
     <string name="fix_module_msg">会生成 cubclone-sdcardfs-fix.zip 到 Download 目录（同名文件直接覆盖）。用 APatch / KernelSU / Magisk 刷入后重启。\n\n模块做两件事：\n① 让系统的外部存储改用纯 FUSE 挂载 —— 内核带 sdcardfs 时分身卷挂不上，这是根因；\n② 纯 FUSE 下读写都由系统媒体服务代理，sdcardfs 时代留下的旧文件它改不动，应用就会打不开自己的数据库（导入报错、导出 0 字节、界面一直加载）。模块在设备解锁后把共享存储里旧文件的属主改成本机媒体服务，只改属主，不动内容和位置，全程只跑一次并留标记。\n\n内核没有 sdcardfs 的机型在刷入时会被直接拒绝，不会留下任何东西。\n\n注意：ROM OTA 升级后模块通常要重刷一次。</string>
     <string name="fix_module_working">正在生成…</string>

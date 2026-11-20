@@ -728,7 +728,7 @@ public final class CloneStore {
             + "if [ ! -d /data/media/0/Android/media ]; then\n"
             + "  if command -v inotifyd >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then\n"
             + "    say 'wait: inotifyd 监听 /data，等解锁挂载'\n"
-            + "    timeout 300 inotifyd - /data::c 2>/dev/null | while read -r line; do\n"
+            + "    timeout 300 inotifyd - /data::nm 2>/dev/null | while read -r line; do\n"
             + "      case \"$line\" in *media*) break;; esac\n"
             + "    done\n"
             + "  fi\n"

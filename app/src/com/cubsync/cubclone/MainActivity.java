@@ -1926,7 +1926,14 @@ public class MainActivity extends Activity {
         String[] items = new String[targets.size()];
         for (int i = 0; i < targets.size(); i++) {
             int u = targets.get(i).intValue();
-            items[i] = spaceLabel(u) + (u == 0 ? "" : suffixOf(u, g.pkg, 0));
+            String nm = spaceLabel(u);
+            if (u != 0) {
+                // 空间名本身已经能区分，只有用户自己起过后缀才额外带上；
+                // 不能拿 suffixOf(...,0) 兜底，那会给每个分身都拼出「1」
+                String sfx = sp().getString("sfx_" + u + "_" + g.pkg, "");
+                if (sfx != null && sfx.length() > 0) nm = nm + " · " + sfx;
+            }
+            items[i] = nm;
         }
         new AlertDialog.Builder(this)
                 .setTitle(R.string.copy_data_pick_title)

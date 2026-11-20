@@ -65,6 +65,7 @@ public class BatchBackupActivity extends Activity {
 
     public void onCreate(Bundle b) {
         super.onCreate(b);
+        AppData.loadRoot(sp());
         setContentView(R.layout.activity_batch_backup);
 
         root = findViewById(R.id.bb_root);

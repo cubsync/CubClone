@@ -206,24 +206,30 @@
     <string name="backup_algo_auto">本机 %1$s 不可用，已改用 %2$s</string>
     <string name="backup_scanning">正在扫描备份…</string>
     <string name="backup_empty">没有备份</string>
-    <string name="backup_need_root">需要 root：备份目录在 /data/user 下，Shizuku 读不到</string>
+    <string name="backup_need_root">需要 root：读应用私有数据、恢复时换属主都要 root</string>
     <string name="backup_restore">恢复这份备份</string>
-    <string name="backup_export">导出到 Download</string>
     <string name="backup_delete">删除备份</string>
-    <string name="backup_restore_msg">会用这份备份替换当前数据；当前数据会另存为一份新备份，不会丢。</string>
+    <string name="backup_restore_msg">会用这份备份替换当前数据。替换前系统的当前数据只临时挪开，成功即删，失败会退回。</string>
     <string name="backup_delete_msg">删除后无法恢复。</string>
     <string name="backup_working">正在处理…</string>
-    <string name="backup_exporting">正在导出</string>
     <string name="backup_restore_ok">已恢复</string>
-    <string name="backup_export_ok">已导出到 %1$s</string>
     <string name="backup_delete_ok">已删除</string>
     <string name="backup_fail">操作失败：%1$s</string>
     <string name="backup_algo_pick">选择压缩算法</string>
+    <string name="backup_sel_restore">恢复选中</string>
+    <string name="backup_restoring">正在恢复</string>
+    <string name="backup_restore_many_done">已恢复 %1$d 项，失败 %2$d 项</string>
+    <string name="backup_restore_many_skip">同空间同应用有多份，只恢复了最新的 %1$d 份</string>
+    <string name="backup_dir_row">备份目录</string>
+    <string name="backup_dir_up">上一级</string>
+    <string name="backup_dir_use">用这个目录</string>
+    <string name="backup_dir_ok">已把 %1$s 份备份搬到新目录</string>
+    <string name="backup_dir_note">备份会直接打包到这个目录，恢复也从这里读；文件管理器能直接看、能拷走。</string>
     <string name="backup_algo_row">压缩算法</string>
     <string name="backup_algo_saved">已设为 %1$s</string>
     <string name="backup_empty_hint">还没有备份。
 
-长按应用选「备份数据」可以随时建一份；克隆数据时目标空间原来的数据也会自动留一份在这里，可以选择压缩、恢复或导出。</string>
+长按应用选「备份数据」可以随时建一份；克隆数据时目标空间原来的数据也会自动打包一份到这里，可以选择压缩或恢复。</string>
     <string name="backup_algo_title">压缩方式：%1$s</string>
     <string name="backup_algo_zst">zstd</string>
     <string name="backup_algo_gz">gzip</string>
@@ -253,13 +259,6 @@
     <string name="batch_backup_title">批量备份</string>
     <string name="batch_backup_go">开始备份</string>
     <string name="backup_invert">反选</string>
-    <string name="backup_import">导入</string>
-    <string name="backup_import_title">从 Download 导入</string>
-    <string name="backup_import_empty">Download/CubClone-backup 里没有可导入的备份包</string>
-    <string name="backup_import_confirm">把 %1$s 恢复到 %2$s？\n\n这个空间当前的数据会先留一份在同一个目录，不会直接丢掉。</string>
-    <string name="backup_importing">正在导入</string>
-    <string name="backup_import_ok">已导入并恢复 %1$s</string>
-    <string name="backup_import_no_app">%1$s 在目标空间里不存在，无法导入</string>
     <string name="backup_sel_title">选择备份</string>
     <string name="backup_sel_count">已选 %1$d 项</string>
     <string name="backup_sel_all">全选</string>
@@ -267,7 +266,6 @@
     <string name="backup_sel_empty">还没有选中任何备份</string>
     <string name="backup_sel_delete">删除</string>
     <string name="backup_sel_compress">压缩</string>
-    <string name="backup_export_many_done">已导出 %1$d 个，失败 %2$d 个（Download/CubClone-backup）</string>
     <string name="backup_delete_many_msg">删除选中的 %1$d 份备份？删除后无法恢复。</string>
     <string name="backup_delete_many_ok">已删除 %1$s 项</string>
     <string name="backup_done_many">成功 %1$d 项，失败 %2$d 项</string>

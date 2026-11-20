@@ -215,9 +215,45 @@ public final class AppData {
     }
 
     /** 扫各空间下的备份目录；一次 du 拿到全部大小，不逐个进目录 */
+        /**
+     * 列出所有备份：备份目录里的新包 + /data/user 下老版本留下的目录/包。
+     * 一次 du 拿全部大小，不逐个进目录。
+     */
     public static java.util.List<Backup> listBackups() {
         java.util.List<Backup> r = new java.util.ArrayList<Backup>();
-        String out = Shell.execScript("du -sm /data/user/*/*.cubclone-bak-* 2>/dev/null\n");
+        String[][] exts = {{".tar.zst", "zst"}, {".tar.gz", "gz"},
+                {".tar.bz2", "bz2"}, {".tar", "tar"}};
+
+        // 新位置：<备份目录>/<包名>-<空间>-<时间戳>.tar[.zst|.gz|.bz2]
+        String out = Shell.execScript("du -sm '" + rootDir + "'/* 2>/dev/null\n");
+        for (String line : out.split("\n")) {
+            String t = line.trim();
+            if (t.length() == 0) continue;
+            int tab = t.indexOf('\t');
+            if (tab <= 0) continue;
+            long kb;
+            try {
+                kb = Long.parseLong(t.substring(0, tab).trim());
+            } catch (Throwable e) {
+                continue;
+            }
+            String path = t.substring(tab + 1).trim();
+            String name = path.substring(path.lastIndexOf('/') + 1);
+            String[] p = parseExported(name);
+            if (p == null) continue;
+            String algo = algoOf(p[3]);
+            if (algo.length() == 0) continue;     // 只有包才在这层，目录形态是老位置
+            int user;
+            try {
+                user = Integer.parseInt(p[1]);
+            } catch (Throwable e) {
+                continue;
+            }
+            r.add(new Backup(user, p[0], path, kb, p[2], algo));
+        }
+
+        // 旧位置：/data/user/<U>/<包>.cubclone-bak-<时间戳>[.tar…]
+        out = Shell.execScript("du -sm /data/user/*/*.cubclone-bak-* 2>/dev/null\n");
         for (String line : out.split("\n")) {
             String t = line.trim();
             if (t.length() == 0) continue;
@@ -243,8 +279,6 @@ public final class AppData {
             }
             String rest = name.substring(k + 14);
             String algo = "";
-            String[][] exts = {{".tar.zst", "zst"}, {".tar.gz", "gz"},
-                    {".tar.bz2", "bz2"}, {".tar", "tar"}};
             for (String[] e : exts) {
                 if (rest.endsWith(e[0])) {
                     algo = e[1];
@@ -256,6 +290,7 @@ public final class AppData {
         }
         return r;
     }
+
 
     /** 本机能真正跑起来的算法，按优先级从好到差；纯打包（none）永远可用 */
     public static java.util.List<String> usableAlgos() {
@@ -296,23 +331,59 @@ public final class AppData {
      * 先停止该应用，避免把写到一半的数据库复制走；原数据一个字节都不动。
      * @return "OK <备份路径>|<实际算法>" 或 "ERR_xxx"
      */
+        /**
+     * 给某个空间里的某个应用立刻做一份备份，不涉及另一个空间。
+     * 先停止该应用，避免把写到一半的数据库复制走；原数据一个字节都不动。
+     * 直接 tar 流式打包到备份目录，不在 /data 留中间副本——
+     * 留副本要写两遍（先 cp 再压），大应用能差出十几秒。
+     * @return "OK <备份路径>|<实际算法>" 或 "ERR_xxx"
+     */
     public static String backupNow(int user, String pkg, String algo, int level) {
         String src = "/data/user/" + user + "/" + pkg;
         String ts = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
-        String bak = src + ".cubclone-bak-" + ts;
+        String base = rootDir + "/" + pkg + "-" + user + "-" + ts;
+        String want = (algo == null || algo.length() == 0) ? "none" : algo;
+        int lv = level > 0 ? level : defaultLevel(want);
 
         StringBuilder s = new StringBuilder();
         s.append("am force-stop --user ").append(user).append(" '").append(pkg).append("'\n");
         s.append("[ -d '").append(src).append("' ] || { echo ERR_NO_SRC; exit 1; }\n");
-        // 锁屏后 CE 密钥被驱逐，复制会写到一半失败
+        // 锁屏后 CE 密钥被驱逐，边读边压会读到一半 ENOKEY
         s.append("touch '").append(src).append("/.cc-probe' 2>/dev/null || { echo ERR_LOCKED; exit 1; }\n");
         s.append("rm -f '").append(src).append("/.cc-probe'\n");
-        s.append("cp -a '").append(src).append("' '").append(bak).append("' || { ")
-                .append("rm -rf '").append(bak).append("'; echo ERR_CP; exit 1; }\n");
-        s.append("rm -rf '").append(bak).append("/cache' '").append(bak).append("/code_cache'\n");
-        s.append("echo CUB_OK '").append(bak).append("'\n");
+        s.append("mkdir -p '").append(rootDir).append("' || { echo ERR_DIR; exit 1; }\n");
+        s.append("P='/data/user/").append(user).append("'; N='").append(pkg)
+                .append("'; B='").append(base).append("'\n");
+        s.append("pack() {\n");
+        s.append("  O=\"$B$2\"; rm -f \"$O\"\n");
+        s.append("  if [ -z \"$1\" ]; then tar -cf \"$O\" -C \"$P\" \"$N\" 2>/dev/null\n");
+        s.append("  else tar -cf - -C \"$P\" \"$N\" 2>/dev/null | $1 > \"$O\" 2>/dev/null; fi\n");
+        // tar -t 校验：管道里 tar 的失败被 gzip 吞掉了，只能反过来验包
+        s.append("  if [ -s \"$O\" ] && tar -t$3f \"$O\" >/dev/null 2>&1; then\n");
+        s.append("    chown 1023:1023 \"$O\" 2>/dev/null; chmod 660 \"$O\" 2>/dev/null\n");
+        s.append("    echo CUB_OK \"$O\"; return 0; fi\n");
+        s.append("  rm -f \"$O\"; return 1\n");
+        s.append("}\n");
+        for (String a : degradeChain(want)) {
+            int use = a.equals(want) ? lv : defaultLevel(a);
+            if ("zst".equals(a)) {
+                // 20 级以上 zstd 要求 --ultra，否则直接拒绝
+                String z = use > 19 ? ("zstd --ultra -" + use + " -q -c") : ("zstd -" + use + " -q -c");
+                s.append("command -v zstd >/dev/null 2>&1 && pack \"").append(z)
+                        .append("\" .tar.zst Z && exit 0\n");
+            } else if ("gz".equals(a)) {
+                s.append("command -v gzip >/dev/null 2>&1 && pack \"gzip -").append(use)
+                        .append("\" .tar.gz z && exit 0\n");
+            } else if ("bz2".equals(a)) {
+                s.append("command -v bzip2 >/dev/null 2>&1 && pack \"bzip2 -").append(use)
+                        .append("\" .tar.bz2 j && exit 0\n");
+            } else {
+                s.append("pack \"\" .tar \"\" && exit 0\n");
+            }
+        }
+        s.append("echo ERR_PACK\n");
 
-        android.util.Log.i("CubClone", "backupNow " + pkg + " user=" + user);
+        android.util.Log.i("CubClone", "backupNow " + pkg + " user=" + user + " -> " + base);
         String out = Shell.execScript(s.toString());
         int i = out.indexOf("CUB_OK ");
         if (i < 0) {
@@ -322,21 +393,11 @@ public final class AppData {
             }
             return "ERR " + out.trim();
         }
-        String bakPath = out.substring(i + 7).trim();
-        if (algo == null || algo.length() == 0 || "none".equals(algo)) {
-            return "OK " + bakPath + "|none";
-        }
-        Backup nb = new Backup(user, pkg, bakPath, 0, "", "");
-        String zr = compress(nb, algo, level);
-        if (zr.startsWith("OK ")) {
-            String rest = zr.substring(3).trim();
-            int bar = rest.lastIndexOf('|');
-            return "OK " + (bar > 0 ? rest.substring(0, bar) : rest)
-                    + "|" + (bar > 0 ? rest.substring(bar + 1) : algo);
-        }
-        // 压缩失败不影响备份本身，目录形态照样能恢复
-        return "OK " + bakPath + "|";
+        String path = out.substring(i + 7).trim();
+        int dot = path.indexOf(".tar");
+        return "OK " + path + "|" + (dot > 0 ? algoOf(path.substring(dot)) : "none");
     }
+
 
     /** 各算法的默认级别（与各自官方默认一致） */
     public static int defaultLevel(String algo) {
@@ -372,45 +433,53 @@ public final class AppData {
      * 打包并校验通过后才删原目录；任何一步失败都保留原样。
      * @return "OK <包路径> <实际算法>" 或 "ERR_xxx"
      */
+        /**
+     * 把目录形态的旧备份打成包，搬到备份目录，成功后删掉原目录。
+     * 用 `tar -cf - | <压缩器> -<级别>` 而不是 tar 的 -z/-Z/-j：
+     * toybox tar 的选项不接受级别参数，管道才能真正给到压缩器。
+     * 失败按选择 → gzip → bzip2 → 纯打包降级（本机 zstd 二进制可能坏）。
+     * 打包并校验通过后才删原目录；任何一步失败都保留原样。
+     * @return "OK <包路径>|<实际算法>" 或 "ERR_xxx"
+     */
     public static String compress(Backup b, String algo, int level) {
         if (b.packed()) return "ERR_ALREADY";
         String parent = b.path.substring(0, b.path.lastIndexOf('/'));
         String name = b.path.substring(b.path.lastIndexOf('/') + 1);
-        int lv = level > 0 ? level : defaultLevel(algo);
+        String want = (algo == null || algo.length() == 0) ? "none" : algo;
+        int lv = level > 0 ? level : defaultLevel(want);
+        String base = rootDir + "/" + b.pkg + "-" + b.user + "-" + b.ts;
 
         StringBuilder s = new StringBuilder();
         s.append("SRC='").append(b.path).append("'\n");
         s.append("P='").append(parent).append("'\n");
         s.append("N='").append(name).append("'\n");
-        // 打一个包：$1=压缩器命令（空=纯打包）$2=输出文件 $3=算法名 $4=tar 列表标志
+        s.append("B='").append(base).append("'\n");
+        s.append("mkdir -p '").append(rootDir).append("' || { echo ERR_DIR; exit 1; }\n");
+        // $1=压缩器命令（空=纯打包）$2=扩展名 $3=算法名 $4=tar 列表标志
         s.append("pack() {\n");
-        s.append("  O=$2; rm -f \"$O\"\n");
-        s.append("  if [ -z \"$1\" ]; then\n");
-        s.append("    tar -cf \"$O\" -C \"$P\" \"$N\" 2>/dev/null\n");
-        s.append("  else\n");
-        s.append("    tar -cf - -C \"$P\" \"$N\" 2>/dev/null | $1 > \"$O\" 2>/dev/null\n");
-        s.append("  fi\n");
+        s.append("  O=\"$B$2\"; rm -f \"$O\"\n");
+        s.append("  if [ -z \"$1\" ]; then tar -cf \"$O\" -C \"$P\" \"$N\" 2>/dev/null\n");
+        s.append("  else tar -cf - -C \"$P\" \"$N\" 2>/dev/null | $1 > \"$O\" 2>/dev/null; fi\n");
         s.append("  if [ -s \"$O\" ] && tar -t$4f \"$O\" >/dev/null 2>&1; then\n");
+        s.append("    chown 1023:1023 \"$O\" 2>/dev/null; chmod 660 \"$O\" 2>/dev/null\n");
         s.append("    rm -rf \"$SRC\"; echo CUB_OK \"$O\" $3; return 0\n");
         s.append("  fi\n");
         s.append("  rm -f \"$O\"; return 1\n");
         s.append("}\n");
-        for (String a : degradeChain(algo)) {
-            int use = a.equals(algo) ? lv : defaultLevel(a);
+        for (String a : degradeChain(want)) {
+            int use = a.equals(want) ? lv : defaultLevel(a);
             if ("zst".equals(a)) {
-                // 20 级以上 zstd 要求 --ultra，否则直接拒绝
-                String zcmd = use > 19 ? ("zstd --ultra -" + use + " -q -c")
-                        : ("zstd -" + use + " -q -c");
-                s.append("command -v zstd >/dev/null 2>&1 && pack \"").append(zcmd)
-                        .append("\" \"$SRC.tar.zst\" zst Z && exit 0\n");
+                String z = use > 19 ? ("zstd --ultra -" + use + " -q -c") : ("zstd -" + use + " -q -c");
+                s.append("command -v zstd >/dev/null 2>&1 && pack \"").append(z)
+                        .append("\" .tar.zst zst Z && exit 0\n");
             } else if ("gz".equals(a)) {
                 s.append("command -v gzip >/dev/null 2>&1 && pack \"gzip -").append(use)
-                        .append("\" \"$SRC.tar.gz\" gz z && exit 0\n");
+                        .append("\" .tar.gz gz z && exit 0\n");
             } else if ("bz2".equals(a)) {
                 s.append("command -v bzip2 >/dev/null 2>&1 && pack \"bzip2 -").append(use)
-                        .append("\" \"$SRC.tar.bz2\" bz2 j && exit 0\n");
+                        .append("\" .tar.bz2 bz2 j && exit 0\n");
             } else {
-                s.append("pack \"\" \"$SRC.tar\" tar \"\" && exit 0\n");
+                s.append("pack \"\" .tar tar \"\" && exit 0\n");
             }
         }
         s.append("echo ERR_PACK\n");
@@ -425,8 +494,12 @@ public final class AppData {
         return "ERR " + out.trim();
     }
 
+
     /**
-     * 把备份换回原位；当前数据先改名成一份新备份，等于两个版本互换，不会丢。
+     * 把备份换回原位。当前数据不再另留一份：备份本来就是你要的东西，
+     * 每次恢复再复制一份只会让列表膨胀。
+     * 但也不是直接 rm：先 mv 到 /data/local/tmp（同分区改名，零成本），
+     * 换位成功才删，失败就挪回去。
      * @return "OK" 或 "ERR_xxx"
      */
     public static String restore(Backup b, int appId) {
@@ -437,27 +510,38 @@ public final class AppData {
 
         StringBuilder s = new StringBuilder();
         s.append("am force-stop --user ").append(b.user).append(" '").append(b.pkg).append("'\n");
+        s.append("OLD='/data/local/tmp/cc-old-").append(ts).append("'\n");
+        s.append("rm -rf \"$OLD\"\n");
         if (b.packed()) {
-            // 压缩包：先解到临时目录，解完再换位，失败不动现有数据
             String tmp = "/data/local/tmp/cc-restore-" + ts;
-            String inner = b.path.substring(b.path.lastIndexOf('/') + 1);
-            inner = inner.substring(0, inner.indexOf(".tar"));
+            // tar 顶层目录名：老包是 <包>.cubclone-bak-<ts>，新包就是 <包>
+            String nm = b.path.substring(b.path.lastIndexOf('/') + 1);
+            String inner = (b.path.startsWith("/data/user/") && b.path.contains(".cubclone-bak-"))
+                    ? nm.substring(0, nm.indexOf(".tar"))
+                    : b.pkg;
             s.append("TMP='").append(tmp).append("'\n");
             s.append("rm -rf \"$TMP\"; mkdir -p \"$TMP\" || { echo ERR_TMP; exit 1; }\n");
             s.append("tar -x").append(b.tarFlag()).append("f '").append(b.path)
                     .append("' -C \"$TMP\" || { rm -rf \"$TMP\"; echo ERR_UNPACK; exit 1; }\n");
             s.append("[ -d \"$TMP/").append(inner).append("\" ] || { rm -rf \"$TMP\"; echo ERR_UNPACK2; exit 1; }\n");
-            s.append("[ -d '").append(dst).append("' ] && { mv '").append(dst).append("' '")
-                    .append(dst).append(".cubclone-bak-").append(ts)
-                    .append("' || { rm -rf \"$TMP\"; echo ERR_MV; exit 1; }; }\n");
-            s.append("mv \"$TMP/").append(inner).append("\" '").append(dst).append("' || { echo ERR_MV2; exit 1; }\n");
-            s.append("rm -rf \"$TMP\"\n");
+            s.append("[ -d '").append(dst).append("' ] && { mv '").append(dst).append("' \"$OLD\" || { ")
+                    .append("rm -rf \"$TMP\"; echo ERR_MV; exit 1; }; }\n");
+            s.append("if mv \"$TMP/").append(inner).append("\" '").append(dst).append("'; then\n");
+            s.append("  rm -rf \"$TMP\" \"$OLD\"\n");
+            s.append("else\n");
+            s.append("  [ -d \"$OLD\" ] && mv \"$OLD\" '").append(dst).append("'\n");
+            s.append("  rm -rf \"$TMP\"; echo ERR_MV2; exit 1\n");
+            s.append("fi\n");
         } else {
             s.append("[ -d '").append(b.path).append("' ] || { echo ERR_NO_BAK; exit 1; }\n");
-            s.append("[ -d '").append(dst).append("' ] && { mv '").append(dst).append("' '")
-                    .append(dst).append(".cubclone-bak-").append(ts)
-                    .append("' || { echo ERR_MV; exit 1; }; }\n");
-            s.append("mv '").append(b.path).append("' '").append(dst).append("' || { echo ERR_MV2; exit 1; }\n");
+            s.append("[ -d '").append(dst).append("' ] && { mv '").append(dst).append("' \"$OLD\" || { ")
+                    .append("echo ERR_MV; exit 1; }; }\n");
+            s.append("if mv '").append(b.path).append("' '").append(dst).append("'; then\n");
+            s.append("  rm -rf \"$OLD\"\n");
+            s.append("else\n");
+            s.append("  [ -d \"$OLD\" ] && mv \"$OLD\" '").append(dst).append("'\n");
+            s.append("  echo ERR_MV2; exit 1\n");
+            s.append("fi\n");
         }
         s.append("chown -R ").append(uid).append(":").append(uid).append(" '").append(dst).append("'\n");
         if (ctx.length() > 0) {
@@ -474,32 +558,36 @@ public final class AppData {
         return "ERR " + out.trim();
     }
 
-    /** 导出目录；导入也从这里读，两边必须一致 */
-    public static final String EXPORT_DIR = "/sdcard/Download/CubClone-backup";
+    /** 备份根目录默认值；用户可在「数据备份」页改成 /sdcard 下任意目录 */
+    public static final String DEFAULT_ROOT = "/sdcard/Download/CubClone-backup";
 
-    /** 复制到 Download，普通文件管理器才拿得到 */
-    public static String export(Backup b) {
-        String dir = EXPORT_DIR;
-        String ext = b.packed() ? b.path.substring(b.path.indexOf(".tar")) : "";
-        String dst = dir + "/" + b.pkg + "-" + b.user + "-" + b.ts + ext;
-        StringBuilder s = new StringBuilder();
-        s.append("[ -e '").append(b.path).append("' ] || { echo ERR_NO_BAK; exit 1; }\n");
-        s.append("mkdir -p '").append(dir).append("'\n");
-        s.append("rm -rf '").append(dst).append("'\n");
-        s.append("cp -a '").append(b.path).append("' '").append(dst).append("' || { echo ERR_CP; exit 1; }\n");
-        s.append("echo CUB_OK '").append(dst).append("'\n");
-        String out = Shell.execScript(s.toString());
-        int i = out.indexOf("CUB_OK ");
-        if (i >= 0) return "OK " + out.substring(i + 7).trim();
-        for (String line : out.split("\n")) {
-            String t = line.trim();
-            if (t.startsWith("ERR")) return t;
-        }
-        return "ERR " + out.trim();
+    private static String rootDir = DEFAULT_ROOT;
+
+    public static void setRoot(String dir) {
+        rootDir = (dir == null || dir.trim().length() == 0) ? DEFAULT_ROOT : dir.trim();
+    }
+
+    public static String root() {
+        return rootDir;
+    }
+
+    /** 设置项 backup_dir 是唯一真源，三个入口打开时都读一遍 */
+    public static void loadRoot(android.content.SharedPreferences sp) {
+        setRoot(sp.getString("backup_dir", DEFAULT_ROOT));
+    }
+
+    /** ".tar.zst" → "zst"、".tar" → "tar"、其它 → "" */
+    public static String algoOf(String tail) {
+        if (tail == null) return "";
+        if (tail.endsWith(".zst")) return "zst";
+        if (tail.endsWith(".gz")) return "gz";
+        if (tail.endsWith(".bz2")) return "bz2";
+        if (tail.endsWith(".tar")) return "tar";
+        return "";
     }
 
     /**
-     * 解析导出文件名 `<包名>-<空间>-<yyyyMMdd-HHmmss><扩展名>`。
+     * 解析备份文件名 `<包名>-<空间>-<yyyyMMdd-HHmmss><扩展名>`。
      * 包名里不会有 '-'，所以从右往左找 `-<数字>-<8位-6位>` 不会切错。
      * @return {pkg, user, ts, ext}；ext 是 "" 或 ".tar"/".tar.zst"/".tar.gz"/".tar.bz2"
      */
@@ -513,20 +601,20 @@ public final class AppData {
     }
 
     /**
-     * 把导出的包搬回它所属空间的备份目录，之后才走正常 restore。
-     * 不直接往目标目录解压：restore 里压缩包是「解到 /data/local/tmp 再 mv」，
-     * 在 /sdcard 上解会跨分区，反而更慢；先搬回来只是同分区 cp。
-     * 已有同名备份时不覆盖，直接报错让用户先删。
+     * 换备份目录时把旧目录里的备份搬过去。同一分区，mv 只是改名。
+     * @return "OK <搬了几个>" 或 "ERR_xxx"
      */
-    public static String pullIn(String file, String pkg, int user, String ts, String ext) {
-        String src = EXPORT_DIR + "/" + file;
-        String dst = "/data/user/" + user + "/" + pkg + ".cubclone-bak-" + ts + ext;
+    public static String moveBackups(String from, String to) {
+        if (from == null || to == null || from.length() == 0 || from.equals(to)) return "OK 0";
         StringBuilder s = new StringBuilder();
-        s.append("[ -e '").append(src).append("' ] || { echo ERR_NO_SRC; exit 1; }\n");
-        s.append("[ -e '").append(dst).append("' ] && { echo ERR_EXISTS; exit 1; }\n");
-        s.append("cp -a '").append(src).append("' '").append(dst)
-                .append("' || { echo ERR_CP; exit 1; }\n");
-        s.append("echo CUB_OK '").append(dst).append("'\n");
+        s.append("mkdir -p '").append(to).append("' || { echo ERR_DIR; exit 1; }\n");
+        s.append("N=0\n");
+        s.append("for f in '").append(from).append("'/*; do\n");
+        s.append("  [ -f \"$f\" ] || continue\n");
+        s.append("  case \"$f\" in *.tar|*.tar.zst|*.tar.gz|*.tar.bz2) ;; *) continue;; esac\n");
+        s.append("  mv -f \"$f\" '").append(to).append("/' && N=$((N+1))\n");
+        s.append("done\n");
+        s.append("echo CUB_OK $N\n");
         String out = Shell.execScript(s.toString());
         int i = out.indexOf("CUB_OK ");
         if (i >= 0) return "OK " + out.substring(i + 7).trim();

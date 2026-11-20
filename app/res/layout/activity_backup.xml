@@ -47,19 +47,6 @@
             android:textSize="20sp"
             android:visibility="gone" />
 
-        <!-- 从 Download 导入一个导出的备份包，直接恢复 -->
-        <TextView
-            android:id="@+id/bk_import"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp"
-            android:text="@string/backup_import"
-            android:textSize="13sp"
-            android:visibility="gone" />
-
         <!-- 多选模式才显示 -->
         <TextView
             android:id="@+id/bk_sel_count"
@@ -147,6 +134,45 @@
         android:lineSpacingExtra="3dp"
         android:textSize="12sp"
         android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/bk_dir_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="4dp"
+        android:background="?android:attr/selectableItemBackground">
+
+        <TextView
+            android:id="@+id/bk_dir_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/backup_dir_row"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/bk_dir_value"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:gravity="end"
+            android:maxLines="1"
+            android:ellipsize="start"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/bk_dir_arrow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:text="&#8250;"
+            android:textSize="18sp" />
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/bk_algo_row"

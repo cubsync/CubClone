@@ -193,6 +193,8 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         CloneStore.attach(this);
+        // 备份目录是设置项，备份/克隆都要用，进页面先读一遍
+        AppData.loadRoot(sp());
         langAtCreate = Locales.tag(this);
         setContentView(R.layout.activity_main);
 

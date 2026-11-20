@@ -48,8 +48,11 @@ public class BackupActivity extends Activity {
     private EditText search;
     private TextView filter;
     private TextView addBtn;
-    /** 非多选时显示：从 Download 导入一个导出的包并恢复 */
-    private TextView importBtn;
+    /** 备份目录那一行：点开选目录，换目录会把旧备份一起搬过去 */
+    private LinearLayout dirRow;
+    private TextView dirLabel;
+    private TextView dirValue;
+    private TextView dirArrow;
     /** 多选时显示：和全选放一起，不再塞进 ⋮ 菜单 */
     private TextView selInv;
     private TextView selCount;
@@ -96,10 +99,13 @@ public class BackupActivity extends Activity {
         search = findViewById(R.id.bk_search);
         filter = findViewById(R.id.bk_filter);
         addBtn = findViewById(R.id.bk_add);
-        importBtn = findViewById(R.id.bk_import);
+        dirRow = findViewById(R.id.bk_dir_row);
+        dirLabel = findViewById(R.id.bk_dir_label);
+        dirValue = findViewById(R.id.bk_dir_value);
+        dirArrow = findViewById(R.id.bk_dir_arrow);
         selInv = findViewById(R.id.bk_sel_inv);
-        importBtn.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { pickImport(); }
+        dirRow.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { pickBackupDir(); }
         });
         selInv.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { invertSelection(); }
@@ -156,6 +162,7 @@ public class BackupActivity extends Activity {
             public void afterTextChanged(Editable s) { }
         });
 
+        AppData.loadRoot(sp());
         adapter = new Adapter();
         list.setAdapter(adapter);
         applyChrome();
@@ -253,7 +260,13 @@ public class BackupActivity extends Activity {
         filter.setTextColor(accent);
         selCount.setTextColor(sec);
         selAll.setTextColor(accent);
+        selInv.setTextColor(accent);
+        addBtn.setTextColor(accent);
+        dirLabel.setTextColor(fg);
+        dirValue.setTextColor(sec);
+        dirArrow.setTextColor(sec);
         selMore.setTextColor(fg);
+        renderDir();
         if (hint.getVisibility() == View.VISIBLE) hint.setTextColor(sec);
     }
 
@@ -520,9 +533,7 @@ public class BackupActivity extends Activity {
     private void renderMultiBar() {
         int n = selected.size();
         addBtn.setVisibility((rootOk && !multi) ? View.VISIBLE : View.GONE);
-        if (importBtn != null) {
-            importBtn.setVisibility((rootOk && !multi) ? View.VISIBLE : View.GONE);
-        }
+        if (dirRow != null) dirRow.setVisibility(multi ? View.GONE : View.VISIBLE);
         selCount.setVisibility(multi ? View.VISIBLE : View.GONE);
         selAll.setVisibility(multi ? View.VISIBLE : View.GONE);
         if (selInv != null) selInv.setVisibility(multi ? View.VISIBLE : View.GONE);
@@ -552,22 +563,21 @@ public class BackupActivity extends Activity {
         boolean hasDir = false;
         for (AppData.Backup b : sel) if (!b.packed()) hasDir = true;
         final boolean canZip = hasDir;
-        // 顺序：导出 / 压缩（只有目录形态才有）/ 删除；反选在顶栏
+        // 顺序：恢复 / 压缩（只有目录形态才有）/ 删除；反选在顶栏
         String[] acts = canZip
-                ? new String[]{getString(R.string.backup_export),
+                ? new String[]{getString(R.string.backup_sel_restore),
                         getString(R.string.backup_sel_compress),
                         getString(R.string.backup_sel_delete)}
-                : new String[]{getString(R.string.backup_export),
+                : new String[]{getString(R.string.backup_sel_restore),
                         getString(R.string.backup_sel_delete)};
-        final int iExport = 0;
         final int iDelete = canZip ? 2 : 1;
 
         new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.backup_sel_count, sel.size()))
                 .setItems(acts, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
-                        if (which == iExport) {
-                            jobManyExport(sel);
+                        if (which == 0) {
+                            jobManyRestore(sel);
                             return;
                         }
                         if (which == iDelete) {
@@ -608,107 +618,7 @@ public class BackupActivity extends Activity {
     }
 
     /** 从 Download/CubClone-backup 里挑一个导出的包，搬回对应空间并恢复 */
-    private void pickImport() {
-        if (!rootOk) {
-            toast(getString(R.string.backup_need_root));
-            return;
-        }
-        new Thread(new Runnable() {
-            public void run() {
-                final List<String[]> found = new ArrayList<String[]>();
-                String out = Shell.execScript("ls -1 '" + AppData.EXPORT_DIR + "' 2>/dev/null\n");
-                for (String line : out.split("\n")) {
-                    String n = line.trim();
-                    if (n.length() == 0) continue;
-                    String[] p = AppData.parseExported(n);
-                    if (p != null) found.add(new String[]{n, p[0], p[1], p[2], p[3]});
-                }
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        if (found.isEmpty()) {
-                            toast(getString(R.string.backup_import_empty));
-                            return;
-                        }
-                        String[] items = new String[found.size()];
-                        for (int i = 0; i < found.size(); i++) {
-                            String[] f = found.get(i);
-                            int u;
-                            try { u = Integer.parseInt(f[2]); } catch (Throwable t) { u = 0; }
-                            items[i] = f[1] + " · " + spaceLabel(u) + " · " + f[3];
-                        }
-                        new AlertDialog.Builder(BackupActivity.this)
-                                .setTitle(R.string.backup_import_title)
-                                .setItems(items, new DialogInterface.OnClickListener() {
-                                    public void onClick(DialogInterface d, int w) {
-                                        confirmImport(found.get(w));
-                                    }
-                                })
-                                .setNegativeButton(android.R.string.cancel, null)
-                                .show();
-                    }
-                });
-            }
-        }).start();
-    }
-
-    private void confirmImport(final String[] f) {
-        final int user;
-        try { user = Integer.parseInt(f[2]); } catch (Throwable t) {
-            toast(getString(R.string.backup_fail, "ERR_BAD_NAME"));
-            return;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.backup_import)
-                .setMessage(getString(R.string.backup_import_confirm, f[1], spaceLabel(user)))
-                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int w) {
-                        runImport(f[0], f[1], user, f[3], f[4]);
-                    }
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
-    }
-
-    private void runImport(final String file, final String pkg, final int user,
-                           final String ts, final String ext) {
-        final int appId = appIdOf(pkg);
-        if (appId < 0) {
-            toast(getString(R.string.backup_import_no_app, pkg));
-            return;
-        }
-        showProgress(0, 1, R.string.backup_importing);
-        new Thread(new Runnable() {
-            public void run() {
-                final String r = AppData.pullIn(file, pkg, user, ts, ext);
-                if (!r.startsWith("OK ")) {
-                    runOnUiThread(new Runnable() {
-                        public void run() {
-                            hideProgress();
-                            toast(getString(R.string.backup_fail, r));
-                        }
-                    });
-                    return;
-                }
-                String path = r.substring(3).trim();
-                String algo = ext.startsWith(".tar.") ? ext.substring(5)
-                        : (".tar".equals(ext) ? "tar" : "");
-                AppData.Backup b = new AppData.Backup(user, pkg, path, 0, ts, algo);
-                final String rr = AppData.restore(b, appId);
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        hideProgress();
-                        toast(rr.startsWith("OK")
-                                ? getString(R.string.backup_import_ok, pkg)
-                                : getString(R.string.backup_fail, rr));
-                        exitMulti();
-                        boot();
-                    }
-                });
-            }
-        }).start();
-    }
-
-    private int appIdOf(String pkg) {
+                private int appIdOf(String pkg) {
         try {
             return getPackageManager().getApplicationInfo(pkg, 0).uid % 100000;
         } catch (Throwable t) {
@@ -720,23 +630,41 @@ public class BackupActivity extends Activity {
      * 批量导出：串行 cp，每导完一个刷一次进度。
      * 导出位置沿用单条的 Download/CubClone-backup，一次只动一个文件。
      */
-    private void jobManyExport(final List<AppData.Backup> sel) {
-        final int total = sel.size();
-        showProgress(0, total, R.string.backup_exporting);
+        /**
+     * 批量恢复。同一空间同一应用有多份时**只恢复最新的那份**：
+     * 按 ts 从旧到新依次恢复，结果是旧的覆盖新的，等于白跑还丢了新数据。
+     * ts 是 yyyyMMdd-HHmmss，字典序就是时间序。
+     */
+    private void jobManyRestore(final List<AppData.Backup> sel) {
+        final java.util.LinkedHashMap<String, AppData.Backup> newest =
+                new java.util.LinkedHashMap<String, AppData.Backup>();
+        for (AppData.Backup b : sel) {
+            String key = b.user + "/" + b.pkg;
+            AppData.Backup old = newest.get(key);
+            if (old == null || b.ts.compareTo(old.ts) > 0) newest.put(key, b);
+        }
+        final int skipped = sel.size() - newest.size();
+        final List<AppData.Backup> todo = new ArrayList<AppData.Backup>(newest.values());
+        showProgress(0, todo.size(), R.string.backup_restoring);
         new Thread(new Runnable() {
             public void run() {
                 int ok = 0, bad = 0;
-                for (int i = 0; i < total; i++) {
-                    String r = AppData.export(sel.get(i));
+                for (int i = 0; i < todo.size(); i++) {
+                    AppData.Backup b = todo.get(i);
+                    int appId = appIdOf(b.pkg);
+                    String r = appId < 0 ? "ERR_NO_APP" : AppData.restore(b, appId);
                     if (r.startsWith("OK")) ok++;
                     else bad++;
-                    showProgress(i + 1, total, R.string.backup_exporting);
+                    showProgress(i + 1, todo.size(), R.string.backup_restoring);
                 }
                 final int fok = ok, fbad = bad;
                 runOnUiThread(new Runnable() {
                     public void run() {
                         hideProgress();
-                        toast(getString(R.string.backup_export_many_done, fok, fbad));
+                        toast(getString(R.string.backup_restore_many_done, fok, fbad));
+                        if (skipped > 0) {
+                            toast(getString(R.string.backup_restore_many_skip, skipped));
+                        }
                         exitMulti();
                         boot();
                     }
@@ -897,11 +825,9 @@ public class BackupActivity extends Activity {
         final boolean canZip = !b.packed();
         String[] acts = canZip
                 ? new String[]{getString(R.string.backup_restore),
-                        getString(R.string.backup_export),
                         getString(R.string.backup_compress),
                         getString(R.string.backup_delete)}
                 : new String[]{getString(R.string.backup_restore),
-                        getString(R.string.backup_export),
                         getString(R.string.backup_delete)};
 
         new AlertDialog.Builder(this)
@@ -910,9 +836,7 @@ public class BackupActivity extends Activity {
                     public void onClick(DialogInterface d, int which) {
                         if (which == 0) {
                             confirm(R.string.backup_restore, R.string.backup_restore_msg, b, 0);
-                        } else if (which == 1) {
-                            job(b, 1);
-                        } else if (canZip && which == 2) {
+                        } else if (canZip && which == 1) {
                             confirm(R.string.backup_compress,
                                     R.string.backup_compress_msg, b, 3);
                         } else {
@@ -937,15 +861,13 @@ public class BackupActivity extends Activity {
                 .show();
     }
 
-    /** kind: 0 恢复、1 导出、2 删除、3 压缩 */
+    /** kind: 0 恢复、2 删除、3 压缩 */
     private void job(final AppData.Backup b, final int kind) {
-        toast(getString(kind == 1 ? R.string.backup_exporting
-                : kind == 3 ? R.string.backup_compressing : R.string.backup_working));
+        toast(getString(kind == 3 ? R.string.backup_compressing : R.string.backup_working));
         new Thread(new Runnable() {
             public void run() {
                 String r;
                 if (kind == 0) r = AppData.restore(b, appIdOf(b.pkg));
-                else if (kind == 1) r = AppData.export(b);
                 else if (kind == 3) r = AppData.compress(b, currentAlgo(), currentLevel(currentAlgo()));
                 else r = AppData.delete(b);
                 final String fr = r;
@@ -953,8 +875,6 @@ public class BackupActivity extends Activity {
                     public void run() {
                         if (fr.startsWith("OK")) {
                             if (kind == 0) toast(getString(R.string.backup_restore_ok));
-                            else if (kind == 1) toast(getString(R.string.backup_export_ok,
-                                    fr.length() > 3 ? fr.substring(3).trim() : ""));
                             else if (kind == 3) {
                                 String rest = fr.length() > 3 ? fr.substring(3).trim() : "";
                                 int bar = rest.lastIndexOf('|');
@@ -970,6 +890,93 @@ public class BackupActivity extends Activity {
                         } else {
                             toast(getString(R.string.backup_fail, fr));
                         }
+                    }
+                });
+            }
+        }).start();
+    }
+
+    // ── 备份目录 ─────────────────────────────────────────────────────
+    private void renderDir() {
+        if (dirValue != null) dirValue.setText(AppData.root());
+    }
+
+    /** 从当前目录的父级开始浏览 /sdcard：root 直读目录树，不需要 SAF */
+    private void pickBackupDir() {
+        if (!rootOk) {
+            toast(getString(R.string.backup_need_root));
+            return;
+        }
+        String cur = AppData.root();
+        int slash = cur.lastIndexOf('/');
+        String start = slash > 0 ? cur.substring(0, slash) : "/sdcard";
+        browseDir(start);
+    }
+
+    private void browseDir(final String dir) {
+        new Thread(new Runnable() {
+            public void run() {
+                final List<String> subs = new ArrayList<String>();
+                String out = Shell.execScript("ls -1p '" + dir + "' 2>/dev/null\n");
+                for (String line : out.split("\n")) {
+                    String n = line.trim();
+                    if (n.length() == 0 || !n.endsWith("/")) continue;
+                    n = n.substring(0, n.length() - 1);
+                    if (n.startsWith(".")) continue;
+                    subs.add(n);
+                }
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        boolean atTop = "/sdcard".equals(dir) || "/storage/emulated/0".equals(dir);
+                        final List<String> items = new ArrayList<String>();
+                        final List<String> targets = new ArrayList<String>();
+                        if (!atTop) {
+                            int slash = dir.lastIndexOf('/');
+                            if (slash > 0) {
+                                items.add("‹ " + getString(R.string.backup_dir_up));
+                                targets.add(dir.substring(0, slash));
+                            }
+                        }
+                        for (String n : subs) {
+                            items.add(n + "/");
+                            targets.add(dir + "/" + n);
+                        }
+                        items.add(getString(R.string.backup_dir_use));
+                        targets.add(dir);
+                        new AlertDialog.Builder(BackupActivity.this)
+                                .setTitle(dir)
+                                .setItems(items.toArray(new String[items.size()]),
+                                        new DialogInterface.OnClickListener() {
+                                            public void onClick(DialogInterface d, int which) {
+                                                String t = targets.get(which);
+                                                if (t.equals(dir)) useDir(dir);
+                                                else browseDir(t);
+                                            }
+                                        })
+                                .setNegativeButton(android.R.string.cancel, null)
+                                .show();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    /** 换目录：旧目录里的备份一起搬过来，免得列表突然空了、东西还散在两处 */
+    private void useDir(final String dir) {
+        final String old = AppData.root();
+        if (dir.equals(old)) return;
+        sp().edit().putString("backup_dir", dir).apply();
+        AppData.setRoot(dir);
+        renderDir();
+        new Thread(new Runnable() {
+            public void run() {
+                final String r = AppData.moveBackups(old, dir);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        toast(r.startsWith("OK ")
+                                ? getString(R.string.backup_dir_ok, r.substring(3).trim())
+                                : getString(R.string.backup_fail, r));
+                        boot();
                     }
                 });
             }

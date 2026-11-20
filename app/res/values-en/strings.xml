@@ -208,22 +208,28 @@ Owner data is not touched.</string>
     <string name="backup_empty">No backups</string>
     <string name="backup_need_root">Root required: backups live under /data/user, which Shizuku cannot read</string>
     <string name="backup_restore">Restore this backup</string>
-    <string name="backup_export">Export to Download</string>
     <string name="backup_delete">Delete backup</string>
-    <string name="backup_restore_msg">This backup replaces the current data; the current data is kept as a new backup, so nothing is lost.</string>
+    <string name="backup_restore_msg">This backup replaces the current data. The current data is only moved aside first — deleted on success, put back if anything fails.</string>
     <string name="backup_delete_msg">This cannot be undone.</string>
     <string name="backup_working">Working…</string>
-    <string name="backup_exporting">Exporting</string>
     <string name="backup_restore_ok">Restored</string>
-    <string name="backup_export_ok">Exported to %1$s</string>
     <string name="backup_delete_ok">Deleted</string>
     <string name="backup_fail">Failed: %1$s</string>
     <string name="backup_algo_pick">Choose compression</string>
+    <string name="backup_sel_restore">Restore selected</string>
+    <string name="backup_restoring">Restoring</string>
+    <string name="backup_restore_many_done">Restored %1$d, failed %2$d</string>
+    <string name="backup_restore_many_skip">%1$d older duplicate(s) skipped — only the newest per app per space was restored</string>
+    <string name="backup_dir_row">Backup folder</string>
+    <string name="backup_dir_up">Up</string>
+    <string name="backup_dir_use">Use this folder</string>
+    <string name="backup_dir_ok">Moved %1$s backup(s) to the new folder</string>
+    <string name="backup_dir_note">Backups are packed straight into this folder and restored from it; any file manager can browse or copy them.</string>
     <string name="backup_algo_row">Compression algorithm</string>
     <string name="backup_algo_saved">Set to %1$s</string>
     <string name="backup_empty_hint">No backups yet.
 
-Every time you clone app data, the destination\u2019s existing data is kept here first — you can also long-press an app to back it up at any time. Compress, restore or export it from this page.</string>
+Every time you clone app data, the destination’s existing data is packed here first; you can also long-press an app to back it up at any time. Compress or restore it from this page.</string>
     <string name="backup_algo_title">Compression: %1$s</string>
     <string name="backup_algo_zst">zstd</string>
     <string name="backup_algo_gz">gzip</string>
@@ -253,13 +259,6 @@ Every time you clone app data, the destination\u2019s existing data is kept here
     <string name="batch_backup_title">Batch backup</string>
     <string name="batch_backup_go">Back up</string>
     <string name="backup_invert">Invert</string>
-    <string name="backup_import">Import</string>
-    <string name="backup_import_title">Import from Download</string>
-    <string name="backup_import_empty">No importable backup in Download/CubClone-backup</string>
-    <string name="backup_import_confirm">Restore %1$s to %2$s?\n\nThe current data in that space is kept beside it first, nothing is thrown away.</string>
-    <string name="backup_importing">Importing</string>
-    <string name="backup_import_ok">Imported and restored %1$s</string>
-    <string name="backup_import_no_app">%1$s does not exist in that space</string>
     <string name="backup_sel_title">Select backups</string>
     <string name="backup_sel_count">%1$d selected</string>
     <string name="backup_sel_all">Select all</string>
@@ -267,7 +266,6 @@ Every time you clone app data, the destination\u2019s existing data is kept here
     <string name="backup_sel_empty">Nothing selected</string>
     <string name="backup_sel_delete">Delete</string>
     <string name="backup_sel_compress">Compress</string>
-    <string name="backup_export_many_done">Exported %1$d, failed %2$d (Download/CubClone-backup)</string>
     <string name="backup_delete_many_msg">Delete %1$d selected backups? This cannot be undone.</string>
     <string name="backup_delete_many_ok">Deleted %1$s items</string>
     <string name="backup_done_many">%1$d done, %2$d failed</string>

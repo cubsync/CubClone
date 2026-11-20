@@ -103,7 +103,10 @@ AL=$(sed -n 's/^keyAlias=//p' "$PROPS")
 KP=$(sed -n 's/^keyPassword=//p' "$PROPS")
 [ -n "$KS" ] && [ -f "$KS" ] || { echo "keystore 不存在: $KS"; exit 1; }
 mkdir -p "$DIST"
-APK="$DIST/CubClone-$VNAME.apk"
+# 测试包：文件名带 -test-<短提交号>，与设备上装的 versionName 后缀对得上。
+# 出新测试包就把同版本的旧测试包删掉，dist/ 里始终只有一份在测的包。
+rm -f "$DIST"/CubClone-"$VNAME"-test-*.apk
+APK="$DIST/CubClone-$VNAME-test-$SHA.apk"
 "$BT/apksigner.bat" sign --ks "$KS" --ks-key-alias "$AL" \
   --ks-pass "pass:$SP" --key-pass "pass:$KP" --out "$APK" "$OUT/aligned.apk"
 

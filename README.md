@@ -59,7 +59,9 @@ No Gradle — plain Android build tools (aapt2 / javac / d8 / apksigner).
 
 Requirements: Android SDK build-tools 35.0.0 + platform android-36, JDK 21.
 
-Output: `dist/CubClone-<version>.apk`; intermediates go to `build/`. Both are git-ignored.
+Output: `dist/CubClone-<version>-test-<short-sha>.apk` for local builds
+(`dist/CubClone-<version>.apk` when cutting a release); intermediates go to `build/`.
+Both are git-ignored; the previous test build is deleted on each new build.
 
 Shizuku API classes are vendored under `app/libs/` from the official Shizuku
 releases; the matching AIDL sources are in `app/libs/aidl`.

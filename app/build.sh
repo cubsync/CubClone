@@ -53,12 +53,23 @@ VCODE=$(printf '%s\n' "$BASE" | awk -v pre="$PRE" '{
 case "$VCODE" in ''|*[!0-9]*) echo "versionCode 计算失败: [$VCODE]（versionName=$VNAME，预发布后缀只认 dev/alpha/beta/rc）"; exit 1;; esac
 echo "    版本 $VNAME  versionCode $VCODE（由 versionName 推导）"
 
+# 构建标记：SemVer §5 的构建元数据，只用于认出「设备上这一版是哪次提交」，不参与版本优先级、不占版本号。
+# 有未提交改动就带 -dirty，提醒这包不对应任何提交。
+SHA=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)
+if ! git diff --quiet -- . 2>/dev/null; then SHA="$SHA-dirty"; fi
+BUILDV="$VNAME+$SHA"
+echo "    构建标记 $BUILDV"
+
+# 源码里的清单只写干净版本号；带构建标记的副本只落在 build/，不污染 AndroidManifest.xml
+sed "s|android:versionName=\"$VNAME\"|android:versionName=\"$BUILDV\"|" \
+  AndroidManifest.xml > "$OUT/AndroidManifest.xml"
+
 echo "[2/7] aapt2 link（出 base.apk + R.java）"
 "$BT/aapt2.exe" link -o "$OUT/base.apk" -I "$AJ" \
-  --manifest AndroidManifest.xml -A "$OUT/assets" -R "$OUT/res.zip" \
+  --manifest "$OUT/AndroidManifest.xml" -A "$OUT/assets" -R "$OUT/res.zip" \
   --auto-add-overlay \
   --java "$OUT/gen" \
-  --version-code "$VCODE" --version-name "$VNAME" \
+  --version-code "$VCODE" --version-name "$BUILDV" \
   --min-sdk-version 29 --target-sdk-version 33
 
 echo "[3/7] javac"

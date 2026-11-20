@@ -47,6 +47,19 @@
             android:textSize="20sp"
             android:visibility="gone" />
 
+        <!-- 从 Download 导入一个导出的备份包，直接恢复 -->
+        <TextView
+            android:id="@+id/bk_import"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="@string/backup_import"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
         <!-- 多选模式才显示 -->
         <TextView
             android:id="@+id/bk_sel_count"
@@ -64,6 +77,18 @@
             android:paddingTop="8dp"
             android:paddingBottom="8dp"
             android:text="@string/backup_sel_all"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/bk_sel_inv"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="@string/backup_invert"
             android:textSize="13sp"
             android:visibility="gone" />
 

@@ -474,9 +474,12 @@ public final class AppData {
         return "ERR " + out.trim();
     }
 
+    /** 导出目录；导入也从这里读，两边必须一致 */
+    public static final String EXPORT_DIR = "/sdcard/Download/CubClone-backup";
+
     /** 复制到 Download，普通文件管理器才拿得到 */
     public static String export(Backup b) {
-        String dir = "/sdcard/Download/CubClone-backup";
+        String dir = EXPORT_DIR;
         String ext = b.packed() ? b.path.substring(b.path.indexOf(".tar")) : "";
         String dst = dir + "/" + b.pkg + "-" + b.user + "-" + b.ts + ext;
         StringBuilder s = new StringBuilder();
@@ -484,6 +487,45 @@ public final class AppData {
         s.append("mkdir -p '").append(dir).append("'\n");
         s.append("rm -rf '").append(dst).append("'\n");
         s.append("cp -a '").append(b.path).append("' '").append(dst).append("' || { echo ERR_CP; exit 1; }\n");
+        s.append("echo CUB_OK '").append(dst).append("'\n");
+        String out = Shell.execScript(s.toString());
+        int i = out.indexOf("CUB_OK ");
+        if (i >= 0) return "OK " + out.substring(i + 7).trim();
+        for (String line : out.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("ERR")) return t;
+        }
+        return "ERR " + out.trim();
+    }
+
+    /**
+     * 解析导出文件名 `<包名>-<空间>-<yyyyMMdd-HHmmss><扩展名>`。
+     * 包名里不会有 '-'，所以从右往左找 `-<数字>-<8位-6位>` 不会切错。
+     * @return {pkg, user, ts, ext}；ext 是 "" 或 ".tar"/".tar.zst"/".tar.gz"/".tar.bz2"
+     */
+    public static String[] parseExported(String name) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("^(.+)-(\\d+)-(\\d{8}-\\d{6})(\\.tar(?:\\.zst|\\.gz|\\.bz2)?)?$")
+                .matcher(name);
+        if (!m.matches()) return null;
+        return new String[]{m.group(1), m.group(2), m.group(3),
+                m.group(4) == null ? "" : m.group(4)};
+    }
+
+    /**
+     * 把导出的包搬回它所属空间的备份目录，之后才走正常 restore。
+     * 不直接往目标目录解压：restore 里压缩包是「解到 /data/local/tmp 再 mv」，
+     * 在 /sdcard 上解会跨分区，反而更慢；先搬回来只是同分区 cp。
+     * 已有同名备份时不覆盖，直接报错让用户先删。
+     */
+    public static String pullIn(String file, String pkg, int user, String ts, String ext) {
+        String src = EXPORT_DIR + "/" + file;
+        String dst = "/data/user/" + user + "/" + pkg + ".cubclone-bak-" + ts + ext;
+        StringBuilder s = new StringBuilder();
+        s.append("[ -e '").append(src).append("' ] || { echo ERR_NO_SRC; exit 1; }\n");
+        s.append("[ -e '").append(dst).append("' ] && { echo ERR_EXISTS; exit 1; }\n");
+        s.append("cp -a '").append(src).append("' '").append(dst)
+                .append("' || { echo ERR_CP; exit 1; }\n");
         s.append("echo CUB_OK '").append(dst).append("'\n");
         String out = Shell.execScript(s.toString());
         int i = out.indexOf("CUB_OK ");

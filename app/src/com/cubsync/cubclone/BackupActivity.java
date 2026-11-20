@@ -48,6 +48,10 @@ public class BackupActivity extends Activity {
     private EditText search;
     private TextView filter;
     private TextView addBtn;
+    /** 非多选时显示：从 Download 导入一个导出的包并恢复 */
+    private TextView importBtn;
+    /** 多选时显示：和全选放一起，不再塞进 ⋮ 菜单 */
+    private TextView selInv;
     private TextView selCount;
     /** 批量任务的进度：bk_progress 整行藏在 algo_row 下面，任务跑起来才显示 */
     private android.view.View progWrap;
@@ -92,6 +96,14 @@ public class BackupActivity extends Activity {
         search = findViewById(R.id.bk_search);
         filter = findViewById(R.id.bk_filter);
         addBtn = findViewById(R.id.bk_add);
+        importBtn = findViewById(R.id.bk_import);
+        selInv = findViewById(R.id.bk_sel_inv);
+        importBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { pickImport(); }
+        });
+        selInv.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { invertSelection(); }
+        });
         progWrap = findViewById(R.id.bk_progress);
         progBar = findViewById(R.id.bk_progress_bar);
         progText = findViewById(R.id.bk_progress_text);
@@ -508,8 +520,12 @@ public class BackupActivity extends Activity {
     private void renderMultiBar() {
         int n = selected.size();
         addBtn.setVisibility((rootOk && !multi) ? View.VISIBLE : View.GONE);
+        if (importBtn != null) {
+            importBtn.setVisibility((rootOk && !multi) ? View.VISIBLE : View.GONE);
+        }
         selCount.setVisibility(multi ? View.VISIBLE : View.GONE);
         selAll.setVisibility(multi ? View.VISIBLE : View.GONE);
+        if (selInv != null) selInv.setVisibility(multi ? View.VISIBLE : View.GONE);
         selMore.setVisibility(multi ? View.VISIBLE : View.GONE);
         title.setText(multi ? getString(R.string.backup_sel_title) : getString(R.string.sec_backup));
         if (multi) {
@@ -536,28 +552,20 @@ public class BackupActivity extends Activity {
         boolean hasDir = false;
         for (AppData.Backup b : sel) if (!b.packed()) hasDir = true;
         final boolean canZip = hasDir;
-        // 顺序：导出 / 压缩（只有目录形态才有）/ 删除 / 反选
+        // 顺序：导出 / 压缩（只有目录形态才有）/ 删除；反选在顶栏
         String[] acts = canZip
                 ? new String[]{getString(R.string.backup_export),
                         getString(R.string.backup_sel_compress),
-                        getString(R.string.backup_sel_delete),
-                        getString(R.string.backup_invert)}
+                        getString(R.string.backup_sel_delete)}
                 : new String[]{getString(R.string.backup_export),
-                        getString(R.string.backup_sel_delete),
-                        getString(R.string.backup_invert)};
+                        getString(R.string.backup_sel_delete)};
         final int iExport = 0;
-        final int iCompress = canZip ? 1 : -1;
         final int iDelete = canZip ? 2 : 1;
-        final int iInvert = canZip ? 3 : 2;
 
         new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.backup_sel_count, sel.size()))
                 .setItems(acts, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
-                        if (which == iInvert) {
-                            invertSelection();
-                            return;
-                        }
                         if (which == iExport) {
                             jobManyExport(sel);
                             return;
@@ -597,6 +605,115 @@ public class BackupActivity extends Activity {
 
     private void hideProgress() {
         progWrap.setVisibility(android.view.View.GONE);
+    }
+
+    /** 从 Download/CubClone-backup 里挑一个导出的包，搬回对应空间并恢复 */
+    private void pickImport() {
+        if (!rootOk) {
+            toast(getString(R.string.backup_need_root));
+            return;
+        }
+        new Thread(new Runnable() {
+            public void run() {
+                final List<String[]> found = new ArrayList<String[]>();
+                String out = Shell.execScript("ls -1 '" + AppData.EXPORT_DIR + "' 2>/dev/null\n");
+                for (String line : out.split("\n")) {
+                    String n = line.trim();
+                    if (n.length() == 0) continue;
+                    String[] p = AppData.parseExported(n);
+                    if (p != null) found.add(new String[]{n, p[0], p[1], p[2], p[3]});
+                }
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (found.isEmpty()) {
+                            toast(getString(R.string.backup_import_empty));
+                            return;
+                        }
+                        String[] items = new String[found.size()];
+                        for (int i = 0; i < found.size(); i++) {
+                            String[] f = found.get(i);
+                            int u;
+                            try { u = Integer.parseInt(f[2]); } catch (Throwable t) { u = 0; }
+                            items[i] = f[1] + " · " + spaceLabel(u) + " · " + f[3];
+                        }
+                        new AlertDialog.Builder(BackupActivity.this)
+                                .setTitle(R.string.backup_import_title)
+                                .setItems(items, new DialogInterface.OnClickListener() {
+                                    public void onClick(DialogInterface d, int w) {
+                                        confirmImport(found.get(w));
+                                    }
+                                })
+                                .setNegativeButton(android.R.string.cancel, null)
+                                .show();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void confirmImport(final String[] f) {
+        final int user;
+        try { user = Integer.parseInt(f[2]); } catch (Throwable t) {
+            toast(getString(R.string.backup_fail, "ERR_BAD_NAME"));
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.backup_import)
+                .setMessage(getString(R.string.backup_import_confirm, f[1], spaceLabel(user)))
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        runImport(f[0], f[1], user, f[3], f[4]);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void runImport(final String file, final String pkg, final int user,
+                           final String ts, final String ext) {
+        final int appId = appIdOf(pkg);
+        if (appId < 0) {
+            toast(getString(R.string.backup_import_no_app, pkg));
+            return;
+        }
+        showProgress(0, 1, R.string.backup_importing);
+        new Thread(new Runnable() {
+            public void run() {
+                final String r = AppData.pullIn(file, pkg, user, ts, ext);
+                if (!r.startsWith("OK ")) {
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            hideProgress();
+                            toast(getString(R.string.backup_fail, r));
+                        }
+                    });
+                    return;
+                }
+                String path = r.substring(3).trim();
+                String algo = ext.startsWith(".tar.") ? ext.substring(5)
+                        : (".tar".equals(ext) ? "tar" : "");
+                AppData.Backup b = new AppData.Backup(user, pkg, path, 0, ts, algo);
+                final String rr = AppData.restore(b, appId);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        hideProgress();
+                        toast(rr.startsWith("OK")
+                                ? getString(R.string.backup_import_ok, pkg)
+                                : getString(R.string.backup_fail, rr));
+                        exitMulti();
+                        boot();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private int appIdOf(String pkg) {
+        try {
+            return getPackageManager().getApplicationInfo(pkg, 0).uid % 100000;
+        } catch (Throwable t) {
+            return -1;
+        }
     }
 
     /**
@@ -714,14 +831,6 @@ public class BackupActivity extends Activity {
         }
         labelCache.put(pkg, r);
         return r;
-    }
-
-    private int appIdOf(String pkg) {
-        try {
-            return getPackageManager().getApplicationInfo(pkg, 0).uid % 100000;
-        } catch (Throwable t) {
-            return -1;
-        }
     }
 
     private class Adapter extends BaseAdapter {

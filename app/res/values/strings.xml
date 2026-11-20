@@ -253,6 +253,13 @@
     <string name="batch_backup_title">批量备份</string>
     <string name="batch_backup_go">开始备份</string>
     <string name="backup_invert">反选</string>
+    <string name="backup_import">导入</string>
+    <string name="backup_import_title">从 Download 导入</string>
+    <string name="backup_import_empty">Download/CubClone-backup 里没有可导入的备份包</string>
+    <string name="backup_import_confirm">把 %1$s 恢复到 %2$s？\n\n这个空间当前的数据会先留一份在同一个目录，不会直接丢掉。</string>
+    <string name="backup_importing">正在导入</string>
+    <string name="backup_import_ok">已导入并恢复 %1$s</string>
+    <string name="backup_import_no_app">%1$s 在目标空间里不存在，无法导入</string>
     <string name="backup_sel_title">选择备份</string>
     <string name="backup_sel_count">已选 %1$d 项</string>
     <string name="backup_sel_all">全选</string>

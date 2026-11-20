@@ -253,6 +253,13 @@ Every time you clone app data, the destination\u2019s existing data is kept here
     <string name="batch_backup_title">Batch backup</string>
     <string name="batch_backup_go">Back up</string>
     <string name="backup_invert">Invert</string>
+    <string name="backup_import">Import</string>
+    <string name="backup_import_title">Import from Download</string>
+    <string name="backup_import_empty">No importable backup in Download/CubClone-backup</string>
+    <string name="backup_import_confirm">Restore %1$s to %2$s?\n\nThe current data in that space is kept beside it first, nothing is thrown away.</string>
+    <string name="backup_importing">Importing</string>
+    <string name="backup_import_ok">Imported and restored %1$s</string>
+    <string name="backup_import_no_app">%1$s does not exist in that space</string>
     <string name="backup_sel_title">Select backups</string>
     <string name="backup_sel_count">%1$d selected</string>
     <string name="backup_sel_all">Select all</string>

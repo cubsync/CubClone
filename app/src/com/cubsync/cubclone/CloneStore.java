@@ -653,11 +653,16 @@ public final class CloneStore {
     static int migrateMediaOwners() {
         if (migratedOnce) return 0;
         if (!Shell.ready()) Shell.checkRoot();
-        if (!Shell.ready()) return -1;
+        if (!Shell.ready()) {
+            android.util.Log.i("CubClone", "migrate: no root/shizuku");
+            return -1;
+        }
         String probe = Shell.exec("if [ -d /data/media/0/Android/media ]"
                 + " && [ -f /data/system/packages.list ]; then echo READY; else echo LOCKED; fi");
+        android.util.Log.i("CubClone", "migrate: probe=" + probe.trim());
         if (probe.indexOf("LOCKED") >= 0) return MIGRATE_LOCKED;   // 锁屏期共享存储还没挂
         Integer st = storageState();
+        android.util.Log.i("CubClone", "migrate: storageState=" + st);
         if (st == null || st.intValue() != 2) return -1;   // 只在本机走纯 FUSE 时才有意义
         migratedOnce = true;
         String script =

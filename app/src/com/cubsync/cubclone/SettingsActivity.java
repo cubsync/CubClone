@@ -126,6 +126,9 @@ public class SettingsActivity extends Activity {
         findViewById(R.id.hidden_entry).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { showHiddenManager(); }
         });
+        findViewById(R.id.backup_entry).setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { showBackups(); }
+        });
         renderHiddenCard();
         divider = findViewById(R.id.divider);
         dividerKeep = findViewById(R.id.divider_keep);
@@ -1313,6 +1316,120 @@ public class SettingsActivity extends Activity {
 
     /** 「已隐藏的应用」入口行：右侧显示已隐藏数量（用户应用 + 系统应用，无则空），点击进管理 */
     /** 生成修复模块到 Download（模块内容由应用现场拼，不单独维护模块包） */
+    /** 数据备份：扫 /data/user/<空间>/<包>.cubclone-bak-<时间戳> */
+    private void showBackups() {
+        if (!Shell.rootOk) {
+            toast(getString(R.string.backup_need_root));
+            return;
+        }
+        final java.util.List<AppData.Backup> list = AppData.listBackups();
+        if (list.isEmpty()) {
+            toast(getString(R.string.backup_empty));
+            return;
+        }
+        String[] items = new String[list.size()];
+        for (int i = 0; i < list.size(); i++) {
+            AppData.Backup b = list.get(i);
+            items[i] = labelOf(b.pkg) + " · " + CloneStore.nameOf(this, b.user)
+                    + " · " + b.ts + " · " + b.sizeText();
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.sec_backup)
+                .setItems(items, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        backupActions(list.get(which));
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void backupActions(final AppData.Backup b) {
+        final String[] acts = {
+                getString(R.string.backup_restore),
+                getString(R.string.backup_export),
+                getString(R.string.backup_delete),
+        };
+        new AlertDialog.Builder(this)
+                .setTitle(labelOf(b.pkg) + " · " + b.ts)
+                .setItems(acts, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        if (which == 0) {
+                            new AlertDialog.Builder(SettingsActivity.this)
+                                    .setTitle(R.string.backup_restore)
+                                    .setMessage(R.string.backup_restore_msg)
+                                    .setPositiveButton(android.R.string.ok,
+                                            new DialogInterface.OnClickListener() {
+                                                public void onClick(DialogInterface dd, int w) {
+                                                    doBackupJob(b, 0);
+                                                }
+                                            })
+                                    .setNegativeButton(android.R.string.cancel, null)
+                                    .show();
+                        } else if (which == 1) {
+                            doBackupJob(b, 1);
+                        } else {
+                            new AlertDialog.Builder(SettingsActivity.this)
+                                    .setTitle(R.string.backup_delete)
+                                    .setMessage(R.string.backup_delete_msg)
+                                    .setPositiveButton(android.R.string.ok,
+                                            new DialogInterface.OnClickListener() {
+                                                public void onClick(DialogInterface dd, int w) {
+                                                    doBackupJob(b, 2);
+                                                }
+                                            })
+                                    .setNegativeButton(android.R.string.cancel, null)
+                                    .show();
+                        }
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /** kind: 0 恢复、1 导出、2 删除 */
+    private void doBackupJob(final AppData.Backup b, final int kind) {
+        toast(getString(kind == 1 ? R.string.backup_exporting : R.string.backup_working));
+        new Thread(new Runnable() {
+            public void run() {
+                String r;
+                if (kind == 0) r = AppData.restore(b, appIdOf(b.pkg));
+                else if (kind == 1) r = AppData.export(b);
+                else r = AppData.delete(b);
+                final String fr = r;
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (fr.startsWith("OK")) {
+                            if (kind == 0) toast(getString(R.string.backup_restore_ok));
+                            else if (kind == 1) toast(getString(R.string.backup_export_ok,
+                                    fr.length() > 3 ? fr.substring(3).trim() : ""));
+                            else toast(getString(R.string.backup_delete_ok));
+                        } else {
+                            toast(getString(R.string.backup_fail, fr));
+                        }
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private String labelOf(String pkg) {
+        try {
+            PackageManager pm = getPackageManager();
+            return pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
+        } catch (Throwable t) {
+            return pkg;
+        }
+    }
+
+    private int appIdOf(String pkg) {
+        try {
+            return getPackageManager().getApplicationInfo(pkg, 0).uid % 100000;
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
     private void makeFixModule() {
         new AlertDialog.Builder(this)
                 .setTitle(R.string.fix_module_title)

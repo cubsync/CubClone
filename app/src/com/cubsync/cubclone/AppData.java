@@ -148,6 +148,117 @@ public final class AppData {
         return r;
     }
 
+
+    /** 一个数据备份：/data/user/<user>/<pkg>.cubclone-bak-<时间戳> */
+    public static final class Backup {
+        public final int user;
+        public final String pkg;
+        public final String path;
+        public final long sizeKb;
+        public final String ts;
+
+        Backup(int user, String pkg, String path, long sizeKb, String ts) {
+            this.user = user;
+            this.pkg = pkg;
+            this.path = path;
+            this.sizeKb = sizeKb;
+            this.ts = ts;
+        }
+
+        public String sizeText() {
+            return sizeKb >= 1024 ? (sizeKb / 1024) + " GB" : sizeKb + " MB";
+        }
+    }
+
+    /** 扫各空间下的备份目录；一次 du 拿到全部大小，不逐个进目录 */
+    public static java.util.List<Backup> listBackups() {
+        java.util.List<Backup> r = new java.util.ArrayList<Backup>();
+        String out = Shell.execWithRoot("du -sm /data/user/*/*.cubclone-bak-* 2>/dev/null");
+        for (String line : out.split("\n")) {
+            String t = line.trim();
+            if (t.length() == 0) continue;
+            int tab = t.indexOf('\t');
+            if (tab <= 0) continue;
+            long kb;
+            try {
+                kb = Long.parseLong(t.substring(0, tab).trim());
+            } catch (Throwable e) {
+                continue;
+            }
+            String path = t.substring(tab + 1).trim();
+            int slash = path.lastIndexOf('/');
+            String name = slash >= 0 ? path.substring(slash + 1) : path;
+            int k = name.indexOf(".cubclone-bak-");
+            if (k <= 0) continue;
+            String[] seg = path.split("/");
+            int user;
+            try {
+                user = Integer.parseInt(seg[3]);
+            } catch (Throwable e) {
+                continue;
+            }
+            r.add(new Backup(user, name.substring(0, k), path, kb, name.substring(k + 14)));
+        }
+        return r;
+    }
+
+    /**
+     * 把备份换回原位；当前数据先改名成一份新备份，等于两个版本互换，不会丢。
+     * @return "OK" 或 "ERR_xxx"
+     */
+    public static String restore(Backup b, int appId) {
+        String dst = "/data/user/" + b.user + "/" + b.pkg;
+        long uid = (long) appId + (long) b.user * 100000L;
+        String ts = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
+        String ctx = contextOf(b.user, b.pkg);
+
+        StringBuilder s = new StringBuilder();
+        s.append("am force-stop --user ").append(b.user).append(" '").append(b.pkg).append("'\n");
+        s.append("[ -d '").append(b.path).append("' ] || { echo ERR_NO_BAK; exit 1; }\n");
+        s.append("[ -d '").append(dst).append("' ] && { mv '").append(dst).append("' '")
+                .append(dst).append(".cubclone-bak-").append(ts)
+                .append("' || { echo ERR_MV; exit 1; }; }\n");
+        s.append("mv '").append(b.path).append("' '").append(dst).append("' || { echo ERR_MV2; exit 1; }\n");
+        s.append("chown -R ").append(uid).append(":").append(uid).append(" '").append(dst).append("'\n");
+        if (ctx.length() > 0) {
+            s.append("chcon -R '").append(ctx).append("' '").append(dst).append("'\n");
+        }
+        s.append("echo CUB_OK\n");
+
+        String out = Shell.execWithRoot(s.toString());
+        if (out.contains("CUB_OK")) return "OK";
+        for (String line : out.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("ERR")) return t;
+        }
+        return "ERR " + out.trim();
+    }
+
+    /** 复制到 Download，普通文件管理器才拿得到 */
+    public static String export(Backup b) {
+        String dir = "/sdcard/Download/CubClone-backup";
+        String dst = dir + "/" + b.pkg + "-" + b.user + "-" + b.ts;
+        StringBuilder s = new StringBuilder();
+        s.append("[ -d '").append(b.path).append("' ] || { echo ERR_NO_BAK; exit 1; }\n");
+        s.append("mkdir -p '").append(dir).append("'\n");
+        s.append("rm -rf '").append(dst).append("'\n");
+        s.append("cp -a '").append(b.path).append("' '").append(dst).append("' || { echo ERR_CP; exit 1; }\n");
+        s.append("echo CUB_OK '").append(dst).append("'\n");
+        String out = Shell.execWithRoot(s.toString());
+        int i = out.indexOf("CUB_OK ");
+        if (i >= 0) return "OK " + out.substring(i + 7).trim();
+        for (String line : out.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("ERR")) return t;
+        }
+        return "ERR " + out.trim();
+    }
+
+    public static String delete(Backup b) {
+        String out = Shell.execWithRoot("rm -rf '" + b.path + "' 2>&1 && echo CUB_OK");
+        return out.contains("CUB_OK") ? "OK" : "ERR " + out.trim();
+    }
+
     /**
      * 取某个用户里该包应用数据的 SELinux 上下文。
      * 先读目标自己的数据目录；它不存在时退到 /data/user_de（同一应用、同一用户的类别集合相同）。

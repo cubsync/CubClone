@@ -1322,7 +1322,7 @@ public class MainActivity extends Activity {
                         for (int i = 0; i < spaces.size(); i++) {
                             int u = spaces.get(i).intValue();
                             Integer n = counts.get(Integer.valueOf(u));
-                            items[i] = CloneStore.nameOf(MainActivity.this, u) + " · "
+                            items[i] = spaceLabel(u) + " · "
                                     + (n == null ? 0 : n.intValue()) + " 个分身";
                         }
                         items[spaces.size()] = getString(R.string.new_space_option);
@@ -1934,15 +1934,9 @@ public class MainActivity extends Activity {
         }
         String[] items = new String[targets.size()];
         for (int i = 0; i < targets.size(); i++) {
-            int u = targets.get(i).intValue();
-            String nm = spaceLabel(u);
-            if (u != 0) {
-                // 空间名本身已经能区分，只有用户自己起过后缀才额外带上；
-                // 不能拿 suffixOf(...,0) 兜底，那会给每个分身都拼出「1」
-                String sfx = sp().getString("sfx_" + u + "_" + g.pkg, "");
-                if (sfx != null && sfx.length() > 0) nm = nm + " · " + sfx;
-            }
-            items[i] = nm;
+            // 只报「空间名 (uid)」：应用级后缀是桌面图标用的，
+            // 同一个空间里每个应用的后缀都不一样，放这里只会让人对不上号
+            items[i] = spaceLabel(targets.get(i).intValue());
         }
         final boolean[] checked = new boolean[items.length];
         new AlertDialog.Builder(this)

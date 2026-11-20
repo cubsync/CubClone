@@ -569,9 +569,9 @@ public final class CloneStore {
             String t2 = sys.trim();
             if (t2.length() > 0 && !t2.equalsIgnoreCase("space")) return t2;
         }
-        // 兜底（系统名是 space / 读不到）：按建号顺序显示「空间 N」
-        int ord = SPACE_ORDER.indexOf(Integer.valueOf(uid));
-        if (ord >= 0) return c.getString(R.string.space_name, String.valueOf(ord + 1));
+        // 兜底（系统名是 space / 读不到）：直接用空间 id。
+        // ⛔ 不能用 SPACE_ORDER 下标：那个下标随建的顺序排、删过空间还会留洞，
+        // 同一个空间昨天叫「空间 2」今天可能叫「空间 24」，用户看到的号会自己变。
         return c.getString(R.string.space_name, String.valueOf(uid));
     }
 

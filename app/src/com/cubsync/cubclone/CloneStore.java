@@ -658,7 +658,7 @@ public final class CloneStore {
     //    ftruncate 直接 EPERM → SQLite 报 4618 SQLITE_IOERR_SHMOPEN，应用打不开库。
     //    原生 FUSE 机型（无 sdcardfs 的机器）文件属主本来就是 MediaProvider 自己，所以没这问题。
     //    模块把 sdcardfs 时代的属主一次性迁成 FUSE 形态：顶层 Android/media/<包> 归该包，
-    //    里面的内容与共享存储其它位置归本机 MediaProvider 的 uid。
+    //    里面只把残留的 media_rw(1023) 改成 MediaProvider；应用自己建的文件和权限都不动。
     // ⛔ 只改属主，不动内容、不搬动、不删除。
     // 判据只用「/proc/filesystems 里有 sdcardfs」：静态、BFU 也可见。
     // ⛔ 不能拿 mount 或卷状态当判据 —— 脚本跑在 post-fs-data，那时还没解锁，一条挂载都没有。
@@ -784,22 +784,18 @@ public final class CloneStore {
             + "    [ -d \"$d\" ] || continue\n"
             + "    pkg=${d##*/}\n"
             + "    puid=$(awk -v p=\"$pkg\" '$1==p{print $2; exit}' \"$PKGLIST\" 2>/dev/null)\n"
-            + "    # 包目录里的内容全部归 MediaProvider。\n"
-            + "    # 分身里同一个包的 uid 是 appId + user*100000：套主空间 uid 会让分身应用\n"
-            + "    # 连自己的目录都进不去（2.3 的 bug，实测分身支付宝 / XRadiant 打不开）。\n"
-            + "    find \"$d\" -mindepth 1 -exec chown \"$MPU:$MPU\" {} + 2>/dev/null\n"
+            + "    # 只迁 sdcardfs 时代留下的 media_rw(1023)：那才是 MediaProvider 改不动的根源。\n"
+            + "    # 应用自己新建的一律不动 —— 有的应用（XRadiant）借主空间 MediaProvider(10161)\n"
+            + "    # 的身份往分身目录写，属主被改成 \"$MPU\" 后它反而写不了（11-20 实测：删掉被改过\n"
+            + "    # 的 log 目录、让它自己重建才恢复）。toybox find 没有 -uid，只能逐个 stat。\n"
+            + "    find \"$d\" -mindepth 1 -exec sh -c 'for f; do [ \"$(stat -c %u \"$f\" 2>/dev/null)\" = 1023 ] && chown \"$0\" \"$f\"; done' \"$MPU\" {} + 2>/dev/null\n"
             + "    # 分身里该包的真实 uid：优先读系统自己建的数据目录属主（换 ROM / 换设备都准），\n"
             + "    # 读不到才退回 AOSP 的 UserHandle.PER_USER_RANGE 公式 appId + user*100000\n"
             + "    duid=$(stat -c %u \"/data/user/$U/$pkg\" 2>/dev/null)\n"
             + "    [ -n \"$duid\" ] || duid=$((puid + U * 100000))\n"
             + "    [ -n \"$duid\" ] && chown \"$duid:1023\" \"$d\" 2>/dev/null && n=$((n+1))\n"
-            + "    # 分身目录按主空间形态放开到 2775 / 664（sdcardfs 时代就是这样），\n"
-            + "    # 跨包读别人 media 目录的应用（把库放在支付类目录里的那种）才进得去。\n"
-            + "    if [ \"$U\" != 0 ]; then\n"
-            + "      chmod 2775 \"$d\" 2>/dev/null\n"
-            + "      find \"$d\" -mindepth 1 -type d -exec chmod 2775 {} + 2>/dev/null\n"
-            + "      find \"$d\" -mindepth 1 -type f -exec chmod 664 {} + 2>/dev/null\n"
-            + "    fi\n"
+            + "    # 权限一律不动：应用自己设的 600 / 2700 都是有意的，按「主空间形态」\n"
+            + "    # 摊成 664 / 2775 会把别人能写的地方一起放开。\n"
             + "  done\n"
             + "  for x in \"$BASE\"/*; do\n"
             + "    case \"${x##*/}\" in Android) continue;; esac\n"

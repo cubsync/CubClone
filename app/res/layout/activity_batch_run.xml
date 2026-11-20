@@ -50,6 +50,17 @@
         android:layout_marginEnd="16dp"
         android:max="100" />
 
+    <!-- 跑的时候实时报速度 / 已写入 / 已用时间 -->
+    <TextView
+        android:id="@+id/br_speed"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="8dp"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
     <!-- 跑完之后的筛选：全部 / 成功 / 失败 -->
     <LinearLayout
         android:id="@+id/br_filters"
@@ -120,7 +131,63 @@
             android:visibility="gone" />
     </FrameLayout>
 
-    <!-- 底部：总结 + 复制日志 / 完成 -->
+    <!-- 跑的时候就实时滚日志，不用等跑完 -->
+    <LinearLayout
+        android:id="@+id/br_logbox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="20dp"
+            android:paddingEnd="6dp">
+
+            <TextView
+                android:id="@+id/br_log_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/batch_log_title"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/br_copy"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="?android:attr/selectableItemBackground"
+                android:text="@string/batch_copy_log"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <ScrollView
+            android:id="@+id/br_log_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="100dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingBottom="4dp"
+            android:clipToPadding="false"
+            android:scrollbars="vertical">
+
+            <TextView
+                android:id="@+id/br_log"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingExtra="3dp"
+                android:textSize="11sp"
+                android:typeface="monospace" />
+        </ScrollView>
+    </LinearLayout>
+
+    <!-- 底部：总结 + 完成 -->
     <LinearLayout
         android:id="@+id/br_bar"
         android:layout_width="match_parent"
@@ -138,19 +205,6 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:textSize="13sp" />
-
-        <TextView
-            android:id="@+id/br_copy"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp"
-            android:paddingTop="10dp"
-            android:paddingBottom="10dp"
-            android:background="?android:attr/selectableItemBackground"
-            android:text="@string/batch_copy_log"
-            android:textSize="13sp"
-            android:visibility="gone" />
 
         <TextView
             android:id="@+id/br_done"

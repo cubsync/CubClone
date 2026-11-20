@@ -241,14 +241,6 @@ public class BatchBackupActivity extends Activity {
                     && !pkgs.get(i).toLowerCase().contains(query)) continue;
             shown.add(Integer.valueOf(i));
         }
-        // 过滤掉的项取消勾选，免得备份到看不见的东西
-        Set<String> keep = new HashSet<String>();
-        for (Integer i : shown) {
-            String p = pkgs.get(i.intValue());
-            if (checked.contains(p)) keep.add(p);
-        }
-        checked.retainAll(keep);
-
         adapter.notifyDataSetChanged();
         boolean none = shown.isEmpty();
         empty.setVisibility(none ? View.VISIBLE : View.GONE);

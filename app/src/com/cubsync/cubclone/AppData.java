@@ -337,9 +337,6 @@ public final class AppData {
      * 先停止该应用，避免把写到一半的数据库复制走；原数据一个字节都不动。
      * 直接 tar 流式打包到备份目录，不在 /data 留中间副本——
      * 留副本要写两遍（先 cp 再压），大应用能差出十几秒。
-     * @return "OK <备份路径>|<实际算法>" 或 "ERR_xxx"
-     */
-        /**
      * 给某个空间里的某个应用做一份备份，不涉及另一个空间。
      * 先停止该应用，避免把写到一半的数据库复制走；原数据一个字节都不动。
      *
@@ -353,8 +350,20 @@ public final class AppData {
      * @return "OK <备份路径>|<实际算法>" 或 "ERR_xxx"
      */
     public static String backupNow(int user, String pkg, String algo, int level) {
-        String base = rootDir + "/" + pkg + "-" + user + "-"
+        return backupNow(user, pkg, algo, level, backupBase(user, pkg));
+    }
+
+    /**
+     * 这次备份的目标名（不含扩展名）。批量页拿它轮询输出文件大小，
+     * 才能在跑的过程中报速度——所以生成规则只留这一处。
+     */
+    public static String backupBase(int user, String pkg) {
+        return rootDir + "/" + pkg + "-" + user + "-"
                 + new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
+    }
+
+    /** @param base 目标名（不含扩展名），由 backupBase 生成 */
+    public static String backupNow(int user, String pkg, String algo, int level, String base) {
         String want = (algo == null || algo.length() == 0) ? "none" : algo;
         int lv = level > 0 ? level : defaultLevel(want);
 
@@ -372,12 +381,18 @@ public final class AppData {
         s.append("L='data/user/").append(user).append('/').append(pkg).append("'\n");
         s.append("[ -d 'data/user_de/").append(user).append('/').append(pkg)
                 .append("' ] && L=\"$L data/user_de/").append(user).append('/').append(pkg).append("\"\n");
+        // 包里不要以 data/ 打头：解出来第一眼就是应用包名，CE 与 DE 各自一层
+        // 不要在变量里带单引号：赋值时引号是字面量，tar 会把它当 sed 表达式的一部分直接失败
+        s.append("XF=\" --xform=s|^data/user/").append(user).append('/').append(pkg)
+                .append('|').append(pkg).append("/user|")
+                .append(" --xform=s|^data/user_de/").append(user).append('/').append(pkg)
+                .append('|').append(pkg).append("/user_de|\"\n");
         s.append("B='").append(base).append("'\n");
         // $1=压缩器命令（空=纯打包）$2=扩展名 $3=tar 列表标志
         s.append("pack() {\n");
         s.append("  O=\"$B$2\"; rm -f \"$O\"\n");
-        s.append("  if [ -z \"$1\" ]; then tar -cf \"$O\" --exclude='*/cache' --exclude='*/code_cache' $L 2>/dev/null\n");
-        s.append("  else tar -cf - --exclude='*/cache' --exclude='*/code_cache' $L 2>/dev/null | $1 > \"$O\" 2>/dev/null; fi\n");
+        s.append("  if [ -z \"$1\" ]; then tar -cf \"$O\" $XF --exclude='*/cache' --exclude='*/code_cache' $L 2>/dev/null\n");
+        s.append("  else tar -cf - $XF --exclude='*/cache' --exclude='*/code_cache' $L 2>/dev/null | $1 > \"$O\" 2>/dev/null; fi\n");
         // tar -t 校验：管道里 tar 的失败被压缩器吞掉了，只能反过来验包
         s.append("  if [ -s \"$O\" ] && tar -t$3f \"$O\" >/dev/null 2>&1; then\n");
         s.append("    chown 1023:1023 \"$O\" 2>/dev/null; chmod 660 \"$O\" 2>/dev/null\n");
@@ -452,9 +467,6 @@ public final class AppData {
      * 失败按 zstd → gzip → bzip2 → 纯打包 逐级降级（本机 zstd 二进制实测不可用）。
      * 用户选的级别只用在用户选的那个算法上，降级后的算法用各自默认档。
      * 打包并校验通过后才删原目录；任何一步失败都保留原样。
-     * @return "OK <包路径> <实际算法>" 或 "ERR_xxx"
-     */
-        /**
      * 把目录形态的旧备份打成包，搬到备份目录，成功后删掉原目录。
      * 用 `tar -cf - | <压缩器> -<级别>` 而不是 tar 的 -z/-Z/-j：
      * toybox tar 的选项不接受级别参数，管道才能真正给到压缩器。
@@ -550,33 +562,39 @@ public final class AppData {
 
         if (b.packed()) {
             String tmp = "/data/local/tmp/cc-restore-" + ts;
+            // 老包（目录形态压出来的）顶层直接是 <pkg> 或 <pkg>.cubclone-bak-<ts>
+            String flat = (b.path.startsWith("/data/user/") && b.path.contains(".cubclone-bak-"))
+                    ? b.path.substring(b.path.lastIndexOf('/') + 1).replaceFirst("\\.tar.*$", "")
+                    : b.pkg;
             s.append("TMP='").append(tmp).append("'\n");
             s.append("rm -rf \"$TMP\"; mkdir -p \"$TMP\" || { echo ERR_TMP; exit 1; }\n");
             s.append("tar -x").append(b.tarFlag()).append("f '").append(b.path)
                     .append("' -C \"$TMP\" || { rm -rf \"$TMP\"; echo ERR_UNPACK; exit 1; }\n");
-            // 新布局：$TMP/data/user/<U>/<pkg>
-            s.append("NCE=\"$TMP/data/user/").append(b.user).append('/').append(b.pkg).append("\"\n");
-            s.append("NDE=\"$TMP/data/user_de/").append(b.user).append('/').append(b.pkg).append("\"\n");
-            s.append("if [ -d \"$NCE\" ]; then\n");
-            s.append("  [ -d \"$CE\" ] && mv \"$CE\" \"$OLD/ce\"\n");
-            s.append("  [ -d \"$DE\" ] && mv \"$DE\" \"$OLD/de\"\n");
-            s.append("  if ! mv \"$NCE\" \"$CE\"; then\n");
-            s.append("    [ -d \"$OLD/ce\" ] && mv \"$OLD/ce\" \"$CE\"\n");
-            s.append("    [ -d \"$OLD/de\" ] && mv \"$OLD/de\" \"$DE\"\n");
-            s.append("    rm -rf \"$TMP\"; echo ERR_MV2; exit 1\n");
-            s.append("  fi\n");
-            s.append("  [ -d \"$NDE\" ] && mv \"$NDE\" \"$DE\"\n");
+            // 包内布局认三种：
+            //   新 <pkg>/user、<pkg>/user_de
+            //   中 data/user/<U>/<pkg>、data/user_de/<U>/<pkg>
+            //   老 顶层直接是目录名
+            s.append("if [ -d \"$TMP/").append(b.pkg).append("/user\" ]; then\n");
+            s.append("  SCE=\"$TMP/").append(b.pkg).append("/user\"\n");
+            s.append("  SDE=\"$TMP/").append(b.pkg).append("/user_de\"\n");
+            s.append("elif [ -d \"$TMP/data/user/").append(b.user).append('/').append(b.pkg).append("\" ]; then\n");
+            s.append("  SCE=\"$TMP/data/user/").append(b.user).append('/').append(b.pkg).append("\"\n");
+            s.append("  SDE=\"$TMP/data/user_de/").append(b.user).append('/').append(b.pkg).append("\"\n");
+            s.append("elif [ -d \"$TMP/").append(flat).append("\" ]; then\n");
+            s.append("  SCE=\"$TMP/").append(flat).append("\"; SDE=''\n");
             s.append("else\n");
-            // 老布局：顶层就是 <pkg> 或 <pkg>.cubclone-bak-<ts>
-            String oldInner = (b.path.startsWith("/data/user/") && b.path.contains(".cubclone-bak-"))
-                    ? b.path.substring(b.path.lastIndexOf('/') + 1).replaceFirst("\\.tar.*$", "")
-                    : b.pkg;
-            s.append("  [ -d \"$TMP/").append(oldInner).append("\" ] || { rm -rf \"$TMP\"; echo ERR_UNPACK2; exit 1; }\n");
-            s.append("  [ -d \"$CE\" ] && mv \"$CE\" \"$OLD/ce\"\n");
-            s.append("  if ! mv \"$TMP/").append(oldInner).append("\" \"$CE\"; then\n");
-            s.append("    [ -d \"$OLD/ce\" ] && mv \"$OLD/ce\" \"$CE\"\n");
-            s.append("    rm -rf \"$TMP\"; echo ERR_MV2; exit 1\n");
-            s.append("  fi\n");
+            s.append("  rm -rf \"$TMP\"; echo ERR_UNPACK2; exit 1\n");
+            s.append("fi\n");
+            // CE：先挪开当前数据，换位失败原样退回
+            s.append("[ -d \"$CE\" ] && mv \"$CE\" \"$OLD/ce\"\n");
+            s.append("if ! mv \"$SCE\" \"$CE\"; then\n");
+            s.append("  [ -d \"$OLD/ce\" ] && mv \"$OLD/ce\" \"$CE\"\n");
+            s.append("  rm -rf \"$TMP\"; echo ERR_MV2; exit 1\n");
+            s.append("fi\n");
+            // DE：包里没有就保持现状
+            s.append("if [ -n \"$SDE\" ] && [ -d \"$SDE\" ]; then\n");
+            s.append("  [ -d \"$DE\" ] && mv \"$DE\" \"$OLD/de\"\n");
+            s.append("  mv \"$SDE\" \"$DE\" || { [ -d \"$OLD/de\" ] && mv \"$OLD/de\" \"$DE\"; }\n");
             s.append("fi\n");
             s.append("rm -rf \"$TMP\"\n");
         } else {

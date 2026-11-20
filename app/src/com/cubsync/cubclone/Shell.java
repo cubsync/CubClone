@@ -73,6 +73,16 @@ public final class Shell {
         return raw("su", "-c", cmd);
     }
 
+    /**
+     * 轻量执行：不重探 root、不落脚本文件、不进 namespace。
+     * 给「每秒读一次文件大小」这种高频轮询用——execScript 每次都先 su id 再落盘，
+     * 一秒一次太重。只能用于不依赖 init namespace 的命令（/sdcard 下的 stat 等）。
+     */
+    public static String execQuick(String cmd) {
+        if (!rootOk) return "";
+        return raw("su", "-c", cmd);
+    }
+
     private static String shizuku(String cmd) {
         StringBuilder sb = new StringBuilder();
         try {

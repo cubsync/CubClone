@@ -445,13 +445,6 @@ public class BackupActivity extends Activity {
             }
             shown.add(b);
         }
-        // 多选状态下把过滤掉的项取消选中，避免删到看不见的东西
-        Set<String> keep = new HashSet<String>();
-        for (AppData.Backup b : shown) {
-            if (selected.contains(b.path)) keep.add(b.path);
-        }
-        selected.retainAll(keep);
-
         adapter.notifyDataSetChanged();
         boolean none = shown.isEmpty();
         empty.setVisibility(none ? View.VISIBLE : View.GONE);

@@ -86,6 +86,11 @@ public class BatchRunActivity extends Activity {
     private TextView summary;
     private TextView copyTv;
     private TextView doneTv;
+    private TextView speedTv;
+    private TextView logTv;
+    private android.widget.ScrollView logScroll;
+    /** 屏幕上正在滚的那份日志，跑完直接复制它 */
+    private final StringBuilder logBuf = new StringBuilder();
 
     private final List<Row> rows = new ArrayList<Row>();
     private final List<Integer> shown = new ArrayList<Integer>();
@@ -124,6 +129,9 @@ public class BatchRunActivity extends Activity {
         summary = findViewById(R.id.br_summary);
         copyTv = findViewById(R.id.br_copy);
         doneTv = findViewById(R.id.br_done);
+        speedTv = findViewById(R.id.br_speed);
+        logTv = findViewById(R.id.br_log);
+        logScroll = findViewById(R.id.br_log_scroll);
 
         Intent it = getIntent();
         restore = MODE_RESTORE.equals(it.getStringExtra(EXTRA_MODE));
@@ -222,6 +230,8 @@ public class BatchRunActivity extends Activity {
                     r.state = ST_RUN;
                     r.time = now();
                     final int no = i + 1, total = rows.size();
+                    final Meter meter = new Meter(restore ? null
+                            : AppData.backupBase(r.user, r.pkg));
                     refreshRow();
                     scrollTo(i);
                     runOnUiThread(new Runnable() {
@@ -232,21 +242,33 @@ public class BatchRunActivity extends Activity {
                             progress.setProgress(no);
                         }
                     });
+                    line(r.time + "  " + getString(R.string.batch_log_start) + "  "
+                            + labelOf(r.pkg) + "  " + spaceLabel(r.user));
+                    meter.begin();
                     AppData.Backup bk = restore ? AppData.fromPath(r.path) : null;
                     String res = restore
                             ? (bk == null ? "ERR_PATH" : AppData.restore(bk, appIdOf(r.pkg)))
-                            : AppData.backupNow(r.user, r.pkg, algo, lv);
+                            : AppData.backupNow(r.user, r.pkg, algo, lv, meter.base);
+                    meter.end();
                     r.time = now();
                     if (res.startsWith("OK")) {
                         r.state = ST_OK;
-                        r.detail = restore ? spaceLabel(r.user)
-                                : fileName(res);
+                        r.detail = restore ? spaceLabel(r.user) + " · " + mmss(meter.ms())
+                                : fileName(res) + " · " + meter.summary();
                         ok++;
                     } else {
                         r.state = ST_BAD;
                         r.detail = res.replace("ERR ", "");
                         bad++;
                     }
+                    line(r.time + "  " + stateName(r.state) + "  " + labelOf(r.pkg)
+                            + "  " + r.detail);
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            speedTv.setText("");
+                            speedTv.setVisibility(View.GONE);
+                        }
+                    });
                     refreshRow();
                 }
                 final int fok = ok, fbad = bad;
@@ -261,9 +283,10 @@ public class BatchRunActivity extends Activity {
                         countTv.setText("");
                         saveLog();
                         progress.setVisibility(View.GONE);
+                        speedTv.setVisibility(View.GONE);
                         filters.setVisibility(View.VISIBLE);
-                        copyTv.setVisibility(View.VISIBLE);
                         doneTv.setText(R.string.batch_close);
+                        line("—— " + summaryLine() + " ——");
                         // 有失败就直接筛到失败那档，别让人再找一遍
                         setFilter(fbad > 0 ? FILTER_BAD : FILTER_ALL);
                         if (fbad == 0) {
@@ -411,7 +434,7 @@ public class BatchRunActivity extends Activity {
     }
 
     private void copyLog() {
-        String text = buildLog();
+        String text = buildLog() + "\n" + logBuf.toString();
         ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         cm.setPrimaryClip(ClipData.newPlainText("CubClone", text));
         toast(getString(R.string.batch_log_copied));
@@ -423,6 +446,129 @@ public class BatchRunActivity extends Activity {
         if (st == ST_SKIP) return getString(R.string.batch_state_skip);
         if (st == ST_RUN) return getString(R.string.batch_state_running);
         return getString(R.string.batch_state_wait);
+    }
+
+    // ── 实时日志 ─────────────────────────────────────────────────────
+    /** 追加一行到屏幕上的日志并滚到底；跑的过程中就能看见，不用等结束 */
+    private void line(final String text) {
+        runOnUiThread(new Runnable() {
+            public void run() {
+                if (logBuf.length() > 0) logBuf.append('\n');
+                logBuf.append(text);
+                logTv.setText(logBuf.toString());
+                logScroll.post(new Runnable() {
+                    public void run() {
+                        logScroll.fullScroll(View.FOCUS_DOWN);
+                    }
+                });
+            }
+        });
+    }
+
+    /**
+     * 备份时的测速：每秒读一次目标文件大小。
+     * 备份本身是 root 一次跑完的 tar，应用这边拿不到进度回调，
+     * 所以反过来量产物——只读、不影响备份。恢复没有产物可量，只报已用时间。
+     */
+    private class Meter {
+        final String base;
+        private volatile boolean stop;
+        private volatile long bytes;
+        private final long t0 = System.currentTimeMillis();
+        private Thread th;
+
+        Meter(String base) { this.base = base; }
+
+        void begin() {
+            runOnUiThread(new Runnable() {
+                public void run() { speedTv.setVisibility(View.VISIBLE); }
+            });
+            th = new Thread(new Runnable() {
+                public void run() { loop(); }
+            });
+            th.setDaemon(true);
+            th.start();
+        }
+
+        void end() { stop = true; }
+
+        long ms() { return System.currentTimeMillis() - t0; }
+
+        /** 完成时写进那一行的摘要：大小 · 平均速度 · 耗时 */
+        String summary() {
+            long m = Math.max(1, ms());
+            double avg = bytes * 1000.0 / m;
+            return size(bytes) + " · " + size((long) avg) + "/s · " + mmss(m);
+        }
+
+        private void loop() {
+            final String cmd = "B='" + base + "'; "
+                    + "for e in .tar.zst .tar.gz .tar.bz2 .tar; do "
+                    + "S=$(nsenter -t 1 -m -- stat -c %s \"$B$e\" 2>/dev/null"
+                    + " || stat -c %s \"$B$e\" 2>/dev/null); "
+                    + "[ -n \"$S\" ] && { echo \"$S\"; exit 0; }; done; echo 0";
+            long lastB = 0, lastT = System.currentTimeMillis();
+            double ema = 0;
+            while (!stop) {
+                try {
+                    Thread.sleep(1000);
+                } catch (Throwable t) {
+                    return;
+                }
+                if (stop) return;
+                if (base == null) {          // 恢复：只有耗时
+                    final String t = getString(R.string.batch_elapsed, mmss(ms()));
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            if (running) speedTv.setText(t);
+                        }
+                    });
+                    continue;
+                }
+                long cur = num(Shell.execQuick(cmd));
+                long tn = System.currentTimeMillis();
+                double dt = (tn - lastT) / 1000.0;
+                if (dt > 0 && cur >= lastB) {
+                    double inst = (cur - lastB) / dt;
+                    ema = ema == 0 ? inst : ema * 0.6 + inst * 0.4;
+                }
+                lastB = cur;
+                lastT = tn;
+                bytes = cur;
+                final String txt = getString(R.string.batch_speed,
+                        size((long) ema), size(cur), mmss(ms()));
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (running) speedTv.setText(txt);
+                    }
+                });
+            }
+        }
+    }
+
+    private static long num(String s) {
+        try {
+            return Long.parseLong(s.trim());
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    private static String size(long b) {
+        if (b < 1024) return b + " B";
+        if (b < 1024L * 1024L) return String.format(java.util.Locale.US, "%.0f KB", b / 1024.0);
+        if (b < 1024L * 1024L * 1024L) {
+            return String.format(java.util.Locale.US, "%.1f MB", b / 1048576.0);
+        }
+        return String.format(java.util.Locale.US, "%.2f GB", b / 1073741824.0);
+    }
+
+    private static String mmss(long ms) {
+        long s = ms / 1000;
+        long m = s / 60;
+        long r = s % 60;
+        return m > 0 ? String.format(java.util.Locale.US, "%d:%02d", m, r)
+                : String.format(java.util.Locale.US, "%ds", r);
     }
 
     // ── 返回 ─────────────────────────────────────────────────────────
@@ -543,6 +689,9 @@ public class BatchRunActivity extends Activity {
         summary.setTextColor(sec);
         copyTv.setTextColor(accent);
         doneTv.setTextColor(accent);
+        speedTv.setTextColor(sec);
+        logTv.setTextColor(sec);
+        ((TextView) findViewById(R.id.br_log_title)).setTextColor(sec);
         refreshChrome();
     }
 

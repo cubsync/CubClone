@@ -278,6 +278,10 @@
     <string name="batch_backing_n">正在备份 %1$d/%2$d</string>
     <string name="batch_restoring_n">正在恢复 %1$d/%2$d</string>
     <string name="batch_restore_confirm">会用选中的 %1$d 份备份替换对应空间当前的数据。同一空间同一应用有多份时只恢复最新的那份。</string>
+    <string name="batch_log_title">日志</string>
+    <string name="batch_speed">%1$s/s · 已写入 %2$s · %3$s</string>
+    <string name="batch_elapsed">已用 %1$s</string>
+    <string name="batch_log_start">开始</string>
     <string name="batch_copy_log">复制日志</string>
     <string name="batch_log_copied">日志已复制到剪贴板</string>
     <string name="batch_done_summary">成功 %1$d 项，失败 %2$d 项</string>

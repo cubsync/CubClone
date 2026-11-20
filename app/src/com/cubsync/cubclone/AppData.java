@@ -152,20 +152,38 @@ public final class AppData {
     }
 
 
-    /** 一个数据备份：/data/user/<user>/<pkg>.cubclone-bak-<时间戳> */
+    /**
+     * 一个数据备份。两种形态：
+     *   目录 /data/user/<user>/<pkg>.cubclone-bak-<时间戳>         algo = ""
+     *   压缩包 …<时间戳>.tar[.zst|.gz|.bz2]                       algo = zst/gz/bz2/tar
+     */
     public static final class Backup {
         public final int user;
         public final String pkg;
         public final String path;
         public final long sizeKb;
         public final String ts;
+        public final String algo;
 
-        Backup(int user, String pkg, String path, long sizeKb, String ts) {
+        Backup(int user, String pkg, String path, long sizeKb, String ts, String algo) {
             this.user = user;
             this.pkg = pkg;
             this.path = path;
             this.sizeKb = sizeKb;
             this.ts = ts;
+            this.algo = algo;
+        }
+
+        public boolean packed() {
+            return algo.length() > 0;
+        }
+
+        /** tar 列表/解包用的压缩标志：Z=zstd、z=gzip、j=bzip2、空=纯打包 */
+        public String tarFlag() {
+            if ("zst".equals(algo)) return "Z";
+            if ("gz".equals(algo)) return "z";
+            if ("bz2".equals(algo)) return "j";
+            return "";
         }
 
         public String sizeText() {
@@ -200,9 +218,91 @@ public final class AppData {
             } catch (Throwable e) {
                 continue;
             }
-            r.add(new Backup(user, name.substring(0, k), path, kb, name.substring(k + 14)));
+            String rest = name.substring(k + 14);
+            String algo = "";
+            String[][] exts = {{".tar.zst", "zst"}, {".tar.gz", "gz"},
+                    {".tar.bz2", "bz2"}, {".tar", "tar"}};
+            for (String[] e : exts) {
+                if (rest.endsWith(e[0])) {
+                    algo = e[1];
+                    rest = rest.substring(0, rest.length() - e[0].length());
+                    break;
+                }
+            }
+            r.add(new Backup(user, name.substring(0, k), path, kb, rest, algo));
         }
         return r;
+    }
+
+    /** 各算法的默认级别（与各自官方默认一致） */
+    public static int defaultLevel(String algo) {
+        if ("zst".equals(algo)) return 3;
+        if ("gz".equals(algo)) return 6;
+        if ("bz2".equals(algo)) return 9;
+        return 0;
+    }
+
+    /** 某算法可选的级别 */
+    public static int[] levelsOf(String algo) {
+        if ("zst".equals(algo)) return new int[]{1, 3, 9, 19};
+        if ("gz".equals(algo)) return new int[]{1, 6, 9};
+        if ("bz2".equals(algo)) return new int[]{1, 9};
+        return new int[0];
+    }
+
+    /**
+     * 把目录形态的备份打包，可指定级别。
+     * 用 `tar -cf - | <压缩器> -<级别>` 而不是 tar 的 -z/-Z/-j：
+     * toybox tar 的选项不接受级别参数，管道才能真正给到压缩器。
+     * 失败按 zstd → gzip → 纯 tar 降级（本机 zstd 二进制实测不可用）。
+     * 打包并校验通过后才删原目录；任何一步失败都保留原样。
+     * @return "OK <包路径> <实际算法>" 或 "ERR_xxx"
+     */
+    public static String compress(Backup b, String algo, int level) {
+        if (b.packed()) return "ERR_ALREADY";
+        String parent = b.path.substring(0, b.path.lastIndexOf('/'));
+        String name = b.path.substring(b.path.lastIndexOf('/') + 1);
+        int lv = level > 0 ? level : defaultLevel(algo);
+
+        StringBuilder s = new StringBuilder();
+        s.append("SRC='").append(b.path).append("'\n");
+        s.append("P='").append(parent).append("'\n");
+        s.append("N='").append(name).append("'\n");
+        // 打一个包：$1=压缩器命令（空=纯打包）$2=输出文件 $3=算法名 $4=tar 列表标志
+        s.append("pack() {\n");
+        s.append("  O=$2; rm -f \"$O\"\n");
+        s.append("  if [ -z \"$1\" ]; then\n");
+        s.append("    tar -cf \"$O\" -C \"$P\" \"$N\" 2>/dev/null\n");
+        s.append("  else\n");
+        s.append("    tar -cf - -C \"$P\" \"$N\" 2>/dev/null | $1 > \"$O\" 2>/dev/null\n");
+        s.append("  fi\n");
+        s.append("  if [ -s \"$O\" ] && tar -t$4f \"$O\" >/dev/null 2>&1; then\n");
+        s.append("    rm -rf \"$SRC\"; echo CUB_OK \"$O\" $3; return 0\n");
+        s.append("  fi\n");
+        s.append("  rm -f \"$O\"; return 1\n");
+        s.append("}\n");
+        if ("zst".equals(algo)) {
+            s.append("command -v zstd >/dev/null 2>&1 && pack \"zstd -").append(lv)
+                    .append(" -q -c\" \"$SRC.tar.zst\" zst Z && exit 0\n");
+        }
+        if ("zst".equals(algo) || "gz".equals(algo)) {
+            s.append("pack \"gzip -").append("zst".equals(algo) ? String.valueOf(defaultLevel("gz")) : String.valueOf(lv))
+                    .append("\" \"$SRC.tar.gz\" gz z && exit 0\n");
+        }
+        if ("bz2".equals(algo)) {
+            s.append("pack \"bzip2 -").append(lv).append("\" \"$SRC.tar.bz2\" bz2 j && exit 0\n");
+        }
+        s.append("pack \"\" \"$SRC.tar\" tar \"\" && exit 0\n");
+        s.append("echo ERR_PACK\n");
+
+        String out = Shell.execScript(s.toString());
+        int i = out.indexOf("CUB_OK ");
+        if (i >= 0) return "OK " + out.substring(i + 7).trim().replace(' ', '|');
+        for (String line : out.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("ERR")) return t;
+        }
+        return "ERR " + out.trim();
     }
 
     /**
@@ -217,11 +317,28 @@ public final class AppData {
 
         StringBuilder s = new StringBuilder();
         s.append("am force-stop --user ").append(b.user).append(" '").append(b.pkg).append("'\n");
-        s.append("[ -d '").append(b.path).append("' ] || { echo ERR_NO_BAK; exit 1; }\n");
-        s.append("[ -d '").append(dst).append("' ] && { mv '").append(dst).append("' '")
-                .append(dst).append(".cubclone-bak-").append(ts)
-                .append("' || { echo ERR_MV; exit 1; }; }\n");
-        s.append("mv '").append(b.path).append("' '").append(dst).append("' || { echo ERR_MV2; exit 1; }\n");
+        if (b.packed()) {
+            // 压缩包：先解到临时目录，解完再换位，失败不动现有数据
+            String tmp = "/data/local/tmp/cc-restore-" + ts;
+            String inner = b.path.substring(b.path.lastIndexOf('/') + 1);
+            inner = inner.substring(0, inner.indexOf(".tar"));
+            s.append("TMP='").append(tmp).append("'\n");
+            s.append("rm -rf \"$TMP\"; mkdir -p \"$TMP\" || { echo ERR_TMP; exit 1; }\n");
+            s.append("tar -x").append(b.tarFlag()).append("f '").append(b.path)
+                    .append("' -C \"$TMP\" || { rm -rf \"$TMP\"; echo ERR_UNPACK; exit 1; }\n");
+            s.append("[ -d \"$TMP/").append(inner).append("\" ] || { rm -rf \"$TMP\"; echo ERR_UNPACK2; exit 1; }\n");
+            s.append("[ -d '").append(dst).append("' ] && { mv '").append(dst).append("' '")
+                    .append(dst).append(".cubclone-bak-").append(ts)
+                    .append("' || { rm -rf \"$TMP\"; echo ERR_MV; exit 1; }; }\n");
+            s.append("mv \"$TMP/").append(inner).append("\" '").append(dst).append("' || { echo ERR_MV2; exit 1; }\n");
+            s.append("rm -rf \"$TMP\"\n");
+        } else {
+            s.append("[ -d '").append(b.path).append("' ] || { echo ERR_NO_BAK; exit 1; }\n");
+            s.append("[ -d '").append(dst).append("' ] && { mv '").append(dst).append("' '")
+                    .append(dst).append(".cubclone-bak-").append(ts)
+                    .append("' || { echo ERR_MV; exit 1; }; }\n");
+            s.append("mv '").append(b.path).append("' '").append(dst).append("' || { echo ERR_MV2; exit 1; }\n");
+        }
         s.append("chown -R ").append(uid).append(":").append(uid).append(" '").append(dst).append("'\n");
         if (ctx.length() > 0) {
             s.append("chcon -R '").append(ctx).append("' '").append(dst).append("'\n");
@@ -240,9 +357,10 @@ public final class AppData {
     /** 复制到 Download，普通文件管理器才拿得到 */
     public static String export(Backup b) {
         String dir = "/sdcard/Download/CubClone-backup";
-        String dst = dir + "/" + b.pkg + "-" + b.user + "-" + b.ts;
+        String ext = b.packed() ? b.path.substring(b.path.indexOf(".tar")) : "";
+        String dst = dir + "/" + b.pkg + "-" + b.user + "-" + b.ts + ext;
         StringBuilder s = new StringBuilder();
-        s.append("[ -d '").append(b.path).append("' ] || { echo ERR_NO_BAK; exit 1; }\n");
+        s.append("[ -e '").append(b.path).append("' ] || { echo ERR_NO_BAK; exit 1; }\n");
         s.append("mkdir -p '").append(dir).append("'\n");
         s.append("rm -rf '").append(dst).append("'\n");
         s.append("cp -a '").append(b.path).append("' '").append(dst).append("' || { echo ERR_CP; exit 1; }\n");

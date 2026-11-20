@@ -333,7 +333,7 @@ public class SettingsActivity extends Activity {
         for (int id : new int[]{R.id.recent_show_label, R.id.sys_keep_label,
                 R.id.manage_foreign_label, R.id.space_badge_label, R.id.show_disabled_label,
                 R.id.keep_extra_label, R.id.uninstall_extra_label, R.id.hidden_sys_label,
-                R.id.hidden_entry_label}) {
+                R.id.hidden_entry_label, R.id.backup_entry_label}) {
             TextView t = findViewById(id);
             if (t != null) t.setTextColor(fgColor);
         }
@@ -1344,7 +1344,8 @@ public class SettingsActivity extends Activity {
         for (int i = 0; i < list.size(); i++) {
             AppData.Backup b = list.get(i);
             items[i] = labelOf(b.pkg) + " · " + CloneStore.nameOf(this, b.user)
-                    + " · " + b.ts + " · " + b.sizeText();
+                    + " · " + b.ts + " · " + b.sizeText()
+                    + (b.packed() ? " · " + getString(R.string.backup_packed) : "");
         }
         new AlertDialog.Builder(this)
                 .setTitle(R.string.sec_backup)
@@ -1353,16 +1354,101 @@ public class SettingsActivity extends Activity {
                         backupActions(list.get(which));
                     }
                 })
+                .setNeutralButton(getString(R.string.backup_algo_title, algoSummary()),
+                        new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface d, int w) { pickBackupAlgo(); }
+                        })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
+    // ── 压缩算法与级别 ────────────────────────────────────────────────
+    private String currentAlgo() {
+        return sp().getString("backup_algo", "zst");
+    }
+
+    private int currentLevel(String a) {
+        return sp().getInt("backup_level_" + a, AppData.defaultLevel(a));
+    }
+
+    private String algoName(String a) {
+        if ("zst".equals(a)) return getString(R.string.backup_algo_zst);
+        if ("gz".equals(a)) return getString(R.string.backup_algo_gz);
+        if ("bz2".equals(a)) return getString(R.string.backup_algo_bz2);
+        return getString(R.string.backup_algo_none);
+    }
+
+    private String algoSummary() {
+        String a = currentAlgo();
+        if ("none".equals(a)) return algoName(a);
+        int lv = currentLevel(a);
+        return algoName(a) + " · " + (lv == AppData.defaultLevel(a)
+                ? getString(R.string.backup_level_def, lv)
+                : getString(R.string.backup_level_item, lv));
+    }
+
+    /** 先选算法，再选级别；级别列表里标出默认档 */
+    private void pickBackupAlgo() {
+        final String[] algos = {"zst", "gz", "bz2", "none"};
+        String[] items = new String[algos.length];
+        for (int i = 0; i < algos.length; i++) {
+            items[i] = algoName(algos[i]);
+            if (!"none".equals(algos[i])) {
+                items[i] += " · " + getString(R.string.backup_level_def,
+                        AppData.defaultLevel(algos[i]));
+            }
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.backup_algo_pick)
+                .setItems(items, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        pickBackupLevel(algos[which]);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void pickBackupLevel(final String algo) {
+        final int[] lv = AppData.levelsOf(algo);
+        if (lv.length == 0) {
+            saveBackupAlgo(algo, 0);
+            return;
+        }
+        final int def = AppData.defaultLevel(algo);
+        String[] items = new String[lv.length];
+        for (int i = 0; i < lv.length; i++) {
+            items[i] = lv[i] == def ? getString(R.string.backup_level_def, lv[i])
+                    : getString(R.string.backup_level_item, lv[i]);
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.backup_level_title, algoName(algo)))
+                .setMessage(R.string.backup_level_note)
+                .setItems(items, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        saveBackupAlgo(algo, lv[which]);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void saveBackupAlgo(String algo, int level) {
+        sp().edit().putString("backup_algo", algo)
+                .putInt("backup_level_" + algo, level).apply();
+        toast(getString(R.string.backup_algo_title, algoSummary()));
+    }
+
     private void backupActions(final AppData.Backup b) {
-        final String[] acts = {
-                getString(R.string.backup_restore),
-                getString(R.string.backup_export),
-                getString(R.string.backup_delete),
-        };
+        final boolean canZip = !b.packed();
+        final String[] acts = canZip
+                ? new String[]{getString(R.string.backup_restore),
+                        getString(R.string.backup_export),
+                        getString(R.string.backup_compress),
+                        getString(R.string.backup_delete)}
+                : new String[]{getString(R.string.backup_restore),
+                        getString(R.string.backup_export),
+                        getString(R.string.backup_delete)};
         new AlertDialog.Builder(this)
                 .setTitle(labelOf(b.pkg) + " · " + b.ts)
                 .setItems(acts, new DialogInterface.OnClickListener() {
@@ -1381,6 +1467,19 @@ public class SettingsActivity extends Activity {
                                     .show();
                         } else if (which == 1) {
                             doBackupJob(b, 1);
+                        } else if (canZip && which == 2) {
+                            new AlertDialog.Builder(SettingsActivity.this)
+                                    .setTitle(R.string.backup_compress)
+                                    .setMessage(getString(R.string.backup_compress_msg)
+                                            + "\n\n" + algoSummary())
+                                    .setPositiveButton(android.R.string.ok,
+                                            new DialogInterface.OnClickListener() {
+                                                public void onClick(DialogInterface dd, int w) {
+                                                    doBackupJob(b, 3);
+                                                }
+                                            })
+                                    .setNegativeButton(android.R.string.cancel, null)
+                                    .show();
                         } else {
                             new AlertDialog.Builder(SettingsActivity.this)
                                     .setTitle(R.string.backup_delete)
@@ -1402,12 +1501,14 @@ public class SettingsActivity extends Activity {
 
     /** kind: 0 恢复、1 导出、2 删除 */
     private void doBackupJob(final AppData.Backup b, final int kind) {
-        toast(getString(kind == 1 ? R.string.backup_exporting : R.string.backup_working));
+        toast(getString(kind == 1 ? R.string.backup_exporting
+                : kind == 3 ? R.string.backup_compressing : R.string.backup_working));
         new Thread(new Runnable() {
             public void run() {
                 String r;
                 if (kind == 0) r = AppData.restore(b, appIdOf(b.pkg));
                 else if (kind == 1) r = AppData.export(b);
+                else if (kind == 3) r = AppData.compress(b, currentAlgo(), currentLevel(currentAlgo()));
                 else r = AppData.delete(b);
                 final String fr = r;
                 runOnUiThread(new Runnable() {
@@ -1416,7 +1517,18 @@ public class SettingsActivity extends Activity {
                             if (kind == 0) toast(getString(R.string.backup_restore_ok));
                             else if (kind == 1) toast(getString(R.string.backup_export_ok,
                                     fr.length() > 3 ? fr.substring(3).trim() : ""));
-                            else toast(getString(R.string.backup_delete_ok));
+                            else if (kind == 3) {
+                                // "OK <路径>|<实际算法>"：实际算法与选择不一致时提示降级
+                                String rest = fr.length() > 3 ? fr.substring(3).trim() : "";
+                                int bar = rest.lastIndexOf('|');
+                                String path = bar > 0 ? rest.substring(0, bar) : rest;
+                                String actual = bar > 0 ? rest.substring(bar + 1) : "";
+                                toast(getString(R.string.backup_compress_ok,
+                                        path.substring(path.lastIndexOf('/') + 1)));
+                                if (actual.length() > 0 && !actual.equals(currentAlgo())) {
+                                    toast(getString(R.string.backup_compress_fallback, algoName(actual)));
+                                }
+                            } else toast(getString(R.string.backup_delete_ok));
                         } else {
                             toast(getString(R.string.backup_fail, fr));
                         }

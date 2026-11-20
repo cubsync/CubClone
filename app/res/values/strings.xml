@@ -210,9 +210,9 @@
     <string name="backup_algo_bz2">bzip2</string>
     <string name="backup_algo_none">不压缩（纯打包）</string>
     <string name="backup_level_title">%1$s 压缩级别</string>
-    <string name="backup_level_def">级别 %1$d（默认）</string>
+    <string name="backup_level_def">级别 %1$d（本算法默认档）</string>
     <string name="backup_level_item">级别 %1$d</string>
-    <string name="backup_level_note">级别越高越省空间、越慢。zstd 1–22（20 以上走 --ultra），gzip 1–9，bzip2 1–9。</string>
+    <string name="backup_level_note">级别越高越省空间、越慢。zstd 1–22（20 以上走 --ultra，默认 3），gzip 1–9（默认 6），bzip2 1–9（默认 9）。</string>
     <string name="backup_compress">压缩归档</string>
     <string name="backup_compress_msg">会把这份备份打包成压缩包，成功后删除原目录（打包期间需要额外一份空间）。恢复时自动解包。</string>
     <string name="backup_compressing">正在压缩…</string>

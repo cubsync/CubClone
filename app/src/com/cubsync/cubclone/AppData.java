@@ -257,6 +257,14 @@ public final class AppData {
         return r;
     }
 
+    /** zstd 能不能真的用：本机 /system_ext/bin/zstd 实测任何调用都报 Unsupported parameter */
+    public static boolean zstdUsable() {
+        String out = Shell.execScript(
+                "command -v zstd >/dev/null 2>&1 && echo hi | zstd -q -c >/dev/null 2>&1 "
+                        + "&& echo ZST_OK || echo ZST_BAD\n");
+        return out.contains("ZST_OK");
+    }
+
     /** 各算法的默认级别（与各自官方默认一致） */
     public static int defaultLevel(String algo) {
         if ("zst".equals(algo)) return 3;

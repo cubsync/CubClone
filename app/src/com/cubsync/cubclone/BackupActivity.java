@@ -146,11 +146,18 @@ public class BackupActivity extends Activity {
         new Thread(new Runnable() {
             public void run() {
                 final boolean ok = Shell.checkRoot();
+                // 首次进来先确认 zstd 真的能跑：本机那个二进制是坏的，
+                // 默认值挂在 zstd 上会让每次压缩都白试一次再降级
+                if (ok && !sp().contains("backup_algo")) {
+                    boolean zok = AppData.zstdUsable();
+                    sp().edit().putString("backup_algo", zok ? "zst" : "gz").apply();
+                }
                 final List<AppData.Backup> r = ok ? AppData.listBackups()
                         : new ArrayList<AppData.Backup>();
                 runOnUiThread(new Runnable() {
                     public void run() {
                         rootOk = ok;
+                        renderAlgo();
                         hint.setVisibility(ok ? View.GONE : View.VISIBLE);
                         if (!ok) {
                             hint.setText(R.string.backup_need_root_hint);
@@ -239,11 +246,17 @@ public class BackupActivity extends Activity {
     private void pickAlgo() {
         final String[] algos = {"zst", "gz", "bz2", "none"};
         String[] items = new String[algos.length];
-        for (int i = 0; i < algos.length; i++) items[i] = algoName(algos[i]);
+        int cur = 0;
+        for (int i = 0; i < algos.length; i++) {
+            items[i] = algoName(algos[i]);
+            if (algos[i].equals(currentAlgo())) cur = i;
+        }
+        // 单选列表：当前用的算法直接打勾，点哪项就切哪项并接着选级别
         new AlertDialog.Builder(this)
                 .setTitle(R.string.backup_algo_pick)
-                .setItems(items, new DialogInterface.OnClickListener() {
+                .setSingleChoiceItems(items, cur, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
+                        d.dismiss();
                         pickLevel(algos[which]);
                     }
                 })

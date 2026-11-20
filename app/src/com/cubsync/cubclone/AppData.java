@@ -68,6 +68,87 @@ public final class AppData {
     }
 
     /**
+     * 把源用户里「用户已授予的」运行时权限、以及两个特殊授权同步到目标用户。
+     *
+     * 不直接改 runtime-permissions.xml：system_server 的内存态才是权威，改文件要么被盖回去、
+     * 要么得重启才生效。pm grant / appops set 是官方入口，立即生效、重启不丢。
+     *
+     * @return 实际同步成功的项数
+     */
+    public static int syncPermissions(int srcUser, int dstUser, String pkg) {
+        StringBuilder s = new StringBuilder();
+        int want = 0;
+        for (String p : grantedRuntimePerms(srcUser, pkg)) {
+            s.append("pm grant --user ").append(dstUser).append(" '").append(pkg)
+                    .append("' '").append(p).append("' >/dev/null 2>&1 && echo PG\n");
+            want++;
+        }
+        for (String op : grantedAppOps(srcUser, pkg)) {
+            s.append("appops set --user ").append(dstUser).append(" '").append(pkg)
+                    .append("' ").append(op).append(" allow >/dev/null 2>&1 && echo PG\n");
+            want++;
+        }
+        if (want == 0) return 0;
+        String out = Shell.execWithRoot(s.toString());
+        int n = 0;
+        for (String line : out.split("\n")) {
+            if (line.trim().equals("PG")) n++;
+        }
+        return n;
+    }
+
+    /** 读 dumpsys package 里源用户那一段的 runtime permissions，返回 granted=true 的权限名 */
+    private static java.util.List<String> grantedRuntimePerms(int srcUser, String pkg) {
+        java.util.List<String> r = new java.util.ArrayList<String>();
+        String dump = Shell.execWithRoot("dumpsys package '" + pkg + "' 2>/dev/null");
+        boolean inUser = false, inPerms = false;
+        for (String line : dump.split("\n")) {
+            if (line.startsWith("    User ")) {
+                String rest = line.substring(9);
+                int c = rest.indexOf(':');
+                String u = c > 0 ? rest.substring(0, c).trim() : "";
+                inUser = u.equals(String.valueOf(srcUser));
+                inPerms = false;
+                continue;
+            }
+            if (!inUser) continue;
+            String t = line.trim();
+            if (t.startsWith("runtime permissions:")) { inPerms = true; continue; }
+            if (!inPerms) continue;
+            if (line.length() > 0 && !line.startsWith("        ")) { inPerms = false; continue; }
+            int g = t.indexOf(": granted=true");
+            if (g > 0) r.add(t.substring(0, g));
+        }
+        return r;
+    }
+
+    /**
+     * 只同步用户能在界面上点到的两个特殊授权：悬浮窗、所有文件访问。
+     * 其它 appops 由系统按权限自动维护，照搬会把别的包的默认值也带过来。
+     */
+    private static java.util.List<String> grantedAppOps(int user, String pkg) {
+        String[] wanted = {"SYSTEM_ALERT_WINDOW", "MANAGE_EXTERNAL_STORAGE"};
+        String out = Shell.execWithRoot("appops get --user " + user + " '" + pkg + "' 2>/dev/null");
+        java.util.Map<String, String> last = new java.util.HashMap<String, String>();
+        for (String line : out.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("Uid mode:")) t = t.substring(9).trim();
+            int c = t.indexOf(':');
+            if (c <= 0) continue;
+            String op = t.substring(0, c).trim();
+            String rest = t.substring(c + 1).trim();
+            int sc = rest.indexOf(';');
+            last.put(op, (sc >= 0 ? rest.substring(0, sc) : rest).trim());
+        }
+        java.util.List<String> r = new java.util.ArrayList<String>();
+        for (String op : wanted) {
+            String m = last.get(op);
+            if ("allow".equals(m) || "foreground".equals(m)) r.add(op);
+        }
+        return r;
+    }
+
+    /**
      * 取某个用户里该包应用数据的 SELinux 上下文。
      * 先读目标自己的数据目录；它不存在时退到 /data/user_de（同一应用、同一用户的类别集合相同）。
      * 读不到就返回空串，调用方退回 restorecon。

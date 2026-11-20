@@ -164,6 +164,7 @@
     <string name="copy_data_pick_title">复制到哪个空间</string>
     <string name="copy_data_msg">把「%2$s」在 %1$s 里的应用数据复制到 %3$s。\n\n· 两边应用会先被停止\n· 目标原有数据会整体改名留作备份（同目录下 .cubclone-bak-时间戳）\n· 只复制应用私有数据，不含相册、下载等共享文件\n· 复制完会重设属主与 SELinux 上下文，否则应用起不来\n\n确定继续？</string>
     <string name="copy_data_working">正在复制「%1$s」的数据…</string>
+    <string name="copy_data_perms">已同步 %1$d 项授权</string>
     <string name="copy_data_ok">数据已复制。旧数据备份在 %1$s</string>
     <string name="copy_data_fail">复制失败：%1$s</string>
     <string name="copy_data_locked">设备已锁定（或刚锁屏），解锁后再试——锁屏时系统把存储密钥收走了，写不进去</string>

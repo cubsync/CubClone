@@ -1977,6 +1977,9 @@ public class MainActivity extends Activity {
                     return;
                 }
                 final String r = AppData.copy(srcUser, dstUser, g.pkg, appId);
+                // 数据到位后再补授权，这样用户打开目标应用不用再点一遍
+                final int np = r.startsWith("OK")
+                        ? AppData.syncPermissions(srcUser, dstUser, g.pkg) : 0;
                 runOnUiThread(new Runnable() {
                     public void run() {
                         getWindow().clearFlags(
@@ -1984,6 +1987,7 @@ public class MainActivity extends Activity {
                         if (r.startsWith("OK")) {
                             String bak = r.length() > 3 ? r.substring(3).trim() : "";
                             say(getString(R.string.copy_data_ok, bak));
+                            if (np > 0) toast(getString(R.string.copy_data_perms, np));
                         } else if (r.startsWith("ERR_LOCKED")) {
                             toast(getString(R.string.copy_data_locked));
                         } else {

@@ -216,4 +216,10 @@
     <string name="space_free">未装</string>
     <string name="space_has_app">已装</string>
     <string name="space_has_app_hint">这个空间里已经有「%1$s」了，换一个或新建</string>
+    <string name="migrate_locked_title">设备还没解锁</string>
+    <string name="migrate_locked_msg">分身存储的属主迁移要等解锁之后才能做：锁屏状态下共享存储还没挂上。\n\n解锁完成后点「立即重试」，本次就能补做完，不用重启。</string>
+    <string name="migrate_now">立即重试</string>
+    <string name="migrate_later">稍后</string>
+    <string name="migrate_done">存储属主检查完成，改动 %1$d 个目录</string>
+    <string name="migrate_unavailable">存储属主迁移没执行：缺 root，或本机不需要（内核没有 sdcardfs）</string>
 </resources>

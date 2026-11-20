@@ -633,6 +633,9 @@ public final class CloneStore {
         return null;
     }
 
+    /** 设备还没解锁：共享存储没挂，迁移做不了（调用方应弹选项窗让用户解锁后重试） */
+    static final int MIGRATE_LOCKED = -2;
+
     private static volatile boolean migratedOnce = false;
 
     /**
@@ -642,11 +645,18 @@ public final class CloneStore {
      * 这件事必须在**用户解锁之后**做，而模块脚本只有开机一个时机（脚本里等多久都等不到，
      * 日志实测是 skip）。所以放到应用启动这个「解锁后」的事件里，幂等、每次启动最多跑一次。
      *
-     * @return 改动数；不适用/没权限返回 -1
+     * 冷启动时本进程可能还没探过 root（rootOk 默认 false），这里自己补探一次，
+     * 否则会在 Shell.ready() 处直接返回 -1、迁移被静默跳过（2026-11-20 实测）。
+     *
+     * @return 改动数；锁屏未解锁返回 {@link #MIGRATE_LOCKED}；不适用/没权限返回 -1
      */
     static int migrateMediaOwners() {
         if (migratedOnce) return 0;
+        if (!Shell.ready()) Shell.checkRoot();
         if (!Shell.ready()) return -1;
+        String probe = Shell.exec("if [ -d /data/media/0/Android/media ]"
+                + " && [ -f /data/system/packages.list ]; then echo READY; else echo LOCKED; fi");
+        if (probe.indexOf("LOCKED") >= 0) return MIGRATE_LOCKED;   // 锁屏期共享存储还没挂
         Integer st = storageState();
         if (st == null || st.intValue() != 2) return -1;   // 只在本机走纯 FUSE 时才有意义
         migratedOnce = true;

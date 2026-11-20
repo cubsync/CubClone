@@ -196,11 +196,6 @@ public class MainActivity extends Activity {
         langAtCreate = Locales.tag(this);
         setContentView(R.layout.activity_main);
 
-        // 打开应用＝用户已解锁这个事件：顺手补做 Android/media 属主迁移（模块脚本拿不到解锁时机）
-        new Thread(new Runnable() {
-            public void run() { CloneStore.migrateMediaOwners(); }
-        }, "media-owner-migrate").start();
-
         listBox = findViewById(R.id.clone_app_list);
         emptyView = findViewById(R.id.not_find_app);
         status = findViewById(R.id.status);
@@ -241,7 +236,12 @@ public class MainActivity extends Activity {
                 loadAppMetaQuick();   // 分类 + 真实名字（图标走异步懒加载，首屏不阻塞）
                 runOnUiThread(new Runnable() {
                     public void run() {
-                        if (Shell.rootOk) startWork();
+                        if (Shell.rootOk) {
+                            startWork();
+                            // 打开应用＝用户已解锁这个事件：补做 Android/media 属主迁移。
+                            // 必须放在 root 探测之后，否则 Shell.ready() 还是假值、迁移被静默跳过。
+                            kickMigrate(false);
+                        }
                         else {
                             say(getString(R.string.st_no_root));
                             initShizuku();
@@ -258,6 +258,51 @@ public class MainActivity extends Activity {
         pf.addAction(android.content.Intent.ACTION_PACKAGE_REPLACED);
         pf.addDataScheme("package");
         registerReceiver(pkgReceiver, pf);
+    }
+
+    private android.app.AlertDialog migrateDialog;
+
+    /**
+     * 跑一次 Android/media 属主迁移。
+     * 设备还没解锁时不能静默跳过：弹选项窗，用户解锁后点「立即重试」即可在本次启动内补做。
+     */
+    private void kickMigrate(final boolean byUser) {
+        new Thread(new Runnable() {
+            public void run() {
+                final int r = CloneStore.migrateMediaOwners();
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (isFinishing()) return;
+                        if (r == CloneStore.MIGRATE_LOCKED) {
+                            askUnlockThenMigrate();
+                        } else if (byUser) {
+                            say(r >= 0 ? getString(R.string.migrate_done, r)
+                                    : getString(R.string.migrate_unavailable));
+                        }
+                    }
+                });
+            }
+        }, "media-owner-migrate").start();
+    }
+
+    /** 锁屏期迁移做不了：给出可点的选项，而不是让用户以为已经做完 */
+    private void askUnlockThenMigrate() {
+        if (migrateDialog != null && migrateDialog.isShowing()) return;
+        migrateDialog = new android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.migrate_locked_title)
+                .setMessage(R.string.migrate_locked_msg)
+                .setPositiveButton(R.string.migrate_now, new android.content.DialogInterface.OnClickListener() {
+                    public void onClick(android.content.DialogInterface d, int w) {
+                        migrateDialog = null;
+                        kickMigrate(true);
+                    }
+                })
+                .setNegativeButton(R.string.migrate_later, new android.content.DialogInterface.OnClickListener() {
+                    public void onClick(android.content.DialogInterface d, int w) {
+                        migrateDialog = null;
+                    }
+                })
+                .show();
     }
 
     @Override

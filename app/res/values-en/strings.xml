@@ -216,4 +216,10 @@ Owner data is not touched.</string>
     <string name="space_free">free</string>
     <string name="space_has_app">has it</string>
     <string name="space_has_app_hint">%1$s is already in this space — pick another or create a new one</string>
+    <string name="migrate_locked_title">Device is still locked</string>
+    <string name="migrate_locked_msg">Migrating ownership of the space storage has to wait until the device is unlocked: shared storage is not mounted while the lock screen is up.\n\nAfter unlocking, tap Retry now — it completes within this session, no reboot needed.</string>
+    <string name="migrate_now">Retry now</string>
+    <string name="migrate_later">Later</string>
+    <string name="migrate_done">Storage ownership check done, %1$d directories changed</string>
+    <string name="migrate_unavailable">Migration did not run: no root, or not needed here (kernel has no sdcardfs)</string>
 </resources>

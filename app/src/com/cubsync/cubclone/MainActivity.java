@@ -1788,6 +1788,7 @@ public class MainActivity extends Activity {
             items.add(getString(R.string.menu_hide)); acts.add(5);
         }
         items.add(getString(R.string.menu_open)); acts.add(2);
+        items.add(getString(R.string.menu_copy_from_main)); acts.add(6);
         if (!ro) { items.add(getString(R.string.menu_remove)); acts.add(3); }
         new android.app.AlertDialog.Builder(this)
                 .setTitle(g.label + suffixOf(c.uid, g.pkg, 0))
@@ -1799,6 +1800,7 @@ public class MainActivity extends Activity {
                                 else if (a == 4) disableClone(c, g);
                                 else if (a == 5) hideClone(c, g);
                                 else if (a == 2) launch(c, g);
+                                else if (a == 6) confirmCopyData(g, c.uid);
                                 else confirmRemove(c, g);
                             }
                         })
@@ -1820,7 +1822,10 @@ public class MainActivity extends Activity {
             if (c.foreign && !sp().getBoolean("manage_foreign", false)) continue;
             cnt++;
         }
-        if (cnt > 0) { items.add(getString(R.string.menu_remove_all, cnt)); acts.add(4); }
+        if (cnt > 0) {
+            items.add(getString(R.string.menu_copy_to_clone)); acts.add(5);
+            items.add(getString(R.string.menu_remove_all, cnt)); acts.add(4);
+        }
         new AlertDialog.Builder(this)
                 .setTitle(g.label)
                 .setItems(items.toArray(new String[0]),
@@ -1837,6 +1842,8 @@ public class MainActivity extends Activity {
                                     pickSpaceFor(g);
                                 } else if (a == 3) {
                                     openAppInfo(g.pkg);
+                                } else if (a == 5) {
+                                    pickCloneForData(g);
                                 } else {
                                     confirmRemoveAll(g);
                                 }
@@ -1896,6 +1903,74 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    /** 主应用菜单 →「克隆数据到分身」：先挑一个已装该应用的分身 */
+    private void pickCloneForData(final Group g) {
+        final java.util.List<Clone> list = new java.util.ArrayList<Clone>(g.clones);
+        if (list.isEmpty()) {
+            toast(getString(R.string.copy_data_no_clone, g.label));
+            return;
+        }
+        String[] items = new String[list.size()];
+        for (int i = 0; i < list.size(); i++) {
+            Clone c = list.get(i);
+            items[i] = CloneStore.nameOf(this, c.uid) + suffixOf(c.uid, g.pkg, 0);
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.copy_data_pick_title)
+                .setItems(items, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        confirmCopyData(g, list.get(which).uid);
+                    }
+                })
+                .show();
+    }
+
+    /** 主空间 → 指定分身，复制应用私有数据。先讲清后果再动手 */
+    private void confirmCopyData(final Group g, final int dstUser) {
+        if (!Shell.ready()) {
+            toast(getString(R.string.copy_data_no_root));
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.copy_data_title)
+                .setMessage(getString(R.string.copy_data_msg, g.label,
+                        CloneStore.nameOf(this, dstUser)))
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) { runCopyData(g, dstUser); }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void runCopyData(final Group g, final int dstUser) {
+        say(getString(R.string.copy_data_working, g.label));
+        new Thread(new Runnable() {
+            public void run() {
+                int appId;
+                try {
+                    appId = getPackageManager().getApplicationInfo(g.pkg, 0).uid % 100000;
+                } catch (Throwable t) {
+                    final String m = getString(R.string.copy_data_fail, t.toString());
+                    runOnUiThread(new Runnable() {
+                        public void run() { toast(m); }
+                    });
+                    return;
+                }
+                final String r = AppData.copy(0, dstUser, g.pkg, appId);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (r.startsWith("OK")) {
+                            String bak = r.length() > 3 ? r.substring(3).trim() : "";
+                            say(getString(R.string.copy_data_ok, bak));
+                        } else {
+                            toast(getString(R.string.copy_data_fail, r));
+                        }
+                    }
+                });
+            }
+        }).start();
     }
 
     /** 隐藏一个启用中的分身：只从列表里藏起来（应用保持启用、能跑），设置里可恢复 */

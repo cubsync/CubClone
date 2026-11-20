@@ -158,6 +158,16 @@
     <string name="menu_create_in">创建分身（选空间）</string>
     <string name="menu_app_info">应用信息</string>
     <string name="menu_remove_all">移除全部分身（%1$d 个）</string>
+    <string name="menu_copy_to_clone">克隆数据到分身…</string>
+    <string name="menu_copy_from_main">从主应用克隆数据</string>
+    <string name="copy_data_title">克隆应用数据</string>
+    <string name="copy_data_pick_title">复制到哪个分身</string>
+    <string name="copy_data_msg">把主空间「%1$s」的应用数据复制到「%2$s」。\n\n· 两边应用会先被停止\n· 目标原有数据会整体改名留作备份（同目录下 .cubclone-bak-时间戳）\n· 只复制应用私有数据，不含相册、下载等共享文件\n· 复制完会重设属主与 SELinux 上下文，否则应用起不来\n\n确定继续？</string>
+    <string name="copy_data_working">正在复制「%1$s」的数据…</string>
+    <string name="copy_data_ok">数据已复制。旧数据备份在 %1$s</string>
+    <string name="copy_data_fail">复制失败：%1$s</string>
+    <string name="copy_data_no_root">需要 root：应用数据在 /data/user 下，Shizuku 的 shell 身份读写不了</string>
+    <string name="copy_data_no_clone">「%1$s」在分身里还没安装，先创建分身再克隆数据</string>
     <string name="remove_all_title">移除全部分身</string>
     <string name="remove_all_msg">「%1$s」在 %2$d 个空间里的分身会被卸载，分身里的数据一并清除。主空间的应用和数据不受影响。</string>
     <string name="removed_all">已移除 %1$d 个分身</string>

@@ -678,7 +678,10 @@ public final class AppData {
         String de = "/data/user_de/" + T + "/" + b.pkg;
         long uid = (long) appId + (long) T * 100000L;
         String ts = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
-        String ctx = contextOf(b.user, b.pkg);
+        // 上下文里带本应用实例的 MLS 类别，跨空间恢复时必须取目标空间自己的；
+        // 目标空间还没装这个包时才退回备份来源空间的
+        String ctx = contextOf(T, b.pkg);
+        if (ctx.length() == 0) ctx = contextOf(b.user, b.pkg);
         boolean wantCe = (parts & PART_CE) != 0;
         boolean wantDe = (parts & PART_DE) != 0;
 
@@ -688,6 +691,10 @@ public final class AppData {
         s.append("rm -rf \"$OLD\"; mkdir -p \"$OLD\"\n");
         s.append("CE='").append(ce).append("'; DE='").append(de).append("'\n");
         s.append("T='").append(T).append("'\n");
+        // 分身里的 appId 可能和主空间不同：属主按目标空间里实际装的这个包来取，
+        // 用主空间 appId 推出来的数字会把目录设成别的应用（曾把支付宝目录设成 u0_a161）
+        s.append("AU=$(stat -c %u \"/data/user/").append(T).append('/').append(b.pkg)
+                .append("\" 2>/dev/null); [ -n \"$AU\" ] || AU=").append(uid).append("\n");
 
         if (b.packed()) {
             String tmp = "/data/local/tmp/cc-restore-" + ts;
@@ -791,7 +798,7 @@ public final class AppData {
         // 换回的数据要换属主与上下文；APK 装的包由系统自己管
         s.append("for D in \"$CE\" \"$DE\"; do\n");
         s.append("  [ -d \"$D\" ] || continue\n");
-        s.append("  chown -R ").append(uid).append(":").append(uid).append(" \"$D\"\n");
+        s.append("  chown -R \"$AU:$AU\" \"$D\"\n");
         if (ctx.length() > 0) {
             s.append("  chcon -R '").append(ctx).append("' \"$D\"\n");
         }
@@ -799,17 +806,16 @@ public final class AppData {
         if (extDstList.length() > 0) {
             s.append("for D in").append(extDstList).append("; do\n");
             s.append("  [ -d \"$D\" ] || continue\n");
-            // 属主沿用系统的约定：owner 是 media_rw，组是应用自己的 ext 组；权限必须留组/其他
-            // 的读执行位，否则 MediaProvider 与文件管理器都进不去（root umask 077 会建成 0700）
-            s.append("  AU=$(stat -c %u \"/data/user/").append(T).append('/').append(b.pkg)
-                    .append("\" 2>/dev/null)\n");
-            s.append("  G=$(( ${AU:-0} + 10000 ))\n");
+            // 系统约定（实测）：owner 是这个空间里的应用 uid，不是 media_rw。
+            // Android/data 的组是 ext_data_rw(1078)、Android/media|obb 的组是 media_rw(1023)。
+            // FUSE 下真正做权限判定的是 MediaProvider 进程，它的补充组里有这两个组；
+            // 组写错（比如算成 xxx+10000 那种）它就被挡在外面，应用侧只看到 EPERM。
             s.append("  case \"$D\" in */Android/data/*)\n");
-            s.append("    chown -R 1023:${G} \"$D\" 2>/dev/null\n");
+            s.append("    chown -R ${AU:-0}:1078 \"$D\" 2>/dev/null\n");
             s.append("    find \"$D\" -type d -exec chmod 2770 {} + 2>/dev/null\n");
             s.append("    find \"$D\" -type f -exec chmod 660 {} + 2>/dev/null;;\n");
             s.append("  *)\n");
-            s.append("    chown -R 1023:1023 \"$D\" 2>/dev/null\n");
+            s.append("    chown -R ${AU:-0}:1023 \"$D\" 2>/dev/null\n");
             s.append("    find \"$D\" -type d -exec chmod 2775 {} + 2>/dev/null\n");
             s.append("    find \"$D\" -type f -exec chmod 664 {} + 2>/dev/null;;\n");
             s.append("  esac\n");

@@ -4,9 +4,11 @@
 set -eu
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-# 按 ABI 出包：assets/zstd 只有一份 zstd 会被打进包，别的架构带上也跑不了、白占 700 KB+
-# 用法：bash app/build.sh [arm64-v8a|armeabi-v7a|x86_64]（不传 = 三合一，仅用于本机自测）
-ABI="${1:-${ABI:-}}"
+# 按 ABI 出包：assets/zstd 只有一份 zstd 会被打进包，别的架构带上也跑不了、白占 300~400 KB
+# 用法：bash app/build.sh [arm64-v8a|universal|armeabi-v7a|x86_64]，不传 = arm64-v8a
+#   业界惯例就两个包：arm64-v8a（绝大多数设备）+ universal（全架构一份，给老机/模拟器）
+ABI="${1:-${ABI:-arm64-v8a}}"
+case "$ABI" in all|universal) ABI=universal ;; esac
 
 SDK="${ANDROID_HOME:-D:/Dev/Android/Sdk}"
 BT="$SDK/build-tools/35.0.0"
@@ -27,7 +29,7 @@ mkdir -p "$OUT/assets" "$OUT/classes" "$OUT/dex" "$OUT/gen"
 cp -r assets/. "$OUT/assets/"
 cp -f "$JAR" "$OUT/assets/cubclone.jar"
 
-if [ -n "$ABI" ]; then
+if [ "$ABI" != universal ]; then
   for f in "$OUT/assets/zstd-"*; do
     [ "$(basename "$f")" = "zstd-$ABI" ] || rm -f "$f"
   done
@@ -116,8 +118,7 @@ KP=$(sed -n 's/^keyPassword=//p' "$PROPS")
 mkdir -p "$DIST"
 # 产物名与 versionName 完全一致（含 +<短提交号>）：设备上看到的版本就是这个文件名。
 # 出新测试包就把同版本的旧测试包删掉，dist/ 里始终只有一份在测的包。
-SUFFIX=""
-[ -n "$ABI" ] && SUFFIX="-$ABI"
+SUFFIX="-$ABI"
 rm -f "$DIST"/CubClone-"$VNAME"+*"$SUFFIX".apk
 APK="$DIST/CubClone-$BUILDV$SUFFIX.apk"
 "$BT/apksigner.bat" sign --ks "$KS" --ks-key-alias "$AL" \

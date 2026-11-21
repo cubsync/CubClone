@@ -83,8 +83,8 @@ release 点成正式。
 
 | 平台 | 产物 |
 |---|---|
-| Android（收版） | `dist/CubClone-<版本号>.apk`（预发布带后缀，如 `CubClone-0.7.0-beta.1.apk`），签名用仓库外的密钥库（见 build.sh 的 `$CUBCLONE_SIGNING`） |
-| Android（测试包） | `dist/CubClone-<版本号>+<短提交号>.apk` —— 与应用内「关于」显示的 `versionName` 完全一致 |
+| Android（收版） | `dist/CubClone-<版本号>-arm64-v8a.apk` + `dist/CubClone-<版本号>-universal.apk`（预发布带后缀，如 `CubClone-0.7.0-beta.1-arm64-v8a.apk`），签名用仓库外的密钥库（见 build.sh 的 `$CUBCLONE_SIGNING`） |
+| Android（测试包） | `dist/CubClone-<版本号>+<短提交号>-<abi|universal>.apk` —— 版本号部分与应用内「关于」显示的 `versionName` 完全一致 |
 | 桌面 | 暂无 |
 
 产物名带版本号，出到仓库根的 `dist/`；`build/` 放中间件。两者都在 `.gitignore` 里，不入库。

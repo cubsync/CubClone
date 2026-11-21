@@ -7,7 +7,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 
 /**
- * 内置 zstd（NDK 编译的单文件 CLI，放 assets/zstd/&lt;abi&gt;/zstd）。
+ * 内置 zstd（NDK 编译的单文件 CLI，放 assets/zstd-&lt;abi&gt;）。
  *
  * 资源名是扁平的 zstd-&lt;abi&gt;：aapt2 在 Windows 上会把子目录写成反斜杠
  * （assets/zstdrm64-v8a\zstd），设备上 getAssets().open 就找不到。

@@ -284,6 +284,10 @@ public class BatchBackupActivity extends Activity {
     // ── 开始：跳到过程页 ─────────────────────────────────────────────
     private void startBatch() {
         if (running) return;
+        if (BatchJob.get() != null && BatchJob.get().running) {
+            toast(getString(R.string.batch_busy));
+            return;
+        }
         final List<String> sel = new ArrayList<String>();
         for (String p : pkgs) {
             if (checked.contains(p)) sel.add(p);

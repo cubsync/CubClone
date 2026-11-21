@@ -297,14 +297,34 @@ public final class AppData {
     public static java.util.List<String> usableAlgos() {
         java.util.List<String> r = new java.util.ArrayList<String>();
         String out = Shell.execScript(
-                "command -v zstd >/dev/null 2>&1 && echo hi | zstd -q -c >/dev/null 2>&1 && echo ZST_OK\n"
-                        + "command -v gzip >/dev/null 2>&1 && echo hi | gzip -6 -c >/dev/null 2>&1 && echo GZ_OK\n"
+                "command -v gzip >/dev/null 2>&1 && echo hi | gzip -6 -c >/dev/null 2>&1 && echo GZ_OK\n"
                         + "command -v bzip2 >/dev/null 2>&1 && echo hi | bzip2 -9 -c >/dev/null 2>&1 && echo BZ_OK\n");
-        if (out.contains("ZST_OK")) r.add("zst");
+        // zstd 用应用自带的那份（系统那个在不少机型上缺失或损坏）
+        if (Zstd.path() != null) r.add("zst");
         if (out.contains("GZ_OK")) r.add("gz");
         if (out.contains("BZ_OK")) r.add("bz2");
         r.add("none");
         return r;
+    }
+
+    /**
+     * 内置 zstd 的压缩命令。多线程（-T0）是关键：单线程 zstd 跟 gzip 差不了多少，
+     * 开满核心实测 41 MB 数据 2.9 s → 0.58 s。
+     * @return null = 本机没有可用的 zstd
+     */
+    public static String zstdCmd(int level) {
+        String p = Zstd.path();
+        if (p == null) return null;
+        return level > 19 ? (p + " --ultra -" + level + " -T0 -q -c")
+                : (p + " -" + level + " -T0 -q -c");
+    }
+
+    /** 对应算法怎么解压；空串 = 未压缩（或 zstd 没有内置那份），tar 直接读 */
+    public static String decoderOf(String algo) {
+        if ("zst".equals(algo)) { String d = Zstd.d(); return d == null ? "" : d; }
+        if ("gz".equals(algo)) return "gzip -d -c";
+        if ("bz2".equals(algo)) return "bzip2 -d -c";
+        return "";
     }
 
     /** 从当前选择开始按 zstd → gzip → bzip2 → 纯打包 降级 */
@@ -362,10 +382,30 @@ public final class AppData {
                 + new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
     }
 
-    /** @param base 目标名（不含扩展名），由 backupBase 生成 */
     public static String backupNow(int user, String pkg, String algo, int level, String base) {
+        android.content.Context c = CloneStore.appCtx;
+        return backupNow(user, pkg, algo, level, base,
+                c == null ? PARTS_DEFAULT : parts(c),
+                c != null && apkAll(c));
+    }
+
+    /**
+     * 给某个空间里的某个应用做一份备份：先停止应用，原数据一个字节都不动。
+     *
+     * 备份内容按 parts 勾选：
+     *   PART_CE   /data/user/&lt;U&gt;/&lt;pkg&gt;
+     *   PART_DE   /data/user_de/&lt;U&gt;/&lt;pkg&gt;
+     *   PART_APK  pm path 列出来的 base + split（默认一份；apkAll 时按空间各一份）
+     *   PART_PERM 该空间里已授予的运行时权限与 appops（写成 perm.txt）
+     * cache / code_cache 一律排除。包里不带 data/ 前缀，顶层就是应用包名。
+     *
+     * @return "OK &lt;备份路径&gt;|&lt;实际算法&gt;" 或 "ERR_xxx"
+     */
+    public static String backupNow(int user, String pkg, String algo, int level, String base,
+                                   int parts, boolean apkAll) {
         String want = (algo == null || algo.length() == 0) ? "none" : algo;
         int lv = level > 0 ? level : defaultLevel(want);
+        String stage = "/data/local/tmp/cc-pack-" + System.currentTimeMillis();
 
         StringBuilder s = new StringBuilder();
         s.append("am force-stop --user ").append(user).append(" '").append(pkg).append("'\n");
@@ -376,25 +416,67 @@ public final class AppData {
                 .append("/.cc-probe' 2>/dev/null || { echo ERR_LOCKED; exit 1; }\n");
         s.append("rm -f '/data/user/").append(user).append('/').append(pkg).append("/.cc-probe'\n");
         s.append("mkdir -p '").append(rootDir).append("' || { echo ERR_DIR; exit 1; }\n");
-        // tar 从 / 出发，保留完整相对路径
         s.append("cd /\n");
-        s.append("L='data/user/").append(user).append('/').append(pkg).append("'\n");
-        s.append("[ -d 'data/user_de/").append(user).append('/').append(pkg)
-                .append("' ] && L=\"$L data/user_de/").append(user).append('/').append(pkg).append("\"\n");
-        // 包里不要以 data/ 打头：解出来第一眼就是应用包名，CE 与 DE 各自一层
-        // 不要在变量里带单引号：赋值时引号是字面量，tar 会把它当 sed 表达式的一部分直接失败
+        s.append("L=''\n");
+        if ((parts & PART_CE) != 0) {
+            s.append("L=\"data/user/").append(user).append('/').append(pkg).append("\"\n");
+        }
+        if ((parts & PART_DE) != 0) {
+            s.append("[ -d 'data/user_de/").append(user).append('/').append(pkg)
+                    .append("' ] && L=\"$L data/user_de/").append(user).append('/').append(pkg).append("\"\n");
+        }
+
+        // APK / 权限：先在 /data/local/tmp 摆一个和包里同构的目录，再由 xform 折成 <包名>/…
+        boolean needStage = (parts & (PART_APK | PART_PERM)) != 0;
+        if (needStage) {
+            s.append("STAGE='").append(stage).append("'; rm -rf \"$STAGE\"; mkdir -p \"$STAGE/")
+                    .append(pkg).append("\" || { echo ERR_TMP; exit 1; }\n");
+            s.append("trap 'rm -rf \"$STAGE\"' EXIT\n");
+            s.append("L=\"$L ").append(stage.substring(1)).append('/').append(pkg).append("\"\n");
+        }
+        if ((parts & PART_APK) != 0) {
+            s.append("mkdir -p \"$STAGE/").append(pkg).append("/apk\"\n");
+            // pm path 一次列全 base + split；apkAll 时按空间各存一份（同一版本时两份内容一样）
+            s.append("APKS=$(pm path '").append(pkg).append("' 2>/dev/null | sed 's/^package://')\n");
+            if (apkAll) {
+                s.append("for U2 in $(pm list users | sed -n 's/.*UserInfo{\\([0-9]*\\):.*/\\1/p'); do\n");
+                s.append("  pm list packages --user $U2 2>/dev/null | grep -qx 'package:").append(pkg).append("' || continue\n");
+                s.append("  mkdir -p \"$STAGE/").append(pkg).append("/apk/$U2\"\n");
+                s.append("  for f in $APKS; do cp -f \"$f\" \"$STAGE/").append(pkg).append("/apk/$U2/\" 2>/dev/null; done\n");
+                s.append("done\n");
+            } else {
+                s.append("for f in $APKS; do cp -f \"$f\" \"$STAGE/").append(pkg).append("/apk/\" 2>/dev/null; done\n");
+            }
+        }
+        if ((parts & PART_PERM) != 0) {
+            StringBuilder pl = new StringBuilder();
+            for (String pm : grantedRuntimePerms(user, pkg)) pl.append("P ").append(pm).append('\n');
+            for (String op : grantedAppOps(user, pkg)) pl.append("O ").append(op).append('\n');
+            if (pl.length() > 0) {
+                s.append("cat > \"$STAGE/").append(pkg).append("/perm.txt\" <<'CCPERM'\n");
+                s.append(pl);
+                s.append("CCPERM\n");
+            }
+        }
+
+        // 包里不要以 data/ 打头：解出来第一眼就是应用包名，CE / DE / apk 各自一层
         s.append("XF=\" --xform=s|^data/user/").append(user).append('/').append(pkg)
                 .append('|').append(pkg).append("/user|")
                 .append(" --xform=s|^data/user_de/").append(user).append('/').append(pkg)
-                .append('|').append(pkg).append("/user_de|\"\n");
+                .append('|').append(pkg).append("/user_de|");
+        if (needStage) {
+            s.append(" --xform=s|^").append(stage.substring(1)).append('/').append(pkg)
+                    .append('|').append(pkg).append('|');
+        }
+        s.append("\"\n");
         s.append("B='").append(base).append("'\n");
-        // $1=压缩器命令（空=纯打包）$2=扩展名 $3=tar 列表标志
+        // $1=压缩器命令（空=纯打包）$2=扩展名 $3=解压命令（空=未压缩）
         s.append("pack() {\n");
         s.append("  O=\"$B$2\"; rm -f \"$O\"\n");
         s.append("  if [ -z \"$1\" ]; then tar -cf \"$O\" $XF --exclude='*/cache' --exclude='*/code_cache' $L 2>/dev/null\n");
         s.append("  else tar -cf - $XF --exclude='*/cache' --exclude='*/code_cache' $L 2>/dev/null | $1 > \"$O\" 2>/dev/null; fi\n");
-        // tar -t 校验：管道里 tar 的失败被压缩器吞掉了，只能反过来验包
-        s.append("  if [ -s \"$O\" ] && tar -t$3f \"$O\" >/dev/null 2>&1; then\n");
+        // 校验：管道里 tar 的失败被压缩器吞掉了，只能反过来把包解开验一遍
+        s.append("  if [ -s \"$O\" ] && { if [ -z \"$3\" ]; then tar -tf \"$O\" >/dev/null 2>&1; else $3 < \"$O\" | tar -tf - >/dev/null 2>&1; fi; }; then\n");
         s.append("    chown 1023:1023 \"$O\" 2>/dev/null; chmod 660 \"$O\" 2>/dev/null\n");
         s.append("    echo CUB_OK \"$O\"; return 0; fi\n");
         s.append("  rm -f \"$O\"; return 1\n");
@@ -402,23 +484,24 @@ public final class AppData {
         for (String a : degradeChain(want)) {
             int use = a.equals(want) ? lv : defaultLevel(a);
             if ("zst".equals(a)) {
-                // 20 级以上 zstd 要求 --ultra，否则直接拒绝
-                String z = use > 19 ? ("zstd --ultra -" + use + " -q -c") : ("zstd -" + use + " -q -c");
-                s.append("command -v zstd >/dev/null 2>&1 && pack \"").append(z)
-                        .append("\" .tar.zst Z && exit 0\n");
+                String z = zstdCmd(use);
+                if (z != null) {
+                    s.append("pack \"").append(z).append("\" .tar.zst \"")
+                            .append(decoderOf("zst")).append("\" && exit 0\n");
+                }
             } else if ("gz".equals(a)) {
                 s.append("command -v gzip >/dev/null 2>&1 && pack \"gzip -").append(use)
-                        .append("\" .tar.gz z && exit 0\n");
+                        .append("\" .tar.gz \"").append(decoderOf("gz")).append("\" && exit 0\n");
             } else if ("bz2".equals(a)) {
                 s.append("command -v bzip2 >/dev/null 2>&1 && pack \"bzip2 -").append(use)
-                        .append("\" .tar.bz2 j && exit 0\n");
+                        .append("\" .tar.bz2 \"").append(decoderOf("bz2")).append("\" && exit 0\n");
             } else {
                 s.append("pack \"\" .tar \"\" && exit 0\n");
             }
         }
         s.append("echo ERR_PACK\n");
 
-        android.util.Log.i("CubClone", "backupNow " + pkg + " user=" + user + " -> " + base);
+        android.util.Log.i("CubClone", "backupNow " + pkg + " user=" + user + " parts=" + parts + " -> " + base);
         String out = Shell.execScript(s.toString());
         int i = out.indexOf("CUB_OK ");
         if (i < 0) {
@@ -432,8 +515,6 @@ public final class AppData {
         int dot = path.indexOf(".tar");
         return "OK " + path + "|" + (dot > 0 ? algoOf(path.substring(dot)) : "none");
     }
-
-
 
     /** 各算法的默认级别（与各自官方默认一致） */
     public static int defaultLevel(String algo) {
@@ -490,12 +571,12 @@ public final class AppData {
         s.append("N='").append(name).append("'\n");
         s.append("B='").append(base).append("'\n");
         s.append("mkdir -p '").append(rootDir).append("' || { echo ERR_DIR; exit 1; }\n");
-        // $1=压缩器命令（空=纯打包）$2=扩展名 $3=算法名 $4=tar 列表标志
+        // $1=压缩器命令（空=纯打包）$2=扩展名 $3=算法名 $4=解压命令
         s.append("pack() {\n");
         s.append("  O=\"$B$2\"; rm -f \"$O\"\n");
         s.append("  if [ -z \"$1\" ]; then tar -cf \"$O\" -C \"$P\" \"$N\" 2>/dev/null\n");
         s.append("  else tar -cf - -C \"$P\" \"$N\" 2>/dev/null | $1 > \"$O\" 2>/dev/null; fi\n");
-        s.append("  if [ -s \"$O\" ] && tar -t$4f \"$O\" >/dev/null 2>&1; then\n");
+        s.append("  if [ -s \"$O\" ] && { if [ -z \"$4\" ]; then tar -tf \"$O\" >/dev/null 2>&1; else $4 < \"$O\" | tar -tf - >/dev/null 2>&1; fi; }; then\n");
         s.append("    chown 1023:1023 \"$O\" 2>/dev/null; chmod 660 \"$O\" 2>/dev/null\n");
         s.append("    rm -rf \"$SRC\"; echo CUB_OK \"$O\" $3; return 0\n");
         s.append("  fi\n");
@@ -504,15 +585,17 @@ public final class AppData {
         for (String a : degradeChain(want)) {
             int use = a.equals(want) ? lv : defaultLevel(a);
             if ("zst".equals(a)) {
-                String z = use > 19 ? ("zstd --ultra -" + use + " -q -c") : ("zstd -" + use + " -q -c");
-                s.append("command -v zstd >/dev/null 2>&1 && pack \"").append(z)
-                        .append("\" .tar.zst zst Z && exit 0\n");
+                String z = zstdCmd(use);
+                if (z != null) {
+                    s.append("pack \"").append(z).append("\" .tar.zst zst \"")
+                            .append(decoderOf("zst")).append("\" && exit 0\n");
+                }
             } else if ("gz".equals(a)) {
                 s.append("command -v gzip >/dev/null 2>&1 && pack \"gzip -").append(use)
-                        .append("\" .tar.gz gz z && exit 0\n");
+                        .append("\" .tar.gz gz \"").append(decoderOf("gz")).append("\" && exit 0\n");
             } else if ("bz2".equals(a)) {
                 s.append("command -v bzip2 >/dev/null 2>&1 && pack \"bzip2 -").append(use)
-                        .append("\" .tar.bz2 bz2 j && exit 0\n");
+                        .append("\" .tar.bz2 bz2 \"").append(decoderOf("bz2")).append("\" && exit 0\n");
             } else {
                 s.append("pack \"\" .tar tar \"\" && exit 0\n");
             }
@@ -548,17 +631,34 @@ public final class AppData {
      * @return "OK" 或 "ERR_xxx"
      */
     public static String restore(Backup b, int appId) {
-        String ce = "/data/user/" + b.user + "/" + b.pkg;
-        String de = "/data/user_de/" + b.user + "/" + b.pkg;
-        long uid = (long) appId + (long) b.user * 100000L;
+        return restore(b, appId, b.user, PARTS_DEFAULT);
+    }
+
+    /**
+     * 把备份换回原位（或换到指定用户）。当前数据不再另留一份：备份本来就是你要的，
+     * 每次恢复再复制一份只会让列表膨胀。但也不是直接 rm：先 mv 到 /data/local/tmp，
+     * 换位成功才删，失败就挪回去。
+     *
+     * @param targetUser 恢复到哪个空间；&lt; 0 表示按备份里的空间
+     * @param parts      恢复哪些内容（PART_CE / PART_DE / PART_APK / PART_PERM）
+     * @return "OK" 或 "ERR_xxx"
+     */
+    public static String restore(Backup b, int appId, int targetUser, int parts) {
+        int T = targetUser < 0 ? b.user : targetUser;
+        String ce = "/data/user/" + T + "/" + b.pkg;
+        String de = "/data/user_de/" + T + "/" + b.pkg;
+        long uid = (long) appId + (long) T * 100000L;
         String ts = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
         String ctx = contextOf(b.user, b.pkg);
+        boolean wantCe = (parts & PART_CE) != 0;
+        boolean wantDe = (parts & PART_DE) != 0;
 
         StringBuilder s = new StringBuilder();
-        s.append("am force-stop --user ").append(b.user).append(" '").append(b.pkg).append("'\n");
+        s.append("am force-stop --user ").append(T).append(" '").append(b.pkg).append("'\n");
         s.append("OLD='/data/local/tmp/cc-old-").append(ts).append("'\n");
         s.append("rm -rf \"$OLD\"; mkdir -p \"$OLD\"\n");
         s.append("CE='").append(ce).append("'; DE='").append(de).append("'\n");
+        s.append("T='").append(T).append("'\n");
 
         if (b.packed()) {
             String tmp = "/data/local/tmp/cc-restore-" + ts;
@@ -568,12 +668,20 @@ public final class AppData {
                     : b.pkg;
             s.append("TMP='").append(tmp).append("'\n");
             s.append("rm -rf \"$TMP\"; mkdir -p \"$TMP\" || { echo ERR_TMP; exit 1; }\n");
-            s.append("tar -x").append(b.tarFlag()).append("f '").append(b.path)
-                    .append("' -C \"$TMP\" || { rm -rf \"$TMP\"; echo ERR_UNPACK; exit 1; }\n");
-            // 包内布局认三种：
-            //   新 <pkg>/user、<pkg>/user_de
-            //   中 data/user/<U>/<pkg>、data/user_de/<U>/<pkg>
-            //   老 顶层直接是目录名
+            String dec = decoderOf(b.algo);
+            if (dec.length() == 0 && "zst".equals(b.algo)) {
+                // 没有内置 zstd 的极端情况：退回系统 tar 的 -Z，成不成就看机型
+                s.append("tar -xZf '").append(b.path).append("' -C \"$TMP\"")
+                        .append(" || { rm -rf \"$TMP\"; echo ERR_UNPACK; exit 1; }\n");
+            } else if (dec.length() > 0) {
+                s.append(dec).append(" < '").append(b.path).append("'")
+                        .append(" | tar -xf - -C \"$TMP\"")
+                        .append(" || { rm -rf \"$TMP\"; echo ERR_UNPACK; exit 1; }\n");
+            } else {
+                s.append("tar -xf '").append(b.path).append("' -C \"$TMP\"")
+                        .append(" || { rm -rf \"$TMP\"; echo ERR_UNPACK; exit 1; }\n");
+            }
+            // 包内布局认三种：<pkg>/user…、data/user/<U>/<pkg>…、顶层直接是目录名
             s.append("if [ -d \"$TMP/").append(b.pkg).append("/user\" ]; then\n");
             s.append("  SCE=\"$TMP/").append(b.pkg).append("/user\"\n");
             s.append("  SDE=\"$TMP/").append(b.pkg).append("/user_de\"\n");
@@ -583,29 +691,57 @@ public final class AppData {
             s.append("elif [ -d \"$TMP/").append(flat).append("\" ]; then\n");
             s.append("  SCE=\"$TMP/").append(flat).append("\"; SDE=''\n");
             s.append("else\n");
-            s.append("  rm -rf \"$TMP\"; echo ERR_UNPACK2; exit 1\n");
+            s.append("  SCE=\"$TMP/").append(b.pkg).append("/user\"; SDE=''\n");
             s.append("fi\n");
-            // CE：先挪开当前数据，换位失败原样退回
-            s.append("[ -d \"$CE\" ] && mv \"$CE\" \"$OLD/ce\"\n");
-            s.append("if ! mv \"$SCE\" \"$CE\"; then\n");
-            s.append("  [ -d \"$OLD/ce\" ] && mv \"$OLD/ce\" \"$CE\"\n");
-            s.append("  rm -rf \"$TMP\"; echo ERR_MV2; exit 1\n");
+        } else {
+            s.append("[ -d '").append(b.path).append("' ] || { echo ERR_NO_BAK; exit 1; }\n");
+            s.append("SCE='").append(b.path).append("'; SDE=''\n");
+        }
+
+        // CE：先挪开当前数据，换位失败原样退回
+        if (wantCe) {
+            s.append("if [ -d \"$SCE\" ]; then\n");
+            s.append("  [ -d \"$CE\" ] && mv \"$CE\" \"$OLD/ce\"\n");
+            s.append("  if ! mv \"$SCE\" \"$CE\"; then\n");
+            s.append("    [ -d \"$OLD/ce\" ] && mv \"$OLD/ce\" \"$CE\"\n");
+            s.append("    rm -rf \"$TMP\"; echo ERR_MV2; exit 1\n");
+            s.append("  fi\n");
             s.append("fi\n");
-            // DE：包里没有就保持现状
+        }
+        // DE：包里没有就保持现状
+        if (wantDe) {
             s.append("if [ -n \"$SDE\" ] && [ -d \"$SDE\" ]; then\n");
             s.append("  [ -d \"$DE\" ] && mv \"$DE\" \"$OLD/de\"\n");
             s.append("  mv \"$SDE\" \"$DE\" || { [ -d \"$OLD/de\" ] && mv \"$OLD/de\" \"$DE\"; }\n");
             s.append("fi\n");
-            s.append("rm -rf \"$TMP\"\n");
-        } else {
-            s.append("[ -d '").append(b.path).append("' ] || { echo ERR_NO_BAK; exit 1; }\n");
-            s.append("[ -d \"$CE\" ] && mv \"$CE\" \"$OLD/ce\"\n");
-            s.append("if ! mv '").append(b.path).append("' \"$CE\"; then\n");
-            s.append("  [ -d \"$OLD/ce\" ] && mv \"$OLD/ce\" \"$CE\"\n");
-            s.append("  echo ERR_MV2; exit 1\n");
+        }
+        // APK：装了就把新包按用户补上（先装再 install-existing 到目标空间）
+        if ((parts & PART_APK) != 0) {
+            s.append("if [ -d \"$TMP/").append(b.pkg).append("/apk\" ]; then\n");
+            s.append("  AD=\"$TMP/").append(b.pkg).append("/apk\"\n");
+            s.append("  [ -d \"$AD/$T\" ] && AD=\"$AD/$T\"\n");
+            s.append("  NA=$(ls \"$AD\"/*.apk 2>/dev/null | wc -l)\n");
+            s.append("  if [ \"$NA\" -eq 1 ]; then\n");
+            s.append("    pm install -r -d -t \"$(ls \"$AD\"/*.apk | head -1)\" >/dev/null 2>&1 || echo ERR_APK\n");
+            s.append("  elif [ \"$NA\" -gt 1 ]; then\n");
+            s.append("    pm install-multiple -r -d -t $(ls \"$AD\"/*.apk) >/dev/null 2>&1 || echo ERR_APK\n");
+            s.append("  fi\n");
+            s.append("  cmd package install-existing --user \"$T\" '").append(b.pkg).append("' >/dev/null 2>&1\n");
             s.append("fi\n");
         }
-        // 两处数据都要换属主与上下文
+        // 权限：包里有 perm.txt 就按目标用户重新授予
+        if ((parts & PART_PERM) != 0) {
+            s.append("if [ -f \"$TMP/").append(b.pkg).append("/perm.txt\" ]; then\n");
+            s.append("  while read -r K P; do\n");
+            s.append("    [ -z \"$K\" ] && continue\n");
+            s.append("    if [ \"$K\" = \"P\" ]; then pm grant --user \"$T\" '").append(b.pkg).append("' \"$P\" >/dev/null 2>&1\n");
+            s.append("    else appops set --user \"$T\" '").append(b.pkg).append("' \"$P\" allow >/dev/null 2>&1; fi\n");
+            s.append("  done < \"$TMP/").append(b.pkg).append("/perm.txt\"\n");
+            s.append("fi\n");
+        }
+        s.append("rm -rf \"$TMP\"\n");
+
+        // 换回的数据要换属主与上下文；APK 装的包由系统自己管
         s.append("for D in \"$CE\" \"$DE\"; do\n");
         s.append("  [ -d \"$D\" ] || continue\n");
         s.append("  chown -R ").append(uid).append(":").append(uid).append(" \"$D\"\n");
@@ -617,7 +753,10 @@ public final class AppData {
         s.append("echo CUB_OK\n");
 
         String out = Shell.execScript(s.toString());
-        if (out.contains("CUB_OK")) return "OK";
+        if (out.contains("CUB_OK")) {
+            if (out.contains("ERR_APK")) return "OK_NOAPK";
+            return "OK";
+        }
         for (String line : out.split("\n")) {
             String t = line.trim();
             if (t.startsWith("ERR")) return t;
@@ -628,6 +767,27 @@ public final class AppData {
 
     /** 备份根目录默认值；用户可在「数据备份」页改成 /sdcard 下任意目录 */
     public static final String DEFAULT_ROOT = "/sdcard/Download/CubClone-backup";
+
+    /** 备份内容：应用私有数据（CE） */
+    public static final int PART_CE = 1;
+    /** 设备加密存储（DE）：很多应用把账号、设备标识放这里，缺了恢复后容易掉登录态 */
+    public static final int PART_DE = 2;
+    /** 安装包（base + split） */
+    public static final int PART_APK = 4;
+    /** 用户授予过的运行时权限与 appops */
+    public static final int PART_PERM = 8;
+
+    /** 默认：数据 + 权限。APK 体积大、能重装，默认不带 */
+    public static final int PARTS_DEFAULT = PART_CE | PART_DE | PART_PERM;
+
+    public static int parts(android.content.Context c) {
+        return c.getSharedPreferences("clone", 0).getInt("backup_parts", PARTS_DEFAULT);
+    }
+
+    /** APK 是否按空间各存一份（默认只存一份：同一个包在 Android 上就是同一套文件） */
+    public static boolean apkAll(android.content.Context c) {
+        return c.getSharedPreferences("clone", 0).getBoolean("backup_apk_all", false);
+    }
 
     private static String rootDir = DEFAULT_ROOT;
 

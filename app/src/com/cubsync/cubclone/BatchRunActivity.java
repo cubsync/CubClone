@@ -8,32 +8,29 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.os.Bundle;
+import android.os.Handler;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 import android.widget.CheckBox;
 import android.widget.ImageButton;
-import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
- * 批量备份/恢复的**过程页**：选完应用点开始后跳到这里。
+ * 批量备份 / 恢复的**过程页**。
  *
- * 为什么单独一页：跑的时候要看到每一项的状态（等待 / 进行中 / 成功 / 失败 + 原因），
- * 跑完要能按成功、失败筛，还要能把整份日志拷走。挤在选择页里两头都做不好。
+ * 任务本体在 {@link BatchJob} 里，页面只是它的一个视图：随时可以退出去干别的，
+ * 任务继续跑；回来看（从「数据备份 → 日志」进）还是同一份进度和日志。
  *
- * 两个模式共用这一页，靠 intent 的 mode 区分：
- *   backup  → 传 pkgs + user
- *   restore → 传 paths（同空间同应用有多份时这里只留最新那份）
+ * 新建任务走 intent（backup: pkgs+user / restore: paths），
+ * 不传 extras 时就是**挂到当前任务上**看。
  */
 public class BatchRunActivity extends Activity {
 
@@ -41,65 +38,35 @@ public class BatchRunActivity extends Activity {
     public static final String EXTRA_PKGS = "pkgs";
     public static final String EXTRA_PATHS = "paths";
     public static final String EXTRA_USER = "user";
+    public static final String EXTRA_TARGET_USER = "target_user";
+    public static final String EXTRA_PARTS = "parts";
     public static final String MODE_BACKUP = "backup";
     public static final String MODE_RESTORE = "restore";
-
-    private static final int ST_WAIT = 0;
-    private static final int ST_RUN = 1;
-    private static final int ST_OK = 2;
-    private static final int ST_BAD = 3;
-    private static final int ST_SKIP = 4;
-
-    /** 上一次批量任务的日志，备份页从这里读 */
-    public static final String LOG_NAME = "batch-last.log";
 
     private static final int FILTER_ALL = 0;
     private static final int FILTER_OK = 1;
     private static final int FILTER_BAD = 2;
 
-    private static class Row {
-        String pkg;
-        int user;
-        String path;
-        int state = ST_WAIT;
-        String detail = "";
-        String time = "";
-
-        Row(String pkg, int user, String path) {
-            this.pkg = pkg;
-            this.user = user;
-            this.path = path;
-        }
-    }
-
-    private LinearLayout root;
-    private LinearLayout header;
     private TextView title;
     private TextView countTv;
     private ImageButton btnBack;
     private ProgressBar progress;
-    private LinearLayout filters;
+    private View filters;
     private TextView fAll, fOk, fBad;
     private ListView list;
     private TextView empty;
-    private View divider;
     private TextView summary;
     private TextView copyTv;
     private TextView doneTv;
     private TextView speedTv;
     private TextView logTv;
     private android.widget.ScrollView logScroll;
-    /** 屏幕上正在滚的那份日志，跑完直接复制它 */
-    private final StringBuilder logBuf = new StringBuilder();
-
-    private final List<Row> rows = new ArrayList<Row>();
     private final List<Integer> shown = new ArrayList<Integer>();
-    private final Map<String, String> labelCache = new java.util.HashMap<String, String>();
 
-    private boolean restore = false;
-    private boolean running = false;
-    private boolean finished = false;
+    private BatchJob job;
     private int filter = FILTER_ALL;
+    private int logSeen = 0;
+    private final Handler tick = new Handler();
 
     private Adapter adapter;
     private int fg = 0xFF1B1B1F;
@@ -108,13 +75,19 @@ public class BatchRunActivity extends Activity {
     private int green = 0xFF2E7D32;
     private int red = 0xFFC62828;
 
+    private final Runnable poll = new Runnable() {
+        public void run() {
+            render();
+            if (job != null && job.running) tick.postDelayed(this, 500);
+        }
+    };
+
     public void onCreate(Bundle b) {
         super.onCreate(b);
+        CloneStore.attach(this);
         AppData.loadRoot(sp());
         setContentView(R.layout.activity_batch_run);
 
-        root = findViewById(R.id.br_root);
-        header = findViewById(R.id.br_header);
         title = findViewById(R.id.br_title);
         countTv = findViewById(R.id.br_count);
         btnBack = findViewById(R.id.br_back);
@@ -125,18 +98,12 @@ public class BatchRunActivity extends Activity {
         fBad = findViewById(R.id.br_f_bad);
         list = findViewById(R.id.br_list);
         empty = findViewById(R.id.br_empty);
-        divider = findViewById(R.id.br_divider);
         summary = findViewById(R.id.br_summary);
         copyTv = findViewById(R.id.br_copy);
         doneTv = findViewById(R.id.br_done);
         speedTv = findViewById(R.id.br_speed);
         logTv = findViewById(R.id.br_log);
         logScroll = findViewById(R.id.br_log_scroll);
-
-        Intent it = getIntent();
-        restore = MODE_RESTORE.equals(it.getStringExtra(EXTRA_MODE));
-        if (restore) collectRestore(it.getStringArrayExtra(EXTRA_PATHS));
-        else collectBackup(it.getStringArrayExtra(EXTRA_PKGS), it.getIntExtra(EXTRA_USER, 0));
 
         btnBack.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { leave(); }
@@ -148,220 +115,150 @@ public class BatchRunActivity extends Activity {
             public void onClick(View v) { copyLog(); }
         });
         fAll.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { setFilter(FILTER_ALL); }
+            public void onClick(View v) { filter = FILTER_ALL; refilter(); }
         });
         fOk.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { setFilter(FILTER_OK); }
+            public void onClick(View v) { filter = FILTER_OK; refilter(); }
         });
         fBad.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { setFilter(FILTER_BAD); }
+            public void onClick(View v) { filter = FILTER_BAD; refilter(); }
         });
 
         adapter = new Adapter();
         list.setAdapter(adapter);
-        applyChrome();
-        title.setText(restore ? getString(R.string.batch_restore_title)
-                : getString(R.string.batch_backup_title));
 
-        if (rows.isEmpty()) {
-            empty.setVisibility(View.VISIBLE);
-            empty.setText(R.string.batch_nothing);
+        if (!applyIntent(getIntent())) job = BatchJob.get();   // 没带参数 = 挂到当前任务上看
+
+        applyChrome();
+        if (job == null || job.rows.isEmpty()) {
+            list.setVisibility(View.GONE);
+            progress.setVisibility(View.GONE);
             doneTv.setText(R.string.batch_close);
+            String saved = readSavedLog();
+            if (saved.length() > 0) {          // 进程重启过：至少还能看到上次那份
+                logTv.setText(saved);
+                logScroll.post(new Runnable() {
+                    public void run() { logScroll.fullScroll(View.FOCUS_UP); }
+                });
+            } else {
+                empty.setVisibility(View.VISIBLE);
+                empty.setText(job == null ? R.string.batch_log_none : R.string.batch_nothing);
+            }
             return;
         }
-        start();
-    }
-
-    /** 备份：pkgs 原样进来 */
-    private void collectBackup(String[] pkgs, int user) {
-        if (pkgs == null) return;
-        for (String p : pkgs) rows.add(new Row(p, user, ""));
+        render();
+        tick.post(poll);
     }
 
     /**
-     * 恢复：同空间同应用有多份时只留最新那份。
-     * 按 ts 从旧到新依次恢复，结果是旧的覆盖新的，等于白跑还丢了新数据。
+     * 带参数进来就起新任务；返回 true 表示起了新的。
+     * 单独拎出来是因为 Activity 已经存在时 am start 只会走 onNewIntent，
+     * 不处理的话第二次点「开始」什么都不会发生。
      */
-    private void collectRestore(String[] paths) {
-        if (paths == null) return;
-        LinkedHashMap<String, Row> newest = new LinkedHashMap<String, Row>();
-        for (String p : paths) {
-            AppData.Backup bk = AppData.fromPath(p);
-            if (bk == null) continue;
-            String key = bk.user + "/" + bk.pkg;
-            Row old = newest.get(key);
-            if (old == null) {
-                newest.put(key, new Row(bk.pkg, bk.user, p));
-            } else {
-                AppData.Backup ob = AppData.fromPath(old.path);
-                if (ob == null || bk.ts.compareTo(ob.ts) > 0) {
-                    newest.put(key, new Row(bk.pkg, bk.user, p));
-                }
-                // 被跳过的记一行，跑完在日志里能看到为什么没恢复
-                Row skip = new Row(bk.pkg, bk.user, p);
-                skip.state = ST_SKIP;
-                skip.detail = getString(R.string.batch_skip_older, bk.ts);
-                rows.add(skip);
-            }
+    private boolean applyIntent(Intent it) {
+        String mode = it.getStringExtra(EXTRA_MODE);
+        boolean backup = MODE_BACKUP.equals(mode), restore = MODE_RESTORE.equals(mode);
+        if (!backup && !restore) return false;
+        if (job != null && job.running) {
+            toast(getString(R.string.batch_busy));
+            return true;
         }
-        // 待恢复的放前面，跳过的跟在后面
-        List<Row> todo = new ArrayList<Row>(newest.values());
-        rows.addAll(0, todo);
+        if (backup) {
+            String[] pkgs = it.getStringArrayExtra(EXTRA_PKGS);
+            List<String> l = new ArrayList<String>();
+            if (pkgs != null) for (String p : pkgs) l.add(p);
+            job = BatchJob.startBackup(this, it.getIntExtra(EXTRA_USER, 0), l);
+        } else {
+            String[] paths = it.getStringArrayExtra(EXTRA_PATHS);
+            List<String> l = new ArrayList<String>();
+            if (paths != null) for (String p : paths) l.add(p);
+            job = BatchJob.startRestore(this, l,
+                    it.getIntExtra(EXTRA_TARGET_USER, -1),
+                    it.getIntExtra(EXTRA_PARTS,
+                            AppData.PART_CE | AppData.PART_DE | AppData.PART_APK | AppData.PART_PERM));
+        }
+        return true;
     }
 
-    // ── 跑 ───────────────────────────────────────────────────────────
-    private void start() {
-        running = true;
-        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        progress.setMax(rows.size());
-        progress.setProgress(0);
-        refreshChrome();
-        new Thread(new Runnable() {
-            public void run() {
-                final String algo = sp().getString("backup_algo", "zst");
-                final int lv = sp().getInt("backup_level_" + algo, AppData.defaultLevel(algo));
-                int ok = 0, bad = 0, skipDone = 0;
-                for (int i = 0; i < rows.size(); i++) {
-                    final Row r = rows.get(i);
-                    if (r.state == ST_SKIP) {
-                        skipDone++;
-                        continue;
-                    }
-                    r.state = ST_RUN;
-                    r.time = now();
-                    final int no = i + 1, total = rows.size();
-                    final Meter meter = new Meter(restore ? null
-                            : AppData.backupBase(r.user, r.pkg));
-                    refreshRow();
-                    scrollTo(i);
-                    runOnUiThread(new Runnable() {
-                        public void run() {
-                            title.setText(getString(restore ? R.string.batch_restoring_n
-                                    : R.string.batch_backing_n, no, total));
-                            countTv.setText(no + "/" + total);
-                            progress.setProgress(no);
-                        }
-                    });
-                    line(r.time + "  " + getString(R.string.batch_log_start) + "  "
-                            + labelOf(r.pkg) + "  " + spaceLabel(r.user));
-                    meter.begin();
-                    AppData.Backup bk = restore ? AppData.fromPath(r.path) : null;
-                    String res = restore
-                            ? (bk == null ? "ERR_PATH" : AppData.restore(bk, appIdOf(r.pkg)))
-                            : AppData.backupNow(r.user, r.pkg, algo, lv, meter.base);
-                    meter.end();
-                    r.time = now();
-                    if (res.startsWith("OK")) {
-                        r.state = ST_OK;
-                        r.detail = restore ? spaceLabel(r.user) + " · " + mmss(meter.ms())
-                                : fileName(res) + " · " + meter.summary();
-                        ok++;
-                    } else {
-                        r.state = ST_BAD;
-                        r.detail = res.replace("ERR ", "");
-                        bad++;
-                    }
-                    line(r.time + "  " + stateName(r.state) + "  " + labelOf(r.pkg)
-                            + "  " + r.detail);
-                    runOnUiThread(new Runnable() {
-                        public void run() {
-                            speedTv.setText("");
-                            speedTv.setVisibility(View.GONE);
-                        }
-                    });
-                    refreshRow();
-                }
-                final int fok = ok, fbad = bad;
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        running = false;
-                        finished = true;
-                        getWindow().clearFlags(
-                                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                        title.setText(restore ? getString(R.string.batch_restore_title)
-                                : getString(R.string.batch_backup_title));
-                        countTv.setText("");
-                        saveLog();
-                        progress.setVisibility(View.GONE);
-                        speedTv.setVisibility(View.GONE);
-                        filters.setVisibility(View.VISIBLE);
-                        doneTv.setText(R.string.batch_close);
-                        line("—— " + summaryLine() + " ——");
-                        // 有失败就直接筛到失败那档，别让人再找一遍
-                        setFilter(fbad > 0 ? FILTER_BAD : FILTER_ALL);
-                        if (fbad == 0) {
-                            toast(getString(R.string.batch_done_all_ok, fok));
-                        } else {
-                            toast(getString(R.string.batch_done_summary, fok, fbad));
-                        }
-                        refreshChrome();
-                    }
-                });
-            }
-        }).start();
-    }
-
-    private int appIdOf(String pkg) {
-        try {
-            return getPackageManager().getApplicationInfo(pkg, 0).uid % 100000;
-        } catch (Throwable t) {
-            return -1;
+    protected void onNewIntent(Intent it) {
+        super.onNewIntent(it);
+        setIntent(it);
+        if (applyIntent(it)) {
+            logSeen = 0;
+            render();
+            tick.removeCallbacks(poll);
+            tick.post(poll);
         }
     }
 
-    /** "OK <路径>|<算法>" 只取文件名 */
-    private String fileName(String r) {
-        String rest = r.substring(3).trim();
-        int bar = rest.lastIndexOf('|');
-        String p = bar > 0 ? rest.substring(0, bar) : rest;
-        return p.substring(p.lastIndexOf('/') + 1);
+    protected void onDestroy() {
+        tick.removeCallbacks(poll);
+        super.onDestroy();
     }
 
-    // ── 列表 ─────────────────────────────────────────────────────────
-    private void setFilter(int f) {
-        filter = f;
+    // ── 渲染 ─────────────────────────────────────────────────────────
+    private void render() {
+        if (job == null) return;
+        boolean run = job.running;
+
+        progress.setVisibility(run ? View.VISIBLE : View.GONE);
+        progress.setMax(job.rows.size());
+        progress.setProgress(run ? Math.max(1, job.done) : job.rows.size());
+        countTv.setText(run ? Math.min(job.done + 1, job.rows.size()) + "/" + job.rows.size() : "");
+        title.setText(run && job.head.length() > 0 ? job.head
+                : getString(job.restore ? R.string.batch_restore_title : R.string.batch_backup_title));
+
+        speedTv.setVisibility(run && job.speed.length() > 0 ? View.VISIBLE : View.GONE);
+        speedTv.setText(job.speed);
+
+        filters.setVisibility(run ? View.GONE : View.VISIBLE);
+        summary.setText(run ? getString(R.string.batch_running_hint) : job.summary);
+        doneTv.setText(R.string.batch_close);
+
+        String log = job.logText();
+        if (log.length() != logSeen) {
+            logSeen = log.length();
+            logTv.setText(log);
+            logScroll.post(new Runnable() {
+                public void run() { logScroll.fullScroll(View.FOCUS_DOWN); }
+            });
+        }
         refilter();
-        refreshChrome();
     }
 
     private void refilter() {
         shown.clear();
-        for (int i = 0; i < rows.size(); i++) {
-            Row r = rows.get(i);
-            if (filter == FILTER_OK && r.state != ST_OK) continue;
-            if (filter == FILTER_BAD && r.state != ST_BAD) continue;
-            shown.add(Integer.valueOf(i));
+        if (job != null) {
+            for (int i = 0; i < job.rows.size(); i++) {
+                int st = job.rows.get(i).state;
+                if (filter == FILTER_OK && st != BatchJob.ST_OK) continue;
+                if (filter == FILTER_BAD && st != BatchJob.ST_BAD) continue;
+                shown.add(Integer.valueOf(i));
+            }
         }
-        adapter.notifyDataSetChanged();
+        if (adapter != null) adapter.notifyDataSetChanged();
         boolean none = shown.isEmpty();
-        empty.setVisibility(none ? View.VISIBLE : View.GONE);
-        list.setVisibility(none ? View.GONE : View.VISIBLE);
-        if (none) {
-            empty.setText(filter == FILTER_BAD ? R.string.batch_no_fail
-                    : filter == FILTER_OK ? R.string.batch_no_ok : R.string.batch_nothing);
+        if (job != null && !job.rows.isEmpty()) {
+            empty.setVisibility(none ? View.VISIBLE : View.GONE);
+            list.setVisibility(none ? View.GONE : View.VISIBLE);
+            if (none) {
+                empty.setText(filter == FILTER_BAD ? R.string.batch_no_fail
+                        : filter == FILTER_OK ? R.string.batch_no_ok : R.string.batch_nothing);
+            }
         }
+        chrome();
     }
 
-    private void refreshRow() {
-        runOnUiThread(new Runnable() {
-            public void run() { adapter.notifyDataSetChanged(); }
-        });
-    }
-
-    private void refreshChrome() {
-        int ok = 0, bad = 0, skip = 0;
-        for (Row r : rows) {
-            if (r.state == ST_OK) ok++;
-            else if (r.state == ST_BAD) bad++;
-            else if (r.state == ST_SKIP) skip++;
+    private void chrome() {
+        int ok = 0, bad = 0;
+        if (job != null) {
+            for (BatchJob.Row r : job.rows) {
+                if (r.state == BatchJob.ST_OK) ok++;
+                else if (r.state == BatchJob.ST_BAD) bad++;
+            }
         }
-        if (finished) {
-            summary.setText(getString(R.string.batch_done_summary, ok, bad)
-                    + (skip > 0 ? " · " + getString(R.string.batch_skipped_n, skip) : ""));
-        } else {
-            summary.setText(getString(R.string.batch_running_hint));
-        }
-        fAll.setText(getString(R.string.batch_filter_all, rows.size()));
+        int total = job == null ? 0 : job.rows.size();
+        fAll.setText(getString(R.string.batch_filter_all, total));
         fOk.setText(getString(R.string.batch_filter_ok, ok));
         fBad.setText(getString(R.string.batch_filter_bad, bad));
         int on = accent, off = sec;
@@ -376,222 +273,35 @@ public class BatchRunActivity extends Activity {
         fBad.invalidate();
     }
 
-    // ── 日志 ─────────────────────────────────────────────────────────
-    private String now() {
-        return new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
-                .format(new java.util.Date());
-    }
-
-    private String buildLog() {
-        StringBuilder sb = new StringBuilder();
-        sb.append(restore ? getString(R.string.batch_restore_title)
-                : getString(R.string.batch_backup_title))
-                .append("  ")
-                .append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss",
-                        java.util.Locale.US).format(new java.util.Date()))
-                .append("\n\n");
-        for (Row r : rows) {
-            sb.append(r.time.length() > 0 ? r.time : "--:--:--").append("  ")
-                    .append(stateName(r.state)).append("  ")
-                    .append(labelOf(r.pkg)).append("  ")
-                    .append(spaceLabel(r.user));
-            if (r.detail.length() > 0) sb.append("  ").append(r.detail);
-            sb.append('\n');
-        }
-        sb.append('\n').append(summaryLine()).append('\n');
-        return sb.toString();
-    }
-
-    private String summaryLine() {
-        int ok = 0, bad = 0, skip = 0;
-        for (Row r : rows) {
-            if (r.state == ST_OK) ok++;
-            else if (r.state == ST_BAD) bad++;
-            else if (r.state == ST_SKIP) skip++;
-        }
-        return getString(R.string.batch_done_summary, ok, bad)
-                + (skip > 0 ? " · " + getString(R.string.batch_skipped_n, skip) : "");
-    }
-
-    /** 落一份到应用私有目录，离开页面后还能在「数据备份」页的「日志」里翻到 */
-    private void saveLog() {
+    private String readSavedLog() {
         try {
-            java.io.File f = new java.io.File(getFilesDir(), LOG_NAME);
-            java.io.FileWriter w = new java.io.FileWriter(f, false);
-            w.write(buildLog());
-            w.close();
-        } catch (Throwable ignored) {
+            java.io.File f = new java.io.File(getFilesDir(), BatchJob.LOG_NAME);
+            if (!f.exists()) return "";
+            java.io.BufferedReader r = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(new java.io.FileInputStream(f), "UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = r.readLine()) != null) sb.append(line).append('\n');
+            r.close();
+            return sb.toString().trim();
+        } catch (Throwable t) {
+            return "";
         }
     }
 
-    private void scrollTo(final int index) {
-        runOnUiThread(new Runnable() {
-            public void run() {
-                int pos = shown.indexOf(Integer.valueOf(index));
-                if (pos >= 0) list.smoothScrollToPosition(pos);
-            }
-        });
-    }
-
+    // ── 动作 ─────────────────────────────────────────────────────────
     private void copyLog() {
-        String text = buildLog() + "\n" + logBuf.toString();
+        if (job == null) return;
+        String text = job.headerLine() + "\n\n" + job.logText() + "\n\n" + job.summary;
         ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         cm.setPrimaryClip(ClipData.newPlainText("CubClone", text));
         toast(getString(R.string.batch_log_copied));
     }
 
-    private String stateName(int st) {
-        if (st == ST_OK) return getString(R.string.batch_state_ok);
-        if (st == ST_BAD) return getString(R.string.batch_state_bad);
-        if (st == ST_SKIP) return getString(R.string.batch_state_skip);
-        if (st == ST_RUN) return getString(R.string.batch_state_running);
-        return getString(R.string.batch_state_wait);
-    }
-
-    // ── 实时日志 ─────────────────────────────────────────────────────
-    /** 追加一行到屏幕上的日志并滚到底；跑的过程中就能看见，不用等结束 */
-    private void line(final String text) {
-        runOnUiThread(new Runnable() {
-            public void run() {
-                if (logBuf.length() > 0) logBuf.append('\n');
-                logBuf.append(text);
-                logTv.setText(logBuf.toString());
-                logScroll.post(new Runnable() {
-                    public void run() {
-                        logScroll.fullScroll(View.FOCUS_DOWN);
-                    }
-                });
-            }
-        });
-    }
-
-    /**
-     * 备份时的测速：每秒读一次目标文件大小。
-     * 备份本身是 root 一次跑完的 tar，应用这边拿不到进度回调，
-     * 所以反过来量产物——只读、不影响备份。恢复没有产物可量，只报已用时间。
-     */
-    private class Meter {
-        final String base;
-        private volatile boolean stop;
-        private volatile long bytes;
-        private final long t0 = System.currentTimeMillis();
-        private Thread th;
-
-        Meter(String base) { this.base = base; }
-
-        void begin() {
-            runOnUiThread(new Runnable() {
-                public void run() { speedTv.setVisibility(View.VISIBLE); }
-            });
-            th = new Thread(new Runnable() {
-                public void run() { loop(); }
-            });
-            th.setDaemon(true);
-            th.start();
-        }
-
-        void end() { stop = true; }
-
-        long ms() { return System.currentTimeMillis() - t0; }
-
-        /** 完成时写进那一行的摘要：大小 · 平均速度 · 耗时 */
-        String summary() {
-            long m = Math.max(1, ms());
-            double avg = bytes * 1000.0 / m;
-            return size(bytes) + " · " + size((long) avg) + "/s · " + mmss(m);
-        }
-
-        private void loop() {
-            final String cmd = "B='" + base + "'; "
-                    + "for e in .tar.zst .tar.gz .tar.bz2 .tar; do "
-                    + "S=$(nsenter -t 1 -m -- stat -c %s \"$B$e\" 2>/dev/null"
-                    + " || stat -c %s \"$B$e\" 2>/dev/null); "
-                    + "[ -n \"$S\" ] && { echo \"$S\"; exit 0; }; done; echo 0";
-            long lastB = 0, lastT = System.currentTimeMillis();
-            double ema = 0;
-            while (!stop) {
-                try {
-                    Thread.sleep(1000);
-                } catch (Throwable t) {
-                    return;
-                }
-                if (stop) return;
-                if (base == null) {          // 恢复：只有耗时
-                    final String t = getString(R.string.batch_elapsed, mmss(ms()));
-                    runOnUiThread(new Runnable() {
-                        public void run() {
-                            if (running) speedTv.setText(t);
-                        }
-                    });
-                    continue;
-                }
-                long cur = num(Shell.execQuick(cmd));
-                long tn = System.currentTimeMillis();
-                double dt = (tn - lastT) / 1000.0;
-                if (dt > 0 && cur >= lastB) {
-                    double inst = (cur - lastB) / dt;
-                    ema = ema == 0 ? inst : ema * 0.6 + inst * 0.4;
-                }
-                lastB = cur;
-                lastT = tn;
-                bytes = cur;
-                final String txt = getString(R.string.batch_speed,
-                        size((long) ema), size(cur), mmss(ms()));
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        if (running) speedTv.setText(txt);
-                    }
-                });
-            }
-        }
-    }
-
-    private static long num(String s) {
-        try {
-            return Long.parseLong(s.trim());
-        } catch (Throwable t) {
-            return 0;
-        }
-    }
-
-    private static String size(long b) {
-        if (b < 1024) return b + " B";
-        if (b < 1024L * 1024L) return String.format(java.util.Locale.US, "%.0f KB", b / 1024.0);
-        if (b < 1024L * 1024L * 1024L) {
-            return String.format(java.util.Locale.US, "%.1f MB", b / 1048576.0);
-        }
-        return String.format(java.util.Locale.US, "%.2f GB", b / 1073741824.0);
-    }
-
-    private static String mmss(long ms) {
-        long s = ms / 1000;
-        long m = s / 60;
-        long r = s % 60;
-        return m > 0 ? String.format(java.util.Locale.US, "%d:%02d", m, r)
-                : String.format(java.util.Locale.US, "%ds", r);
-    }
-
-    // ── 返回 ─────────────────────────────────────────────────────────
-    /**
-     * 跑着的时候也能走，但不能一声不吭：已经备份好的文件都在，
-     * 只是这一轮剩下的不再做。日志会留下已经跑完的那部分。
-     */
+    /** 退出页面 ≠ 停止任务：任务在进程里继续跑，回来还是这一页 */
     private void leave() {
-        if (!running) {
-            finish();
-            return;
-        }
-        new android.app.AlertDialog.Builder(this)
-                .setTitle(R.string.batch_leave_title)
-                .setMessage(R.string.batch_leave_msg)
-                .setPositiveButton(R.string.batch_leave_ok, new android.content.DialogInterface.OnClickListener() {
-                    public void onClick(android.content.DialogInterface d, int w) {
-                        saveLog();
-                        finish();
-                    }
-                })
-                .setNegativeButton(R.string.batch_leave_stay, null)
-                .show();
+        if (job != null && job.running) toast(getString(R.string.batch_leave_bg));
+        finish();
     }
 
     public void onBackPressed() {
@@ -599,25 +309,6 @@ public class BatchRunActivity extends Activity {
     }
 
     // ── 适配 ─────────────────────────────────────────────────────────
-    private String labelOf(String pkg) {
-        String c = labelCache.get(pkg);
-        if (c != null) return c;
-        String r;
-        try {
-            android.content.pm.PackageManager pm = getPackageManager();
-            r = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
-        } catch (Throwable t) {
-            r = pkg;
-        }
-        labelCache.put(pkg, r);
-        return r;
-    }
-
-    private String spaceLabel(int u) {
-        String n = u == 0 ? getString(R.string.space_main) : CloneStore.nameOf(this, u);
-        return n + " (" + u + ")";
-    }
-
     private class Adapter extends BaseAdapter {
         public int getCount() { return shown.size(); }
 
@@ -630,7 +321,7 @@ public class BatchRunActivity extends Activity {
                 v = LayoutInflater.from(BatchRunActivity.this)
                         .inflate(R.layout.item_backup, parent, false);
             }
-            Row r = rows.get(shown.get(i).intValue());
+            BatchJob.Row r = job.rows.get(shown.get(i).intValue());
             TextView t1 = v.findViewById(R.id.item_title);
             TextView t2 = v.findViewById(R.id.item_sub);
             TextView more = v.findViewById(R.id.item_more);
@@ -640,18 +331,33 @@ public class BatchRunActivity extends Activity {
             t1.setTextColor(fg);
             StringBuilder sub = new StringBuilder();
             if (r.time.length() > 0) sub.append(r.time).append("  ");
-            sub.append(stateName(r.state));
-            if (r.state != ST_WAIT && r.state != ST_RUN) {
+            sub.append(job.stateName(r.state));
+            if (r.state != BatchJob.ST_WAIT && r.state != BatchJob.ST_RUN) {
                 sub.append(" · ").append(spaceLabel(r.user));
             }
             if (r.detail.length() > 0) sub.append(" · ").append(r.detail);
             t2.setText(sub.toString());
-            t2.setTextColor(r.state == ST_BAD ? red : r.state == ST_OK ? green : sec);
+            t2.setTextColor(r.state == BatchJob.ST_BAD ? red
+                    : r.state == BatchJob.ST_OK ? green : sec);
             more.setVisibility(View.GONE);
             check.setVisibility(View.GONE);
             v.setOnClickListener(null);
             return v;
         }
+    }
+
+    private String labelOf(String pkg) {
+        try {
+            android.content.pm.PackageManager pm = getPackageManager();
+            return pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
+        } catch (Throwable t) {
+            return pkg;
+        }
+    }
+
+    private String spaceLabel(int u) {
+        String n = u == 0 ? getString(R.string.space_main) : CloneStore.nameOf(this, u);
+        return n + " (" + u + ")";
     }
 
     // ── 配色 ─────────────────────────────────────────────────────────
@@ -678,12 +384,12 @@ public class BatchRunActivity extends Activity {
         green = night ? 0xFF7BC67E : 0xFF2E7D32;
         red = night ? 0xFFFF8A80 : 0xFFC62828;
 
-        root.setBackgroundColor(bg);
-        header.setBackgroundColor(bg);
+        findViewById(R.id.br_root).setBackgroundColor(bg);
+        findViewById(R.id.br_header).setBackgroundColor(bg);
+        findViewById(R.id.br_divider).setBackgroundColor(line);
         title.setTextColor(fg);
         btnBack.setColorFilter(fg);
         countTv.setTextColor(sec);
-        divider.setBackgroundColor(line);
         empty.setTextColor(sec);
         list.setBackgroundColor(bg);
         summary.setTextColor(sec);
@@ -692,7 +398,6 @@ public class BatchRunActivity extends Activity {
         speedTv.setTextColor(sec);
         logTv.setTextColor(sec);
         ((TextView) findViewById(R.id.br_log_title)).setTextColor(sec);
-        refreshChrome();
     }
 
     private void toast(String m) {

@@ -56,6 +56,9 @@ public class BackupActivity extends Activity {
     private TextView dirLabel;
     private TextView dirValue;
     private TextView dirArrow;
+    /** 备份内容那一行（数据 / 设备数据 / APK / 权限） */
+    private LinearLayout partsRow;
+    private TextView partsLabel, partsValue, partsArrow;
     private TextView scopeTv;
     /** 多选时显示：和全选放一起，不再塞进 ⋮ 菜单 */
     private TextView selInv;
@@ -111,10 +114,17 @@ public class BackupActivity extends Activity {
         dirLabel = findViewById(R.id.bk_dir_label);
         dirValue = findViewById(R.id.bk_dir_value);
         dirArrow = findViewById(R.id.bk_dir_arrow);
+        partsRow = findViewById(R.id.bk_parts_row);
+        partsLabel = findViewById(R.id.bk_parts_label);
+        partsValue = findViewById(R.id.bk_parts_value);
+        partsArrow = findViewById(R.id.bk_parts_arrow);
         scopeTv = findViewById(R.id.bk_scope);
         selInv = findViewById(R.id.bk_sel_inv);
         dirValue.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { pickBackupDir(); }
+        });
+        partsRow.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { pickParts(); }
         });
         dirRow.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { pickBackupDir(); }
@@ -216,6 +226,11 @@ public class BackupActivity extends Activity {
                     if (!"none".equals(cur) && !usable.contains(cur)) {
                         sp().edit().putString("backup_algo",
                                 AppData.nextUsable(cur, usable)).apply();
+                    } else if (usable.contains("zst") && !sp().getBoolean("algo_user_set", false)
+                            && !"zst".equals(cur)) {
+                        // 以前没有内置 zstd，只能落在 gzip 上；那是降级不是用户的选择。
+                        // 用户自己挑过算法（algo_user_set）就不再动他的设置。
+                        sp().edit().putString("backup_algo", "zst").apply();
                     }
                     // 预热空间名缓存，列表每行就不用再起一次 shell
                     CloneStore.listSpaceUids();
@@ -286,9 +301,13 @@ public class BackupActivity extends Activity {
         dirLabel.setTextColor(fg);
         dirValue.setTextColor(sec);
         dirArrow.setTextColor(sec);
+        partsLabel.setTextColor(fg);
+        partsValue.setTextColor(sec);
+        partsArrow.setTextColor(sec);
         scopeTv.setTextColor(sec);
         selMore.setTextColor(fg);
         renderDir();
+        renderParts();
         if (hint.getVisibility() == View.VISIBLE) hint.setTextColor(sec);
     }
 
@@ -328,6 +347,84 @@ public class BackupActivity extends Activity {
     private String spaceLabel(int u) {
         String n = u == 0 ? getString(R.string.space_main) : CloneStore.nameOf(this, u);
         return n + " (" + u + ")";
+    }
+
+    /**
+     * 备份内容摘要。行里放不下长句，只报勾了哪几项；APK 那份数在对话框里说。
+     */
+    private void renderParts() {
+        int p = AppData.parts(this);
+        java.util.List<String> on = new java.util.ArrayList<String>();
+        if ((p & AppData.PART_CE) != 0) on.add(getString(R.string.backup_parts_ce_short));
+        if ((p & AppData.PART_DE) != 0) on.add(getString(R.string.backup_parts_de_short));
+        if ((p & AppData.PART_APK) != 0) on.add(getString(R.string.backup_parts_apk_short));
+        if ((p & AppData.PART_PERM) != 0) on.add(getString(R.string.backup_parts_perm_short));
+        StringBuilder sb = new StringBuilder();
+        for (String x : on) {
+            if (sb.length() > 0) sb.append(" + ");
+            sb.append(x);
+        }
+        partsValue.setText(sb.length() == 0 ? getString(R.string.backup_parts_none) : sb.toString());
+        scopeTv.setText(getString(R.string.backup_parts_note));
+    }
+
+    /** 勾备份内容：数据 / 设备数据 / APK / 权限，外加「APK 按空间各存一份」 */
+    private void pickParts() {
+        final int cur = AppData.parts(this);
+        final boolean all = AppData.apkAll(this);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        box.setPadding(pad, pad / 2, pad, 0);
+
+        final CheckBox ce = pickBox(R.string.backup_parts_ce, (cur & AppData.PART_CE) != 0);
+        final CheckBox de = pickBox(R.string.backup_parts_de, (cur & AppData.PART_DE) != 0);
+        final CheckBox apk = pickBox(R.string.backup_parts_apk, (cur & AppData.PART_APK) != 0);
+        final CheckBox perm = pickBox(R.string.backup_parts_perm, (cur & AppData.PART_PERM) != 0);
+        final CheckBox apkAll = pickBox(R.string.backup_apk_all, all);
+        apkAll.setPadding(pad, 0, 0, 0);
+        apkAll.setEnabled((cur & AppData.PART_APK) != 0);
+        apk.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(android.widget.CompoundButton b, boolean on) {
+                apkAll.setEnabled(on);
+                apkAll.setAlpha(on ? 1f : 0.45f);
+            }
+        });
+        apkAll.setAlpha((cur & AppData.PART_APK) != 0 ? 1f : 0.45f);
+
+        box.addView(ce);
+        box.addView(de);
+        box.addView(apk);
+        box.addView(apkAll);
+        box.addView(perm);
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.backup_parts_title)
+                .setView(box)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        int p = 0;
+                        if (ce.isChecked()) p |= AppData.PART_CE;
+                        if (de.isChecked()) p |= AppData.PART_DE;
+                        if (apk.isChecked()) p |= AppData.PART_APK;
+                        if (perm.isChecked()) p |= AppData.PART_PERM;
+                        if (p == 0) p = AppData.PART_CE;     // 全不勾就没东西可备了
+                        sp().edit().putInt("backup_parts", p)
+                                .putBoolean("backup_apk_all", apk.isChecked() && apkAll.isChecked())
+                                .apply();
+                        renderParts();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private CheckBox pickBox(int text, boolean on) {
+        CheckBox c = new CheckBox(this);
+        c.setText(text);
+        c.setTextSize(15);
+        c.setChecked(on);
+        return c;
     }
 
     private void renderAlgo() {
@@ -428,7 +525,8 @@ public class BackupActivity extends Activity {
 
     private void saveAlgo(String algo, int level) {
         sp().edit().putString("backup_algo", algo)
-                .putInt("backup_level_" + algo, level).apply();
+                .putInt("backup_level_" + algo, level)
+                .putBoolean("algo_user_set", true).apply();
         renderAlgo();
         toast(getString(R.string.backup_algo_saved, algoSummary()));
     }
@@ -712,23 +810,24 @@ public class BackupActivity extends Activity {
      */
         /** 批量恢复走独立过程页：那里有进度、逐项状态、失败筛选和日志 */
     private void jobManyRestore(final List<AppData.Backup> sel) {
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.backup_sel_restore)
-                .setMessage(getString(R.string.batch_restore_confirm, sel.size()))
-                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int w) {
-                        String[] paths = new String[sel.size()];
-                        for (int i = 0; i < sel.size(); i++) paths[i] = sel.get(i).path;
-                        android.content.Intent it = new android.content.Intent(
-                                BackupActivity.this, BatchRunActivity.class);
-                        it.putExtra(BatchRunActivity.EXTRA_MODE, BatchRunActivity.MODE_RESTORE);
-                        it.putExtra(BatchRunActivity.EXTRA_PATHS, paths);
-                        startActivity(it);
-                        exitMulti();
-                    }
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
+        if (BatchJob.get() != null && BatchJob.get().running) {
+            toast(getString(R.string.batch_busy));
+            return;
+        }
+        RestoreDialog.show(this, sel.get(0).user, sel.size(), new RestoreDialog.OnOk() {
+            public void onOk(int targetUser, int parts) {
+                String[] paths = new String[sel.size()];
+                for (int i = 0; i < sel.size(); i++) paths[i] = sel.get(i).path;
+                android.content.Intent it = new android.content.Intent(
+                        BackupActivity.this, BatchRunActivity.class);
+                it.putExtra(BatchRunActivity.EXTRA_MODE, BatchRunActivity.MODE_RESTORE);
+                it.putExtra(BatchRunActivity.EXTRA_PATHS, paths);
+                it.putExtra(BatchRunActivity.EXTRA_TARGET_USER, targetUser);
+                it.putExtra(BatchRunActivity.EXTRA_PARTS, parts);
+                startActivity(it);
+                exitMulti();
+            }
+        });
     }
 
     private void jobManyDelete(final List<AppData.Backup> sel) {
@@ -893,7 +992,12 @@ public class BackupActivity extends Activity {
                 .setItems(acts, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
                         if (which == 0) {
-                            confirm(R.string.backup_restore, R.string.backup_restore_msg, b, 0);
+                            RestoreDialog.show(BackupActivity.this, b.user, 1,
+                                    new RestoreDialog.OnOk() {
+                                        public void onOk(int targetUser, int parts) {
+                                            jobRestore(b, targetUser, parts);
+                                        }
+                                    });
                         } else if (canZip && which == 1) {
                             confirm(R.string.backup_compress,
                                     R.string.backup_compress_msg, b, 3);
@@ -925,7 +1029,7 @@ public class BackupActivity extends Activity {
         new Thread(new Runnable() {
             public void run() {
                 String r;
-                if (kind == 0) r = AppData.restore(b, appIdOf(b.pkg));
+                if (kind == 0) r = AppData.restore(b, appIdOf(b.pkg), b.user, AppData.PARTS_DEFAULT);
                 else if (kind == 3) r = AppData.compress(b, currentAlgo(), currentLevel(currentAlgo()));
                 else r = AppData.delete(b);
                 final String fr = r;
@@ -954,53 +1058,34 @@ public class BackupActivity extends Activity {
         }).start();
     }
 
-    /** 上一次批量备份/恢复的日志，存在应用私有目录，离开过程页也留得住 */
-    private void showLog() {
-        String text = null;
-        try {
-            java.io.File f = new java.io.File(getFilesDir(), BatchRunActivity.LOG_NAME);
-            if (f.exists()) {
-                java.io.BufferedReader r = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(new java.io.FileInputStream(f), "UTF-8"));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = r.readLine()) != null) sb.append(line).append('\n');
-                r.close();
-                text = sb.toString().trim();
-            }
-        } catch (Throwable ignored) {
-        }
-        if (text == null || text.length() == 0) {
-            toast(getString(R.string.backup_log_empty));
-            return;
-        }
-        final String ft = text;
-        android.widget.ScrollView sv = new android.widget.ScrollView(this);
-        TextView tv = new TextView(this);
-        int pad = (int) (16 * getResources().getDisplayMetrics().density);
-        tv.setPadding(pad, pad, pad, pad);
-        tv.setTextSize(12);
-        tv.setTextIsSelectable(true);
-        tv.setTypeface(android.graphics.Typeface.MONOSPACE);
-        tv.setText(text);
-        tv.setTextColor(fg);
-        sv.addView(tv);
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.backup_log_title)
-                .setView(sv)
-                .setPositiveButton(android.R.string.ok, null)
-                .setNeutralButton(R.string.batch_copy_log, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int w) {
-                        android.content.ClipboardManager cm = (android.content.ClipboardManager)
-                                getSystemService(CLIPBOARD_SERVICE);
-                        cm.setPrimaryClip(android.content.ClipData.newPlainText("CubClone", ft));
-                        toast(getString(R.string.batch_log_copied));
+    /** 单条恢复：按用户选的空间与内容来 */
+    private void jobRestore(final AppData.Backup b, final int targetUser, final int parts) {
+        toast(getString(R.string.backup_working));
+        new Thread(new Runnable() {
+            public void run() {
+                final String r = AppData.restore(b, appIdOf(b.pkg), targetUser, parts);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (r.startsWith("OK")) {
+                            toast(r.equals("OK_NOAPK")
+                                    ? getString(R.string.backup_restore_ok_noapk)
+                                    : getString(R.string.backup_restore_ok));
+                            reloadList();
+                        } else {
+                            toast(getString(R.string.backup_fail, r));
+                        }
                     }
-                })
-                .show();
+                });
+            }
+        }).start();
     }
 
-    // ── 备份目录 ─────────────────────────────────────────────────────
+    /** 「日志」= 回到批量任务那一页：还在跑就直接看进度，跑完了看结果，进程重启过就看上次落盘的 */
+    private void showLog() {
+        startActivity(new android.content.Intent(this, BatchRunActivity.class));
+    }
+
+    // ── 备份目录 ─────────────────────────────────────────────
     private void renderDir() {
         if (dirValue != null) dirValue.setText(AppData.root());
     }

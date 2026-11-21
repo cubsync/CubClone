@@ -204,8 +204,47 @@
         android:paddingEnd="16dp"
         android:paddingTop="2dp"
         android:paddingBottom="6dp"
-        android:text="@string/backup_scope_note"
+        android:text="@string/backup_parts_note"
         android:textSize="11sp" />
+
+    <LinearLayout
+        android:id="@+id/bk_parts_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="4dp"
+        android:background="?android:attr/selectableItemBackground">
+
+        <TextView
+            android:id="@+id/bk_parts_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/backup_parts_row"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/bk_parts_value"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:gravity="end"
+            android:maxLines="1"
+            android:ellipsize="start"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/bk_parts_arrow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:text="&#8250;"
+            android:textSize="18sp" />
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/bk_algo_row"

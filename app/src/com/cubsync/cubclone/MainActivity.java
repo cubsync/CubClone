@@ -1084,15 +1084,14 @@ public class MainActivity extends Activity {
         launch(it.c, it.g);
     }
 
+    /**
+     * 网格长按：和列表**走同一套菜单**。
+     * 以前网格长按应用图标直接进多选，列表却是弹菜单，同一个手势两种结果；
+     * 多选现在是菜单里的第一项，两个视图都从那里进。
+     */
     private void onGridLongClick(FlatItem it) {
         if (it.c == null) {
-            restoreGrid = gridMode();   // 记住原模式，退出多选时恢复（别把用户网格切没了）
-            setGridMode(false);
-            multi = true;
-            selected.clear();
-            selected.add(it.g.pkg);
-            multiBar.setVisibility(View.VISIBLE);
-            render();
+            baseMenu(it.g);
             return;
         }
         cloneMenu(it.c, it.g);
@@ -1832,6 +1831,7 @@ public class MainActivity extends Activity {
             items.add(getString(R.string.menu_hide)); acts.add(5);
         }
         items.add(getString(R.string.menu_open)); acts.add(2);
+        items.add(getString(R.string.menu_app_info)); acts.add(8);
         // 需要 root 的入口按 Root 开关出现；只用 Shizuku 时这里什么都没有
         if (Root.on(this, Root.CLONE)) { items.add(getString(R.string.menu_copy_data)); acts.add(6); }
         if (Root.on(this, Root.BACKUP)) { items.add(getString(R.string.menu_backup_data)); acts.add(7); }
@@ -1846,6 +1846,7 @@ public class MainActivity extends Activity {
                                 else if (a == 4) disableClone(c, g);
                                 else if (a == 5) hideClone(c, g);
                                 else if (a == 2) launch(c, g);
+                                else if (a == 8) openAppInfo(g.pkg);
                                 else if (a == 6) pickCopyTarget(g, c.uid);
                                 else if (a == 7) backupData(g, c.uid);
                                 else confirmRemove(c, g);
@@ -1883,6 +1884,10 @@ public class MainActivity extends Activity {
                             public void onClick(DialogInterface d, int which) {
                                 int a = acts.get(which).intValue();
                                 if (a == 1) {
+                                    if (gridMode()) {   // 多选只在列表视图里做，记住原模式好退回来
+                                        restoreGrid = true;
+                                        setGridMode(false);
+                                    }
                                     multi = true;
                                     selected.clear();
                                     selected.add(g.pkg);

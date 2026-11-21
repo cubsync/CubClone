@@ -172,9 +172,9 @@ public class RemoveClonesActivity extends Activity {
         LinearLayout tools = new LinearLayout(this);
         tools.setOrientation(LinearLayout.HORIZONTAL);
         tools.setPadding(dp(12), 0, dp(12), dp(4));
-        // 「全选」只勾空壳。有数据的一律要一个个点——这里删掉就真没了，不给一键全清。
+        // 全选就是全选（含数据）；只要空壳用右边那个按钮。删掉的确认框会写明数据量。
         tools.addView(toolBtn(R.string.rc_select_all, new View.OnClickListener() {
-            public void onClick(View v) { setAll(true, LIGHT_KB); }
+            public void onClick(View v) { setAll(true, Long.MAX_VALUE); }
         }));
         tools.addView(toolBtn(R.string.rc_invert, new View.OnClickListener() {
             public void onClick(View v) {
@@ -182,8 +182,8 @@ public class RemoveClonesActivity extends Activity {
                 refresh();
             }
         }));
-        tools.addView(toolBtn(R.string.rc_all_with_data, new View.OnClickListener() {
-            public void onClick(View v) { confirmSelectAll(); }
+        tools.addView(toolBtn(R.string.rc_only_light, new View.OnClickListener() {
+            public void onClick(View v) { setAll(true, LIGHT_KB); }
         }));
         root.addView(tools);
 
@@ -229,27 +229,6 @@ public class RemoveClonesActivity extends Activity {
     private void setAll(boolean on, long maxKb) {
         for (Row r : shown) r.on = on && (r.kb < 0 || r.kb <= maxKb);
         refresh();
-    }
-
-    /** 全选（含数据）：先在弹窗里确认一次，避免手滑把有数据的一起清掉 */
-    private void confirmSelectAll() {
-        int n = 0;
-        long kb = 0;
-        for (Row r : shown) {
-            if (r.kb > LIGHT_KB) { n++; kb += r.kb; }
-        }
-        if (n == 0) {
-            setAll(true, Long.MAX_VALUE);
-            return;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.rc_all_data_warn_title)
-                .setMessage(getString(R.string.rc_all_data_warn, n, sizeOf(kb * 1024)))
-                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int w) { setAll(true, Long.MAX_VALUE); }
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
     }
 
     // ── 数据 ────────────────────────────────────────────────────────

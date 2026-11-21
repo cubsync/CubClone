@@ -54,6 +54,11 @@
             android:label="批量任务" />
 
         <activity
+            android:name=".RemoveClonesActivity"
+            android:exported="false"
+            android:label="删除分身" />
+
+        <activity
             android:name=".RootActivity"
             android:exported="false"
             android:label="Root 功能" />

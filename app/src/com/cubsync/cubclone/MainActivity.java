@@ -124,7 +124,7 @@ public class MainActivity extends Activity {
     private final Set<String> selected = new HashSet<String>();
     private View multiBar;
     private TextView multiCount;
-    private android.widget.Button btnSelectAll, btnInvert, btnAdd;
+    private android.widget.Button btnSelectAll, btnInvert, btnAdd, btnRemove;
 
     /** 图标缓存：LruCache 按像素内存上限 24MB，防几百个图标无上限撑爆内存（启动器同款做法） */
     private final android.util.LruCache<String, Drawable> iconCache =
@@ -370,6 +370,18 @@ public class MainActivity extends Activity {
         btnSelectAll = findViewById(R.id.btn_select_all);
         btnInvert = findViewById(R.id.btn_invert);
         btnAdd = findViewById(R.id.btn_add);
+        btnRemove = findViewById(R.id.btn_remove);
+        btnRemove.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if (selected.isEmpty()) {
+                    toast(getString(R.string.batch_none_selected));
+                    return;
+                }
+                Intent it = new Intent(MainActivity.this, RemoveClonesActivity.class);
+                it.putExtra(RemoveClonesActivity.EXTRA_PKGS, selected.toArray(new String[selected.size()]));
+                startActivity(it);
+            }
+        });
         btnSelectAll.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 selected.clear();

@@ -157,6 +157,7 @@
     <string name="menu_batch_create">批量创建分身</string>
     <string name="menu_create_in">创建分身（选空间）</string>
     <string name="menu_app_info">应用信息</string>
+    <string name="menu_remove_clones">删除分身</string>
     <string name="space_main">主空间</string>
     <string name="menu_remove_all">移除全部分身（%1$d 个）</string>
     <string name="menu_copy_data">克隆数据到…</string>
@@ -235,6 +236,19 @@
     <string name="backup_dir_use">用这个目录</string>
     <string name="backup_dir_ok">已把 %1$s 份备份搬到新目录</string>
     <string name="backup_dir_note">备份会直接打包到这个目录，恢复也从这里读；文件管理器能直接看、能拷走。</string>
+    <string name="rc_title">删除分身</string>
+    <string name="rc_hint">默认只勾了没有数据的空壳；有数据的勾上就会连数据一起删，不可撤销。</string>
+    <string name="rc_empty">没有可删除的分身</string>
+    <string name="rc_select_all">全选</string>
+    <string name="rc_invert">反选</string>
+    <string name="rc_only_light">仅空壳</string>
+    <string name="rc_no_data">无数据</string>
+    <string name="rc_btn">删除 %1$d 个</string>
+    <string name="rc_confirm_title">确认删除</string>
+    <string name="rc_confirm">将删除 %1$d 个分身，数据合计 %2$s。删掉的分身数据不可恢复。</string>
+    <string name="rc_done">已删除 %1$d 个分身</string>
+    <string name="rc_done_bad">已删除 %1$d 个，%2$d 个失败</string>
+    <string name="rc_loading">正在统计各分身的数据体积…</string>
     <string name="notif_channel">备份与恢复</string>
     <string name="notif_channel_desc">显示进度和结果，不响铃、不振动</string>
     <string name="notif_done_ok">完成</string>

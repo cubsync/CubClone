@@ -157,6 +157,7 @@ Owner data is not touched.</string>
     <string name="menu_batch_create">Batch create clones</string>
     <string name="menu_create_in">Create clone (choose space)</string>
     <string name="menu_app_info">App info</string>
+    <string name="menu_remove_clones">Delete clones</string>
     <string name="space_main">Main space</string>
     <string name="menu_remove_all">Remove all clones (%1$d)</string>
     <string name="menu_copy_data">Copy data to…</string>
@@ -235,6 +236,19 @@ Owner data is not touched.</string>
     <string name="backup_dir_use">Use this folder</string>
     <string name="backup_dir_ok">Moved %1$s backup(s) to the new folder</string>
     <string name="backup_dir_note">Backups are packed straight into this folder and restored from it; any file manager can browse or copy them.</string>
+    <string name="rc_title">Delete clones</string>
+    <string name="rc_hint">Only empty clones (no data) are pre-selected; ticking one with data deletes the data too — irreversible.</string>
+    <string name="rc_empty">Nothing to delete</string>
+    <string name="rc_select_all">All</string>
+    <string name="rc_invert">Invert</string>
+    <string name="rc_only_light">Empty only</string>
+    <string name="rc_no_data">no data</string>
+    <string name="rc_btn">Delete %1$d</string>
+    <string name="rc_confirm_title">Confirm</string>
+    <string name="rc_confirm">Deleting %1$d clones (%2$s of data). Clone data cannot be recovered.</string>
+    <string name="rc_done">Deleted %1$d clones</string>
+    <string name="rc_done_bad">Deleted %1$d, %2$d failed</string>
+    <string name="rc_loading">Measuring clone data…</string>
     <string name="notif_channel">Backup and restore</string>
     <string name="notif_channel_desc">Progress and results, silent</string>
     <string name="notif_done_ok">done</string>

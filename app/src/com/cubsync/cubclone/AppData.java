@@ -416,6 +416,8 @@ public final class AppData {
                 .append("/.cc-probe' 2>/dev/null || { echo ERR_LOCKED; exit 1; }\n");
         s.append("rm -f '/data/user/").append(user).append('/').append(pkg).append("/.cc-probe'\n");
         s.append("mkdir -p '").append(rootDir).append("' || { echo ERR_DIR; exit 1; }\n");
+        s.append("chown 1023:1023 '").append(rootDir).append("' 2>/dev/null;");
+        s.append(" chmod 2775 '").append(rootDir).append("' 2>/dev/null\n");
         s.append("cd /\n");
         s.append("L=''\n");
         if ((parts & PART_CE) != 0) {
@@ -502,7 +504,7 @@ public final class AppData {
         s.append("  else tar -cf - $XF --exclude='*/cache' --exclude='*/code_cache' $L 2>/dev/null | $1 > \"$O\" 2>/dev/null; fi\n");
         // 校验：管道里 tar 的失败被压缩器吞掉了，只能反过来把包解开验一遍
         s.append("  if [ -s \"$O\" ] && { if [ -z \"$3\" ]; then tar -tf \"$O\" >/dev/null 2>&1; else $3 < \"$O\" | tar -tf - >/dev/null 2>&1; fi; }; then\n");
-        s.append("    chown 1023:1023 \"$O\" 2>/dev/null; chmod 660 \"$O\" 2>/dev/null\n");
+        s.append("    chown 1023:1023 \"$O\" 2>/dev/null; chmod 664 \"$O\" 2>/dev/null\n");
         s.append("    echo CUB_OK \"$O\"; return 0; fi\n");
         s.append("  rm -f \"$O\"; return 1\n");
         s.append("}\n");
@@ -596,13 +598,15 @@ public final class AppData {
         s.append("N='").append(name).append("'\n");
         s.append("B='").append(base).append("'\n");
         s.append("mkdir -p '").append(rootDir).append("' || { echo ERR_DIR; exit 1; }\n");
+        s.append("chown 1023:1023 '").append(rootDir).append("' 2>/dev/null;");
+        s.append(" chmod 2775 '").append(rootDir).append("' 2>/dev/null\n");
         // $1=压缩器命令（空=纯打包）$2=扩展名 $3=算法名 $4=解压命令
         s.append("pack() {\n");
         s.append("  O=\"$B$2\"; rm -f \"$O\"\n");
         s.append("  if [ -z \"$1\" ]; then tar -cf \"$O\" -C \"$P\" \"$N\" 2>/dev/null\n");
         s.append("  else tar -cf - -C \"$P\" \"$N\" 2>/dev/null | $1 > \"$O\" 2>/dev/null; fi\n");
         s.append("  if [ -s \"$O\" ] && { if [ -z \"$4\" ]; then tar -tf \"$O\" >/dev/null 2>&1; else $4 < \"$O\" | tar -tf - >/dev/null 2>&1; fi; }; then\n");
-        s.append("    chown 1023:1023 \"$O\" 2>/dev/null; chmod 660 \"$O\" 2>/dev/null\n");
+        s.append("    chown 1023:1023 \"$O\" 2>/dev/null; chmod 664 \"$O\" 2>/dev/null\n");
         s.append("    rm -rf \"$SRC\"; echo CUB_OK \"$O\" $3; return 0\n");
         s.append("  fi\n");
         s.append("  rm -f \"$O\"; return 1\n");
@@ -795,8 +799,20 @@ public final class AppData {
         if (extDstList.length() > 0) {
             s.append("for D in").append(extDstList).append("; do\n");
             s.append("  [ -d \"$D\" ] || continue\n");
-            s.append("  chown -R 1023:1023 \"$D\"\n");
-            s.append("  chmod -R u+rwX \"$D\" 2>/dev/null\n");
+            // 属主沿用系统的约定：owner 是 media_rw，组是应用自己的 ext 组；权限必须留组/其他
+            // 的读执行位，否则 MediaProvider 与文件管理器都进不去（root umask 077 会建成 0700）
+            s.append("  AU=$(stat -c %u \"/data/user/").append(T).append('/').append(b.pkg)
+                    .append("\" 2>/dev/null)\n");
+            s.append("  G=$(( ${AU:-0} + 10000 ))\n");
+            s.append("  case \"$D\" in */Android/data/*)\n");
+            s.append("    chown -R 1023:${G} \"$D\" 2>/dev/null\n");
+            s.append("    find \"$D\" -type d -exec chmod 2770 {} + 2>/dev/null\n");
+            s.append("    find \"$D\" -type f -exec chmod 660 {} + 2>/dev/null;;\n");
+            s.append("  *)\n");
+            s.append("    chown -R 1023:1023 \"$D\" 2>/dev/null\n");
+            s.append("    find \"$D\" -type d -exec chmod 2775 {} + 2>/dev/null\n");
+            s.append("    find \"$D\" -type f -exec chmod 664 {} + 2>/dev/null;;\n");
+            s.append("  esac\n");
             s.append("  chcon -R 'u:object_r:media_rw_data_file:s0' \"$D\" 2>/dev/null\n");
             s.append("done\n");
         }

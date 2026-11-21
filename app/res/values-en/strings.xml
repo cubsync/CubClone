@@ -158,6 +158,7 @@ Owner data is not touched.</string>
     <string name="menu_create_in">Create clone (choose space)</string>
     <string name="menu_app_info">App info</string>
     <string name="menu_remove_clones">Delete clones</string>
+    <string name="menu_remove_clones_more">Delete clones…</string>
     <string name="space_main">Main space</string>
     <string name="menu_remove_all">Remove all clones (%1$d)</string>
     <string name="menu_copy_data">Copy data to…</string>

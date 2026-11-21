@@ -29,6 +29,8 @@ import java.util.Set;
 public class RemoveClonesActivity extends Activity {
 
     static final String EXTRA_PKGS = "pkgs";
+    /** 进来时预选哪个分身，格式 uid:pkg；传空 = 列全部分身 */
+    static final String EXTRA_SEL = "sel";
 
     private static final long LIGHT_KB = 1024;   // < 1 MB 视为空壳
 
@@ -66,7 +68,7 @@ public class RemoveClonesActivity extends Activity {
         CloneStore.attach(this);
         buildUi();
         final String[] pkgs = getIntent().getStringArrayExtra(EXTRA_PKGS);
-        load(pkgs == null ? new String[0] : pkgs);
+        load(pkgs == null ? new String[0] : pkgs, getIntent().getStringExtra(EXTRA_SEL));
     }
 
     private void buildUi() {
@@ -174,23 +176,37 @@ public class RemoveClonesActivity extends Activity {
     }
 
     // ── 数据 ────────────────────────────────────────────────────────
-    private void load(final String[] pkgs) {
+    private void load(final String[] pkgs, final String sel) {
         loading = true;
         refresh();
         new Thread(new Runnable() {
             public void run() {
-                List<Integer> spaces = CloneStore.listSpaceUids();
+                // 这一页是「清理分身」用的，不能因为空间不是我们建的就把应用藏起来：
+                // 所有 profile.CLONE 空间都列出来（系统的工作资料不是 CLONE，不会被误列）
+                if (!Shell.ready()) Shell.checkRoot();
+                final boolean canShell = Shell.ready();
                 Set<Integer> usable = new HashSet<Integer>();
-                for (Integer u : spaces) {
-                    if (CloneStore.isOurs(null, u.intValue())
-                            || sp().getBoolean("manage_foreign", false)) {
-                        usable.add(u);
+                if (canShell) {
+                    String ul = Shell.exec("cmd user list --all -v");
+                    for (String line : ul.split("\n")) {
+                        if (line.indexOf("type=profile.CLONE") < 0) continue;
+                        if (line.indexOf("<removing>") >= 0) continue;
+                        int i = line.indexOf("id=");
+                        if (i < 0) continue;
+                        int j = line.indexOf(',', i);
+                        if (j < 0) continue;
+                        int u2 = atoi(line.substring(i + 3, j));
+                        if (u2 > 0) usable.add(u2);
                     }
                 }
+                boolean all = pkgs.length == 0;   // 没给包名 = 列这个空间里的全部分身
                 for (Integer u : usable) {
-                    Set<String> have = installedOf(u.intValue());
-                    for (String p : pkgs) {
-                        if (!have.contains(p)) continue;
+                    Set<String> have = installedOf(u.intValue(), all);
+                    Set<String> want = new HashSet<String>();
+                    if (all) want.addAll(have);
+                    else for (String p : pkgs) if (have.contains(p)) want.add(p);
+                    for (String p : want) {
+                        if ("com.cubsync.cubclone".equals(p)) continue;
                         rows.add(new Row(p, u.intValue(), labelOf(p),
                                 RemoveClonesActivity.spaceName(RemoveClonesActivity.this, u.intValue())));
                     }
@@ -199,7 +215,12 @@ public class RemoveClonesActivity extends Activity {
                 runOnUiThread(new Runnable() {
                     public void run() {
                         loading = false;
-                        for (Row r : rows) r.on = r.kb >= 0 && r.kb <= LIGHT_KB;
+                        if (!canShell) empty.setText(R.string.backup_need_root);
+                        for (Row r : rows) {
+                            r.on = r.kb >= 0 && r.kb <= LIGHT_KB;
+                            // 从某个分身长按进来的，把那一个勾上（哪怕它有数据，用户点的是它）
+                            if (sel != null && sel.equals(r.uid + ":" + r.pkg)) r.on = true;
+                        }
                         refresh();
                     }
                 });
@@ -211,10 +232,10 @@ public class RemoveClonesActivity extends Activity {
         return getSharedPreferences("clone", MODE_PRIVATE);
     }
 
-    /** 某空间里装着的包（pm list 一次拿全，别逐包问） */
-    private Set<String> installedOf(int uid) {
+    /** 某空间里装着的包（pm list 一次拿全，别逐包问）；thirdOnly 时只要三方的 */
+    private Set<String> installedOf(int uid, boolean thirdOnly) {
         Set<String> s = new HashSet<String>();
-        String out = Shell.exec("pm list packages --user " + uid);
+        String out = Shell.exec("pm list packages " + (thirdOnly ? "-3 " : "") + "--user " + uid);
         for (String line : out.split("\n")) {
             String t = line.trim();
             if (t.startsWith("package:")) s.add(t.substring(8));
@@ -282,7 +303,7 @@ public class RemoveClonesActivity extends Activity {
         title.setText(loading ? getString(R.string.rc_loading)
                 : getString(R.string.rc_title) + "  " + rows.size());
         empty.setVisibility(rows.isEmpty() && !loading ? View.VISIBLE : View.GONE);
-        empty.setText(R.string.rc_empty);
+        if (empty.getText().length() == 0) empty.setText(R.string.rc_empty);
         adapter.notifyDataSetChanged();
     }
 

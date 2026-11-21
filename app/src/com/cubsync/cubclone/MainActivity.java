@@ -1843,6 +1843,8 @@ public class MainActivity extends Activity {
             items.add(getString(R.string.menu_hide)); acts.add(5);
         }
         items.add(getString(R.string.menu_open)); acts.add(2);
+        // 分身自己也能进删除页：页里列出所有空间的全部分身，这一个默认勾上
+        items.add(getString(R.string.menu_remove_clones_more)); acts.add(9);
         items.add(getString(R.string.menu_app_info)); acts.add(8);
         // 需要 root 的入口按 Root 开关出现；只用 Shizuku 时这里什么都没有
         if (Root.on(this, Root.CLONE)) { items.add(getString(R.string.menu_copy_data)); acts.add(6); }
@@ -1861,7 +1863,11 @@ public class MainActivity extends Activity {
                                 else if (a == 8) openAppInfo(g.pkg, c.uid);
                                 else if (a == 6) pickCopyTarget(g, c.uid);
                                 else if (a == 7) backupData(g, c.uid);
-                                else confirmRemove(c, g);
+                                else if (a == 9) {
+                                    Intent it = new Intent(MainActivity.this, RemoveClonesActivity.class);
+                                    it.putExtra(RemoveClonesActivity.EXTRA_SEL, c.uid + ":" + g.pkg);
+                                    startActivity(it);
+                                } else confirmRemove(c, g);
                             }
                         })
                 .show();

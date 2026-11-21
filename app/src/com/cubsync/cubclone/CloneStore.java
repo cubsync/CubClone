@@ -35,7 +35,38 @@ public final class CloneStore {
     static Context appCtx;
 
     static void attach(Context c) {
-        if (appCtx == null && c != null) appCtx = c.getApplicationContext();
+        if (appCtx == null && c != null) {
+            appCtx = c.getApplicationContext();
+            mirrorPrefs();
+        }
+    }
+
+    /**
+     * 设置镜像：把 shared_prefs/clone.xml 定期复制一份到 files/clone.xml.bak。
+     * 有过教训——外部 sed 把 XML 写坏，系统直接按默认值重建，隐藏清单/备份目录/分身登记
+     * 一次全丢。有镜像至少能捞回来。半天轮换一次，旧的那份留作 .bak2。
+     */
+    private static void mirrorPrefs() {
+        try {
+            java.io.File src = new java.io.File(
+                    appCtx.getFilesDir().getParentFile(), "shared_prefs/clone.xml");
+            java.io.File bak = new java.io.File(appCtx.getFilesDir(), "clone.xml.bak");
+            if (!src.exists()) return;
+            if (bak.exists() && src.lastModified() - bak.lastModified() < 6 * 3600 * 1000L) return;
+            if (bak.exists()) {
+                java.io.File old = new java.io.File(appCtx.getFilesDir(), "clone.xml.bak2");
+                old.delete();
+                bak.renameTo(old);
+            }
+            java.io.FileInputStream in = new java.io.FileInputStream(src);
+            java.io.FileOutputStream out = new java.io.FileOutputStream(bak);
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            in.close();
+            out.close();
+        } catch (Throwable ignored) {
+        }
     }
 
     /**

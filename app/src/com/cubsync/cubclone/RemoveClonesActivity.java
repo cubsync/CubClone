@@ -61,6 +61,12 @@ public class RemoveClonesActivity extends Activity {
     private int sec = 0xFF5F6368;
     private boolean loading = true;
 
+    /** 搜索与空间筛选：分身一多，翻列表找不过来 */
+    private android.widget.EditText search;
+    private android.widget.Spinner spaceSp;
+    private String query = "";
+    private int spaceUid = -1;          // -1 = 全部空间
+
     private Adapter adapter;
 
     protected void onCreate(Bundle b) {
@@ -113,6 +119,35 @@ public class RemoveClonesActivity extends Activity {
         hint.setTextColor(sec);
         hint.setPadding(dp(16), 0, dp(16), dp(8));
         root.addView(hint);
+
+        LinearLayout filter = new LinearLayout(this);
+        filter.setOrientation(LinearLayout.HORIZONTAL);
+        filter.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        filter.setPadding(dp(12), 0, dp(12), dp(4));
+
+        search = new android.widget.EditText(this);
+        search.setSingleLine(true);
+        search.setHint(R.string.rc_search);
+        search.setTextSize(14);
+        search.setTextColor(fg);
+        search.setHintTextColor(sec);
+        search.setLayoutParams(new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            public void onTextChanged(CharSequence s, int a, int b, int c) { }
+            public void afterTextChanged(android.text.Editable e) {
+                query = e.toString().trim().toLowerCase(java.util.Locale.US);
+                refresh();
+            }
+        });
+        filter.addView(search);
+
+        spaceSp = new android.widget.Spinner(this);
+        spaceSp.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        filter.addView(spaceSp);
+        root.addView(filter);
 
         LinearLayout tools = new LinearLayout(this);
         tools.setOrientation(LinearLayout.HORIZONTAL);
@@ -199,12 +234,9 @@ public class RemoveClonesActivity extends Activity {
                         if (u2 > 0) usable.add(u2);
                     }
                 }
-                boolean all = pkgs.length == 0;   // 没给包名 = 列这个空间里的全部分身
+                // 总是列全部：从多选进来只给几个包名时，也只当作「预选」，列表照旧完整
                 for (Integer u : usable) {
-                    Set<String> have = installedOf(u.intValue(), all);
-                    Set<String> want = new HashSet<String>();
-                    if (all) want.addAll(have);
-                    else for (String p : pkgs) if (have.contains(p)) want.add(p);
+                    Set<String> want = installedOf(u.intValue(), true);
                     for (String p : want) {
                         if ("com.cubsync.cubclone".equals(p)) continue;
                         rows.add(new Row(p, u.intValue(), labelOf(p),
@@ -220,7 +252,9 @@ public class RemoveClonesActivity extends Activity {
                             r.on = r.kb >= 0 && r.kb <= LIGHT_KB;
                             // 从某个分身长按进来的，把那一个勾上（哪怕它有数据，用户点的是它）
                             if (sel != null && sel.equals(r.uid + ":" + r.pkg)) r.on = true;
+                            else for (String p : pkgs) if (p.equals(r.pkg)) { r.on = true; break; }
                         }
+                        fillSpaces();
                         refresh();
                     }
                 });
@@ -292,19 +326,44 @@ public class RemoveClonesActivity extends Activity {
     // ── 列表 ────────────────────────────────────────────────────────
     private void refresh() {
         shown.clear();
-        shown.addAll(rows);
-        int sel = 0;
-        long kb = 0;
         for (Row r : rows) {
-            if (r.on) { sel++; if (r.kb > 0) kb += r.kb; }
+            if (spaceUid >= 0 && r.uid != spaceUid) continue;
+            if (query.length() > 0
+                    && r.label.toLowerCase(java.util.Locale.US).indexOf(query) < 0
+                    && r.pkg.toLowerCase(java.util.Locale.US).indexOf(query) < 0) continue;
+            shown.add(r);
         }
+        int sel = 0;
+        for (Row r : rows) if (r.on) sel++;
         btnRemove.setText(getString(R.string.rc_btn, sel));
         btnRemove.setEnabled(sel > 0);
         title.setText(loading ? getString(R.string.rc_loading)
-                : getString(R.string.rc_title) + "  " + rows.size());
-        empty.setVisibility(rows.isEmpty() && !loading ? View.VISIBLE : View.GONE);
+                : getString(R.string.rc_title_count, rows.size(), sel));
+        empty.setVisibility(shown.isEmpty() && !loading ? View.VISIBLE : View.GONE);
         if (empty.getText().length() == 0) empty.setText(R.string.rc_empty);
         adapter.notifyDataSetChanged();
+    }
+
+    /** 空间筛选下拉：全部 + 每个有分身的空间 */
+    private void fillSpaces() {
+        final List<Integer> uids = new ArrayList<Integer>();
+        for (Row r : rows) if (!uids.contains(Integer.valueOf(r.uid))) uids.add(Integer.valueOf(r.uid));
+        java.util.Collections.sort(uids);
+        List<String> names = new ArrayList<String>();
+        names.add(getString(R.string.rc_space_all));
+        for (Integer u : uids) names.add(spaceName(this, u.intValue()));
+        android.widget.ArrayAdapter<String> a = new android.widget.ArrayAdapter<String>(this,
+                android.R.layout.simple_spinner_item, names);
+        a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spaceSp.setAdapter(a);
+        spaceSp.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            public void onItemSelected(android.widget.AdapterView<?> p, View v, int pos, long id) {
+                spaceUid = pos <= 0 ? -1 : uids.get(pos - 1).intValue();
+                refresh();
+            }
+
+            public void onNothingSelected(android.widget.AdapterView<?> p) { }
+        });
     }
 
     private String sizeText(Row r) {

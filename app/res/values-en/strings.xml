@@ -239,6 +239,9 @@ Owner data is not touched.</string>
     <string name="backup_dir_note">Backups are packed straight into this folder and restored from it; any file manager can browse or copy them.</string>
     <string name="rc_title">Delete clones</string>
     <string name="rc_hint">Only empty clones (no data) are pre-selected; ticking one with data deletes the data too — irreversible.</string>
+    <string name="rc_search">Search</string>
+    <string name="rc_space_all">All spaces</string>
+    <string name="rc_title_count">Delete clones  %1$d · %2$d selected</string>
     <string name="rc_empty">Nothing to delete</string>
     <string name="rc_select_all">All</string>
     <string name="rc_invert">Invert</string>

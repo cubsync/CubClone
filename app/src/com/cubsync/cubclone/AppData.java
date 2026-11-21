@@ -751,21 +751,32 @@ public final class AppData {
             s.append("  mv \"$SDE\" \"$DE\" || { [ -d \"$OLD/de\" ] && mv \"$OLD/de\" \"$DE\"; }\n");
             s.append("fi\n");
         }
-        // 外部三块：包里有 <pkg>/ext|obb|media 就换到 /data/media/<T>/Android/… 对应目录。
-        // 这些目录在 FUSE 后面，属主必须是 media_rw(1023)，否则应用和文件管理器都读不到
+        // 外部三块：包里有 <pkg>/ext|obb|media 就换到 Android/… 对应目录。
+        // Android/data 与 Android/obb 是 pass-through 直挂（f2fs），直接写底层即可；
+        // Android/media 在 FUSE 后面，必须走 /storage 路径让 MediaProvider 亲自建文件——
+        // 绕过它直接 mv 进去，它不认这些 inode，之后应用 ftruncate/新建都被挡（EPERM/ENOENT）
         int[] extBits = {PART_EXT, PART_OBB, PART_MEDIA};
         String[] extIn = {"ext", "obb", "media"};
         String[] extOut = {"data", "obb", "media"};
         StringBuilder extDstList = new StringBuilder();
         for (int k = 0; k < extBits.length; k++) {
             if ((parts & extBits[k]) == 0) continue;
-            String dst = "/data/media/" + T + "/Android/" + extOut[k] + "/" + b.pkg;
+            boolean viaFuse = "media".equals(extOut[k]);
+            String dst = (viaFuse ? "/storage/emulated/" : "/data/media/") + T
+                    + "/Android/" + extOut[k] + "/" + b.pkg;
             extDstList.append(" '").append(dst).append('\'');
             s.append("if [ -d \"$TMP/").append(b.pkg).append('/').append(extIn[k]).append("\" ]; then\n");
             s.append("  rm -rf '").append(dst).append("'\n");
-            s.append("  mkdir -p '/data/media/").append(T).append("/Android/").append(extOut[k]).append("' 2>/dev/null\n");
-            s.append("  mv \"$TMP/").append(b.pkg).append('/').append(extIn[k]).append("\" '")
-                    .append(dst).append("' || echo ERR_EXT\n");
+            if (viaFuse) {
+                s.append("  mkdir -p '").append(dst).append("' 2>/dev/null\n");
+                s.append("  cp -a \"$TMP/").append(b.pkg).append('/').append(extIn[k])
+                        .append("/.\" '").append(dst).append("/' || echo ERR_EXT\n");
+            } else {
+                s.append("  mkdir -p '/data/media/").append(T).append("/Android/")
+                        .append(extOut[k]).append("' 2>/dev/null\n");
+                s.append("  mv \"$TMP/").append(b.pkg).append('/').append(extIn[k]).append("\" '")
+                        .append(dst).append("' || echo ERR_EXT\n");
+            }
             s.append("fi\n");
         }
 
@@ -806,10 +817,11 @@ public final class AppData {
         if (extDstList.length() > 0) {
             s.append("for D in").append(extDstList).append("; do\n");
             s.append("  [ -d \"$D\" ] || continue\n");
-            // 系统约定（实测）：owner 是这个空间里的应用 uid，不是 media_rw。
-            // Android/data 的组是 ext_data_rw(1078)、Android/media|obb 的组是 media_rw(1023)。
-            // FUSE 下真正做权限判定的是 MediaProvider 进程，它的补充组里有这两个组；
-            // 组写错（比如算成 xxx+10000 那种）它就被挡在外面，应用侧只看到 EPERM。
+            // 系统约定（实测）：owner 是该空间里的应用真实 uid（/data/user/<T>/<pkg> 的属主），
+            // Android/data 的组是 ext_data_rw(1078)、Android/media|obb 的组是父目录的组(1023)。
+            // 组别自己算（uid+10000 会算成 u20_a238 这种应用根本没有的组）——MediaProvider
+            // 与文件管理器都靠组进来，错了应用侧只看到 EPERM。
+            // 这里也走 /storage 路径，顺带把改动同步给 MediaProvider
             s.append("  case \"$D\" in */Android/data/*)\n");
             s.append("    chown -R ${AU:-0}:1078 \"$D\" 2>/dev/null\n");
             s.append("    find \"$D\" -type d -exec chmod 2770 {} + 2>/dev/null\n");
@@ -826,6 +838,8 @@ public final class AppData {
         s.append("echo CUB_OK\n");
 
         String out = Shell.execScript(s.toString());
+        // 外部目录写失败不能咽下去：那一步失败后脚本仍会照常往下跑并打印 CUB_OK
+        if (out.contains("ERR_EXT")) return "ERR_EXT";
         if (out.contains("CUB_OK")) {
             if (out.contains("ERR_APK")) return "OK_NOAPK";
             return "OK";

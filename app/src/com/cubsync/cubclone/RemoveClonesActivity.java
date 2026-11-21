@@ -15,6 +15,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -23,8 +25,9 @@ import java.util.Set;
  * 批量删除分身。
  *
  * 为什么单独一页：主界面多选只能「建」，删要靠长按一个个点；分身多起来（几十上百个）
- * 就没法用了。这里把选中应用在所有空间里的分身摊平成一列，带每个分身的数据体积，
+ * 就没法用了。这里把所有空间里的分身摊平成一列，带每个分身的数据体积，
  * **默认只勾没有数据的空壳**——有数据的要自己动手勾，删了不可恢复。
+ * 顶部筛选/排序与「数据备份」页保持一致：搜索框 + 空间多选 + 排序。
  */
 public class RemoveClonesActivity extends Activity {
 
@@ -52,20 +55,21 @@ public class RemoveClonesActivity extends Activity {
 
     private final List<Row> rows = new ArrayList<Row>();
     private final List<Row> shown = new ArrayList<Row>();
+    /** 空间筛选，空 = 全部 */
+    private final Set<Integer> filterUsers = new HashSet<Integer>();
 
     private ListView list;
     private TextView empty;
     private TextView title;
+    private TextView filter;
+    private TextView sortTv;
     private Button btnRemove;
+    private android.widget.EditText search;
+    private String query = "";
     private int fg = 0xFF1B1B1F;
     private int sec = 0xFF5F6368;
-    private boolean loading = true;
 
-    /** 搜索与空间筛选：分身一多，翻列表找不过来 */
-    private android.widget.EditText search;
-    private android.widget.Spinner spaceSp;
-    private String query = "";
-    private int spaceUid = -1;          // -1 = 全部空间
+    private boolean loading = true;
 
     private Adapter adapter;
 
@@ -117,13 +121,14 @@ public class RemoveClonesActivity extends Activity {
         hint.setText(R.string.rc_hint);
         hint.setTextSize(12);
         hint.setTextColor(sec);
-        hint.setPadding(dp(16), 0, dp(16), dp(8));
+        hint.setPadding(dp(16), 0, dp(16), dp(6));
         root.addView(hint);
 
-        LinearLayout filter = new LinearLayout(this);
-        filter.setOrientation(LinearLayout.HORIZONTAL);
-        filter.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        filter.setPadding(dp(12), 0, dp(12), dp(4));
+        // 搜索 + 排序：和「数据备份」页同一套用法
+        LinearLayout searchRow = new LinearLayout(this);
+        searchRow.setOrientation(LinearLayout.HORIZONTAL);
+        searchRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        searchRow.setPadding(dp(16), 0, dp(12), 0);
 
         search = new android.widget.EditText(this);
         search.setSingleLine(true);
@@ -131,6 +136,7 @@ public class RemoveClonesActivity extends Activity {
         search.setTextSize(14);
         search.setTextColor(fg);
         search.setHintTextColor(sec);
+        search.setBackgroundColor(0x00000000);
         search.setLayoutParams(new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         search.addTextChangedListener(new android.text.TextWatcher() {
@@ -141,19 +147,34 @@ public class RemoveClonesActivity extends Activity {
                 refresh();
             }
         });
-        filter.addView(search);
+        searchRow.addView(search);
 
-        spaceSp = new android.widget.Spinner(this);
-        spaceSp.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        filter.addView(spaceSp);
+        sortTv = new TextView(this);
+        sortTv.setTextSize(13);
+        sortTv.setTextColor(sec);
+        sortTv.setPadding(dp(10), dp(8), dp(4), dp(8));
+        sortTv.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { pickSort(); }
+        });
+        searchRow.addView(sortTv);
+        root.addView(searchRow);
+
+        // 空间筛选：点开多选，全不勾 = 全部
+        filter = new TextView(this);
+        filter.setTextSize(13);
+        filter.setTextColor(sec);
+        filter.setPadding(dp(16), 0, dp(16), dp(6));
+        filter.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { pickFilter(); }
+        });
         root.addView(filter);
 
         LinearLayout tools = new LinearLayout(this);
         tools.setOrientation(LinearLayout.HORIZONTAL);
         tools.setPadding(dp(12), 0, dp(12), dp(4));
+        // 「全选」只勾空壳。有数据的一律要一个个点——这里删掉就真没了，不给一键全清。
         tools.addView(toolBtn(R.string.rc_select_all, new View.OnClickListener() {
-            public void onClick(View v) { setAll(true, Long.MAX_VALUE); }
+            public void onClick(View v) { setAll(true, LIGHT_KB); }
         }));
         tools.addView(toolBtn(R.string.rc_invert, new View.OnClickListener() {
             public void onClick(View v) {
@@ -161,8 +182,8 @@ public class RemoveClonesActivity extends Activity {
                 refresh();
             }
         }));
-        tools.addView(toolBtn(R.string.rc_only_light, new View.OnClickListener() {
-            public void onClick(View v) { setAll(true, LIGHT_KB); }
+        tools.addView(toolBtn(R.string.rc_all_with_data, new View.OnClickListener() {
+            public void onClick(View v) { confirmSelectAll(); }
         }));
         root.addView(tools);
 
@@ -210,6 +231,27 @@ public class RemoveClonesActivity extends Activity {
         refresh();
     }
 
+    /** 全选（含数据）：先在弹窗里确认一次，避免手滑把有数据的一起清掉 */
+    private void confirmSelectAll() {
+        int n = 0;
+        long kb = 0;
+        for (Row r : shown) {
+            if (r.kb > LIGHT_KB) { n++; kb += r.kb; }
+        }
+        if (n == 0) {
+            setAll(true, Long.MAX_VALUE);
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.rc_all_data_warn_title)
+                .setMessage(getString(R.string.rc_all_data_warn, n, sizeOf(kb * 1024)))
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) { setAll(true, Long.MAX_VALUE); }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     // ── 数据 ────────────────────────────────────────────────────────
     private void load(final String[] pkgs, final String sel) {
         loading = true;
@@ -254,7 +296,6 @@ public class RemoveClonesActivity extends Activity {
                             if (sel != null && sel.equals(r.uid + ":" + r.pkg)) r.on = true;
                             else for (String p : pkgs) if (p.equals(r.pkg)) { r.on = true; break; }
                         }
-                        fillSpaces();
                         refresh();
                     }
                 });
@@ -277,7 +318,7 @@ public class RemoveClonesActivity extends Activity {
         return s;
     }
 
-    /** 一次脚本把所有分身的数据体积量完：du 逐目录，242 个包也就十几秒 */
+    /** 一次脚本把所有分身的数据体积量完：du 逐目录，几十个包也就几秒 */
     private void measure() {
         if (rows.isEmpty()) return;
         StringBuilder s = new StringBuilder();
@@ -323,16 +364,118 @@ public class RemoveClonesActivity extends Activity {
         return n + " (" + u + ")";
     }
 
+    // ── 筛选 / 排序 ──────────────────────────────────────────────────
+    private String sortKey() {
+        return sp().getString("rc_sort", "space");
+    }
+
+    private String sortShort() {
+        String k = sortKey();
+        if ("size".equals(k)) return getString(R.string.rc_sort_size_short);
+        if ("name".equals(k)) return getString(R.string.rc_sort_name);
+        return getString(R.string.rc_sort_space_short);
+    }
+
+    private void pickSort() {
+        final String[] keys = {"space", "size", "name"};
+        String[] items = {getString(R.string.rc_sort_space), getString(R.string.rc_sort_size),
+                getString(R.string.rc_sort_name)};
+        int cur = 0;
+        for (int i = 0; i < keys.length; i++) if (keys[i].equals(sortKey())) cur = i;
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.rc_sort)
+                .setSingleChoiceItems(items, cur, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        sp().edit().putString("rc_sort", keys[which]).apply();
+                        d.dismiss();
+                        refresh();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /** 空间筛选支持多选：勾几个看几个，全不勾等于全部 */
+    private void pickFilter() {
+        final List<Integer> users = new ArrayList<Integer>();
+        for (Row r : rows) if (!users.contains(Integer.valueOf(r.uid))) users.add(Integer.valueOf(r.uid));
+        if (users.isEmpty()) return;
+        Collections.sort(users);
+        String[] items = new String[users.size()];
+        final boolean[] checked = new boolean[users.size()];
+        for (int i = 0; i < users.size(); i++) {
+            int u = users.get(i).intValue();
+            items[i] = spaceName(this, u);
+            checked[i] = filterUsers.contains(Integer.valueOf(u));
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.rc_filter_title)
+                .setMultiChoiceItems(items, checked, new DialogInterface.OnMultiChoiceClickListener() {
+                    public void onClick(DialogInterface d, int which, boolean isChecked) {
+                        checked[which] = isChecked;
+                    }
+                })
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        filterUsers.clear();
+                        for (int i = 0; i < checked.length; i++) {
+                            if (checked[i]) filterUsers.add(users.get(i));
+                        }
+                        refresh();
+                    }
+                })
+                .setNeutralButton(R.string.rc_filter_reset, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        filterUsers.clear();
+                        search.setText("");
+                        query = "";
+                        refresh();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void renderFilter() {
+        StringBuilder sb = new StringBuilder();
+        if (filterUsers.isEmpty()) {
+            sb.append(getString(R.string.rc_filter_all));
+        } else if (filterUsers.size() == 1) {
+            for (Integer u : filterUsers) sb.append(spaceName(this, u.intValue()));
+        } else {
+            sb.append(getString(R.string.rc_filter_count, filterUsers.size()));
+        }
+        if (query.length() > 0) sb.append(" • ").append(query);
+        sb.append(" ▾");
+        filter.setText(sb.toString());
+        sortTv.setText(sortShort() + " ▾");
+    }
+
     // ── 列表 ────────────────────────────────────────────────────────
     private void refresh() {
         shown.clear();
         for (Row r : rows) {
-            if (spaceUid >= 0 && r.uid != spaceUid) continue;
+            if (!filterUsers.isEmpty() && !filterUsers.contains(Integer.valueOf(r.uid))) continue;
             if (query.length() > 0
                     && r.label.toLowerCase(java.util.Locale.US).indexOf(query) < 0
                     && r.pkg.toLowerCase(java.util.Locale.US).indexOf(query) < 0) continue;
             shown.add(r);
         }
+        final String k = sortKey();
+        Collections.sort(shown, new Comparator<Row>() {
+            public int compare(Row a, Row b) {
+                if ("size".equals(k)) {
+                    if (a.kb != b.kb) return a.kb > b.kb ? -1 : 1;
+                } else if ("name".equals(k)) {
+                    int c = a.label.compareToIgnoreCase(b.label);
+                    if (c != 0) return c;
+                } else {
+                    if (a.uid != b.uid) return a.uid < b.uid ? -1 : 1;
+                }
+                int c = a.label.compareToIgnoreCase(b.label);
+                return c != 0 ? c : a.pkg.compareTo(b.pkg);
+            }
+        });
         int sel = 0;
         for (Row r : rows) if (r.on) sel++;
         btnRemove.setText(getString(R.string.rc_btn, sel));
@@ -341,29 +484,8 @@ public class RemoveClonesActivity extends Activity {
                 : getString(R.string.rc_title_count, rows.size(), sel));
         empty.setVisibility(shown.isEmpty() && !loading ? View.VISIBLE : View.GONE);
         if (empty.getText().length() == 0) empty.setText(R.string.rc_empty);
+        renderFilter();
         adapter.notifyDataSetChanged();
-    }
-
-    /** 空间筛选下拉：全部 + 每个有分身的空间 */
-    private void fillSpaces() {
-        final List<Integer> uids = new ArrayList<Integer>();
-        for (Row r : rows) if (!uids.contains(Integer.valueOf(r.uid))) uids.add(Integer.valueOf(r.uid));
-        java.util.Collections.sort(uids);
-        List<String> names = new ArrayList<String>();
-        names.add(getString(R.string.rc_space_all));
-        for (Integer u : uids) names.add(spaceName(this, u.intValue()));
-        android.widget.ArrayAdapter<String> a = new android.widget.ArrayAdapter<String>(this,
-                android.R.layout.simple_spinner_item, names);
-        a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spaceSp.setAdapter(a);
-        spaceSp.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
-            public void onItemSelected(android.widget.AdapterView<?> p, View v, int pos, long id) {
-                spaceUid = pos <= 0 ? -1 : uids.get(pos - 1).intValue();
-                refresh();
-            }
-
-            public void onNothingSelected(android.widget.AdapterView<?> p) { }
-        });
     }
 
     private String sizeText(Row r) {
@@ -430,9 +552,13 @@ public class RemoveClonesActivity extends Activity {
             if (r.on) { sel.add(r); if (r.kb > 0) kb += r.kb; }
         }
         if (sel.isEmpty()) return;
+        boolean withData = false;
+        for (Row r : sel) if (r.kb > LIGHT_KB) withData = true;
         new AlertDialog.Builder(this)
-                .setTitle(R.string.rc_confirm_title)
-                .setMessage(getString(R.string.rc_confirm, sel.size(), sizeOf(kb * 1024)))
+                .setTitle(withData ? R.string.rc_confirm_data_title : R.string.rc_confirm_title)
+                .setMessage(withData
+                        ? getString(R.string.rc_confirm_data, sel.size(), sizeOf(kb * 1024))
+                        : getString(R.string.rc_confirm, sel.size(), sizeOf(kb * 1024)))
                 .setPositiveButton(R.string.delete_clone_btn, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int w) { run(sel); }
                 })

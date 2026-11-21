@@ -76,14 +76,26 @@ public final class RestoreDialog {
         });
         box.addView(space);
 
-        final CheckBox ce = check(a, R.string.restore_part_ce);
-        final CheckBox de = check(a, R.string.restore_part_de);
-        final CheckBox apk = check(a, R.string.restore_part_apk);
-        final CheckBox perm = check(a, R.string.restore_part_perm);
+        final CheckBox ce = check(a, R.string.restore_part_ce, true);
+        final CheckBox de = check(a, R.string.restore_part_de, true);
+        final CheckBox apk = check(a, R.string.restore_part_apk, true);
+        final CheckBox perm = check(a, R.string.restore_part_perm, true);
+        // 外部三块默认不勾：多数备份里没有，勾了也只是空跑（脚本里没有就跳过）
+        final CheckBox ext = check(a, R.string.restore_part_ext, false);
+        final CheckBox obb = check(a, R.string.restore_part_obb, false);
+        final CheckBox media = check(a, R.string.restore_part_media, false);
         box.addView(ce);
         box.addView(de);
         box.addView(apk);
         box.addView(perm);
+        box.addView(ext);
+        box.addView(obb);
+        box.addView(media);
+        TextView miss = new TextView(a);
+        miss.setTextSize(12);
+        miss.setPadding(0, dp(a, 8), 0, 0);
+        miss.setText(R.string.restore_part_missing);
+        box.addView(miss);
 
         new AlertDialog.Builder(a)
                 .setTitle(R.string.restore_options)
@@ -95,6 +107,9 @@ public final class RestoreDialog {
                         if (de.isChecked()) p |= AppData.PART_DE;
                         if (apk.isChecked()) p |= AppData.PART_APK;
                         if (perm.isChecked()) p |= AppData.PART_PERM;
+                        if (ext.isChecked()) p |= AppData.PART_EXT;
+                        if (obb.isChecked()) p |= AppData.PART_OBB;
+                        if (media.isChecked()) p |= AppData.PART_MEDIA;
                         cb.onOk(target[0], p == 0 ? AppData.PART_CE : p);
                     }
                 })
@@ -102,11 +117,11 @@ public final class RestoreDialog {
                 .show();
     }
 
-    private static CheckBox check(Activity a, int text) {
+    private static CheckBox check(Activity a, int text, boolean on) {
         CheckBox c = new CheckBox(a);
         c.setText(text);
         c.setTextSize(15);
-        c.setChecked(true);
+        c.setChecked(on);
         c.setPadding(0, dp(a, 4), 0, dp(a, 4));
         return c;
     }

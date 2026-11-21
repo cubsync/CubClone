@@ -145,6 +145,7 @@ public final class BatchJob {
     private void work() {
         int ok = 0, bad = 0;
         try {
+            Notify.progress(ctx, restore, 0, rows.size(), "", "");
             for (int i = 0; i < rows.size(); i++) {
                 Row r = rows.get(i);
                 if (r.state == ST_SKIP) {
@@ -158,6 +159,7 @@ public final class BatchJob {
                 done = i;
                 line(r.time + "  " + ctx.getString(R.string.batch_log_start) + "  "
                         + labelOf(r.pkg) + "  " + spaceLabel(r.user));
+                Notify.progress(ctx, restore, done, rows.size(), head, labelOf(r.pkg));
 
                 Meter m = new Meter(restore ? null : AppData.backupBase(r.user, r.pkg));
                 m.begin();
@@ -193,6 +195,7 @@ public final class BatchJob {
             running = false;
             finished = true;
             saveLog();
+            Notify.finish(ctx, restore, summary, bad > 0);
             try {
                 if (wake != null && wake.isHeld()) wake.release();
             } catch (Throwable ignored) {
@@ -340,6 +343,7 @@ public final class BatchJob {
                 if (stop) return;
                 if (base == null) {
                     speed = ctx.getString(R.string.batch_elapsed, mmss(ms()));
+                    Notify.progress(ctx, restore, done, rows.size(), head, speed);
                     continue;
                 }
                 String out = Shell.execQuick(cmd).trim();
@@ -362,6 +366,7 @@ public final class BatchJob {
                 lastT = tn;
                 bytes = cur;
                 speed = ctx.getString(R.string.batch_speed, size((long) ema), size(cur), mmss(ms()));
+                Notify.progress(ctx, restore, done, rows.size(), head, speed);
             }
         }
     }

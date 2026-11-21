@@ -1846,7 +1846,7 @@ public class MainActivity extends Activity {
                                 else if (a == 4) disableClone(c, g);
                                 else if (a == 5) hideClone(c, g);
                                 else if (a == 2) launch(c, g);
-                                else if (a == 8) openAppInfo(g.pkg);
+                                else if (a == 8) openAppInfo(g.pkg, c.uid);
                                 else if (a == 6) pickCopyTarget(g, c.uid);
                                 else if (a == 7) backupData(g, c.uid);
                                 else confirmRemove(c, g);
@@ -1896,7 +1896,7 @@ public class MainActivity extends Activity {
                                 } else if (a == 2) {
                                     pickSpaceFor(g);
                                 } else if (a == 3) {
-                                    openAppInfo(g.pkg);
+                                    openAppInfo(g.pkg, 0);
                                 } else if (a == 5) {
                                     pickCopyTarget(g, 0);
                                 } else if (a == 6) {
@@ -1909,12 +1909,25 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    /** 跳到系统的应用详情页（只读，不改任何东西） */
-    private void openAppInfo(String pkg) {
+    /**
+     * 跳到系统的应用详情页（只读，不改任何东西）。
+     * 分身里的应用要走 --user：应用详情页是「某空间里的那个包」，不带用户永远落到主空间。
+     */
+    private void openAppInfo(String pkg, int user) {
         try {
-            Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-            i.setData(android.net.Uri.parse("package:" + pkg));
-            startActivity(i);
+            if (user == 0) {
+                Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                i.setData(android.net.Uri.parse("package:" + pkg));
+                startActivity(i);
+                return;
+            }
+            if (!Shell.ready()) {
+                toast(getString(R.string.app_info_failed));
+                return;
+            }
+            Shell.execQuick("am start --user " + user
+                    + " -a android.settings.APPLICATION_DETAILS_SETTINGS -d 'package:" + pkg
+                    + "' >/dev/null 2>&1");
         } catch (Throwable t) {
             toast(getString(R.string.app_info_failed));
         }
@@ -2030,31 +2043,12 @@ public class MainActivity extends Activity {
     }
 
     private void runBackup(final Group g, final int user) {
-        // 备份要逐字节复制整个数据目录，锁屏会驱逐 CE 密钥，期间保持常亮
-        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        toast(getString(R.string.backup_creating));
-        new Thread(new Runnable() {
-            public void run() {
-                String algo = sp().getString("backup_algo", "zst");
-                int lv = sp().getInt("backup_level_" + algo, AppData.defaultLevel(algo));
-                final String r = AppData.backupNow(user, g.pkg, algo, lv);
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        getWindow().clearFlags(
-                                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                        if (r.startsWith("OK ")) {
-                            String rest = r.substring(3).trim();
-                            int bar = rest.lastIndexOf('|');
-                            String path = bar > 0 ? rest.substring(0, bar) : rest;
-                            toast(getString(R.string.backup_now_ok,
-                                    path.substring(path.lastIndexOf('/') + 1)));
-                        } else {
-                            toast(getString(R.string.backup_fail, r));
-                        }
-                    }
-                });
-            }
-        }).start();
+        // 和批量备份走同一条路：过程页看得到进度/速度，失败了能在「数据备份 → 日志」里查原因
+        android.content.Intent it = new android.content.Intent(this, BatchRunActivity.class);
+        it.putExtra(BatchRunActivity.EXTRA_MODE, BatchRunActivity.MODE_BACKUP);
+        it.putExtra(BatchRunActivity.EXTRA_USER, user);
+        it.putExtra(BatchRunActivity.EXTRA_PKGS, new String[]{g.pkg});
+        startActivity(it);
     }
 
     private void confirmCopyData(final Group g, final int srcUser,

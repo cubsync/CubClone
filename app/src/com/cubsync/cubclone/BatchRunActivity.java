@@ -86,6 +86,7 @@ public class BatchRunActivity extends Activity {
         super.onCreate(b);
         CloneStore.attach(this);
         AppData.loadRoot(sp());
+        askNotifyPermission();
         setContentView(R.layout.activity_batch_run);
 
         title = findViewById(R.id.br_title);
@@ -180,8 +181,15 @@ public class BatchRunActivity extends Activity {
         return true;
     }
 
-    protected void onNewIntent(Intent it) {
-        super.onNewIntent(it);
+    /** Android 13 起通知要单独授权；不给也不影响任务，只是看不到进度通知 */
+    private void askNotifyPermission() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return;
+        if (checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+        requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
+    }
+
+    protected void onNewIntent(Intent it) {        super.onNewIntent(it);
         setIntent(it);
         if (applyIntent(it)) {
             logSeen = 0;

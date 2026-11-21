@@ -425,6 +425,19 @@ public final class AppData {
             s.append("[ -d 'data/user_de/").append(user).append('/').append(pkg)
                     .append("' ] && L=\"$L data/user_de/").append(user).append('/').append(pkg).append("\"\n");
         }
+        // 外部三块：走 /data/media/<U>/Android/…（root 视角），包里分别折成 <pkg>/ext|obb|media
+        if ((parts & PART_EXT) != 0) {
+            s.append("[ -d 'data/media/").append(user).append("/Android/data/").append(pkg)
+                    .append("' ] && L=\"$L data/media/").append(user).append("/Android/data/").append(pkg).append("\"\n");
+        }
+        if ((parts & PART_OBB) != 0) {
+            s.append("[ -d 'data/media/").append(user).append("/Android/obb/").append(pkg)
+                    .append("' ] && L=\"$L data/media/").append(user).append("/Android/obb/").append(pkg).append("\"\n");
+        }
+        if ((parts & PART_MEDIA) != 0) {
+            s.append("[ -d 'data/media/").append(user).append("/Android/media/").append(pkg)
+                    .append("' ] && L=\"$L data/media/").append(user).append("/Android/media/").append(pkg).append("\"\n");
+        }
 
         // APK / 权限：先在 /data/local/tmp 摆一个和包里同构的目录，再由 xform 折成 <包名>/…
         boolean needStage = (parts & (PART_APK | PART_PERM)) != 0;
@@ -467,6 +480,18 @@ public final class AppData {
         if (needStage) {
             s.append(" --xform=s|^").append(stage.substring(1)).append('/').append(pkg)
                     .append('|').append(pkg).append('|');
+        }
+        if ((parts & PART_EXT) != 0) {
+            s.append(" --xform=s|^data/media/").append(user).append("/Android/data/").append(pkg)
+                    .append('|').append(pkg).append("/ext|");
+        }
+        if ((parts & PART_OBB) != 0) {
+            s.append(" --xform=s|^data/media/").append(user).append("/Android/obb/").append(pkg)
+                    .append('|').append(pkg).append("/obb|");
+        }
+        if ((parts & PART_MEDIA) != 0) {
+            s.append(" --xform=s|^data/media/").append(user).append("/Android/media/").append(pkg)
+                    .append('|').append(pkg).append("/media|");
         }
         s.append("\"\n");
         s.append("B='").append(base).append("'\n");
@@ -715,6 +740,24 @@ public final class AppData {
             s.append("  mv \"$SDE\" \"$DE\" || { [ -d \"$OLD/de\" ] && mv \"$OLD/de\" \"$DE\"; }\n");
             s.append("fi\n");
         }
+        // 外部三块：包里有 <pkg>/ext|obb|media 就换到 /data/media/<T>/Android/… 对应目录。
+        // 这些目录在 FUSE 后面，属主必须是 media_rw(1023)，否则应用和文件管理器都读不到
+        int[] extBits = {PART_EXT, PART_OBB, PART_MEDIA};
+        String[] extIn = {"ext", "obb", "media"};
+        String[] extOut = {"data", "obb", "media"};
+        StringBuilder extDstList = new StringBuilder();
+        for (int k = 0; k < extBits.length; k++) {
+            if ((parts & extBits[k]) == 0) continue;
+            String dst = "/data/media/" + T + "/Android/" + extOut[k] + "/" + b.pkg;
+            extDstList.append(" '").append(dst).append('\'');
+            s.append("if [ -d \"$TMP/").append(b.pkg).append('/').append(extIn[k]).append("\" ]; then\n");
+            s.append("  rm -rf '").append(dst).append("'\n");
+            s.append("  mkdir -p '/data/media/").append(T).append("/Android/").append(extOut[k]).append("' 2>/dev/null\n");
+            s.append("  mv \"$TMP/").append(b.pkg).append('/').append(extIn[k]).append("\" '")
+                    .append(dst).append("' || echo ERR_EXT\n");
+            s.append("fi\n");
+        }
+
         // APK：装了就把新包按用户补上（先装再 install-existing 到目标空间）
         if ((parts & PART_APK) != 0) {
             s.append("if [ -d \"$TMP/").append(b.pkg).append("/apk\" ]; then\n");
@@ -749,6 +792,14 @@ public final class AppData {
             s.append("  chcon -R '").append(ctx).append("' \"$D\"\n");
         }
         s.append("done\n");
+        if (extDstList.length() > 0) {
+            s.append("for D in").append(extDstList).append("; do\n");
+            s.append("  [ -d \"$D\" ] || continue\n");
+            s.append("  chown -R 1023:1023 \"$D\"\n");
+            s.append("  chmod -R u+rwX \"$D\" 2>/dev/null\n");
+            s.append("  chcon -R 'u:object_r:media_rw_data_file:s0' \"$D\" 2>/dev/null\n");
+            s.append("done\n");
+        }
         s.append("rm -rf \"$OLD\"\n");
         s.append("echo CUB_OK\n");
 
@@ -776,9 +827,24 @@ public final class AppData {
     public static final int PART_APK = 4;
     /** 用户授予过的运行时权限与 appops */
     public static final int PART_PERM = 8;
+    /** 外部私有目录 /sdcard/Android/data/&lt;pkg&gt;（缓存类的也在这里，故默认不备） */
+    public static final int PART_EXT = 16;
+    /** /sdcard/Android/obb/&lt;pkg&gt;：游戏资源包，重下要几百 MB ~ 几 GB */
+    public static final int PART_OBB = 32;
+    /** /sdcard/Android/media/&lt;pkg&gt;：不少应用把下载/导出放这里（如支付类账单） */
+    public static final int PART_MEDIA = 64;
 
-    /** 默认：数据 + 权限。APK 体积大、能重装，默认不带 */
+    /** 默认：数据 + 权限。APK 体积大、能重装，外部目录默认不带 */
     public static final int PARTS_DEFAULT = PART_CE | PART_DE | PART_PERM;
+
+    /** 备份里带的所有内容（恢复页「全选」用） */
+    public static final int PARTS_ALL = PART_CE | PART_DE | PART_APK | PART_PERM
+            | PART_EXT | PART_OBB | PART_MEDIA;
+
+    /** 外部三块的真实路径（root 视角）；/storage/emulated 在 nsenter 下不稳，统一走 /data/media */
+    public static String extDir(String kind, int user, String pkg) {
+        return "/data/media/" + user + "/Android/" + kind + "/" + pkg;
+    }
 
     public static int parts(android.content.Context c) {
         return c.getSharedPreferences("clone", 0).getInt("backup_parts", PARTS_DEFAULT);

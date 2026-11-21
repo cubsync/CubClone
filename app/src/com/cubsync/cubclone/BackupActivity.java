@@ -359,6 +359,9 @@ public class BackupActivity extends Activity {
         if ((p & AppData.PART_DE) != 0) on.add(getString(R.string.backup_parts_de_short));
         if ((p & AppData.PART_APK) != 0) on.add(getString(R.string.backup_parts_apk_short));
         if ((p & AppData.PART_PERM) != 0) on.add(getString(R.string.backup_parts_perm_short));
+        if ((p & AppData.PART_EXT) != 0) on.add(getString(R.string.backup_parts_ext_short));
+        if ((p & AppData.PART_OBB) != 0) on.add(getString(R.string.backup_parts_obb_short));
+        if ((p & AppData.PART_MEDIA) != 0) on.add(getString(R.string.backup_parts_media_short));
         StringBuilder sb = new StringBuilder();
         for (String x : on) {
             if (sb.length() > 0) sb.append(" + ");
@@ -368,7 +371,7 @@ public class BackupActivity extends Activity {
         scopeTv.setText(getString(R.string.backup_parts_note));
     }
 
-    /** 勾备份内容：数据 / 设备数据 / APK / 权限，外加「APK 按空间各存一份」 */
+    /** 勾备份内容：数据 / 设备数据 / APK / 权限 + 外部三块（默认关） */
     private void pickParts() {
         final int cur = AppData.parts(this);
         final boolean all = AppData.apkAll(this);
@@ -380,9 +383,14 @@ public class BackupActivity extends Activity {
         final CheckBox ce = pickBox(R.string.backup_parts_ce, (cur & AppData.PART_CE) != 0);
         final CheckBox de = pickBox(R.string.backup_parts_de, (cur & AppData.PART_DE) != 0);
         final CheckBox apk = pickBox(R.string.backup_parts_apk, (cur & AppData.PART_APK) != 0);
-        final CheckBox perm = pickBox(R.string.backup_parts_perm, (cur & AppData.PART_PERM) != 0);
         final CheckBox apkAll = pickBox(R.string.backup_apk_all, all);
-        apkAll.setPadding(pad, 0, 0, 0);
+        final CheckBox perm = pickBox(R.string.backup_parts_perm, (cur & AppData.PART_PERM) != 0);
+        final CheckBox ext = pickBox(R.string.backup_parts_ext, (cur & AppData.PART_EXT) != 0);
+        final CheckBox obb = pickBox(R.string.backup_parts_obb, (cur & AppData.PART_OBB) != 0);
+        final CheckBox media = pickBox(R.string.backup_parts_media, (cur & AppData.PART_MEDIA) != 0);
+        // 子选项只缩进一点，别缩到和同级选项错开
+        int kid = (int) (24 * getResources().getDisplayMetrics().density);
+        apkAll.setPadding(kid, 0, 0, 0);
         apkAll.setEnabled((cur & AppData.PART_APK) != 0);
         apk.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(android.widget.CompoundButton b, boolean on) {
@@ -397,6 +405,9 @@ public class BackupActivity extends Activity {
         box.addView(apk);
         box.addView(apkAll);
         box.addView(perm);
+        box.addView(ext);
+        box.addView(obb);
+        box.addView(media);
 
         new AlertDialog.Builder(this)
                 .setTitle(R.string.backup_parts_title)
@@ -408,6 +419,9 @@ public class BackupActivity extends Activity {
                         if (de.isChecked()) p |= AppData.PART_DE;
                         if (apk.isChecked()) p |= AppData.PART_APK;
                         if (perm.isChecked()) p |= AppData.PART_PERM;
+                        if (ext.isChecked()) p |= AppData.PART_EXT;
+                        if (obb.isChecked()) p |= AppData.PART_OBB;
+                        if (media.isChecked()) p |= AppData.PART_MEDIA;
                         if (p == 0) p = AppData.PART_CE;     // 全不勾就没东西可备了
                         sp().edit().putInt("backup_parts", p)
                                 .putBoolean("backup_apk_all", apk.isChecked() && apkAll.isChecked())
@@ -462,7 +476,10 @@ public class BackupActivity extends Activity {
                 .show();
     }
 
-    /** 级别用 SeekBar + 实时数值，覆盖算法完整范围（zstd 1–22 / gzip 1–9 / bzip2 1–9） */
+    /**
+     * 级别用 SeekBar + 实时数值。每个算法各给两句：当前级别什么效果（跟着滑块变）、
+     * 这个算法该怎么调（固定一句话，直接给数字，不列范围）。
+     */
     private void pickLevel(final String algo) {
         final int max = AppData.maxLevel(algo);
         if (max <= 0) {
@@ -470,8 +487,9 @@ public class BackupActivity extends Activity {
             return;
         }
         final int min = 1;
+        final int def = AppData.defaultLevel(algo);
         int cur = currentLevel(algo);
-        if (cur < min || cur > max) cur = AppData.defaultLevel(algo);
+        if (cur < min || cur > max) cur = def;
 
         float d = getResources().getDisplayMetrics().density;
         LinearLayout box = new LinearLayout(this);
@@ -481,7 +499,7 @@ public class BackupActivity extends Activity {
         final TextView value = new TextView(this);
         value.setTextSize(16);
         value.setTextColor(fg);
-        value.setText(getString(R.string.backup_level_item, cur));
+        value.setText(levelLabel(cur, def));
         box.addView(value);
 
         final SeekBar bar = new SeekBar(this);
@@ -492,18 +510,29 @@ public class BackupActivity extends Activity {
         lp.topMargin = (int) (10 * d);
         box.addView(bar, lp);
 
-        TextView note = new TextView(this);
-        note.setTextSize(12);
-        note.setTextColor(sec);
-        note.setText(R.string.backup_level_note);
+        final TextView hintLv = new TextView(this);
+        hintLv.setTextSize(12);
+        hintLv.setTextColor(sec);
+        hintLv.setText(levelHint(algo, cur));
         LinearLayout.LayoutParams lp2 = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp2.topMargin = (int) (6 * d);
-        box.addView(note, lp2);
+        lp2.topMargin = (int) (2 * d);
+        box.addView(hintLv, lp2);
+
+        final TextView advice = new TextView(this);
+        advice.setTextSize(12);
+        advice.setTextColor(sec);
+        advice.setText(android.text.Html.fromHtml(getString(adviceRes(algo))));
+        LinearLayout.LayoutParams lp3 = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp3.topMargin = (int) (12 * d);
+        box.addView(advice, lp3);
 
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
-                value.setText(getString(R.string.backup_level_item, progress + 1));
+                int lv = progress + min;
+                value.setText(levelLabel(lv, def));
+                hintLv.setText(levelHint(algo, lv));
             }
 
             public void onStartTrackingTouch(SeekBar s) { }
@@ -516,11 +545,57 @@ public class BackupActivity extends Activity {
                 .setView(box)
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dlg, int w) {
-                        saveAlgo(algo, bar.getProgress() + 1);
+                        saveAlgo(algo, bar.getProgress() + min);
                     }
                 })
+                .setNeutralButton(getString(R.string.backup_level_reset, def),
+                        new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface dlg, int w) {
+                                // 只把滑块拨回默认并刷新说明，不关窗：想再微调还能继续拖
+                                bar.setProgress(def - min);
+                                value.setText(levelLabel(def, def));
+                                hintLv.setText(levelHint(algo, def));
+                            }
+                        })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    /** 「级别 N」；正好在上游默认值时补「（默认）」 */
+    private String levelLabel(int lv, int def) {
+        return lv == def ? getString(R.string.backup_level_item_def, lv)
+                : getString(R.string.backup_level_item, lv);
+    }
+
+    /** 当前级别的效果；数字取自各算法上游默认和实测（见 README「压缩级别」一节） */
+    private String levelHint(String algo, int lv) {
+        int r;
+        if ("zst".equals(algo)) {
+            if (lv <= 2) r = R.string.backup_lv_zst_1;
+            else if (lv == 3) r = R.string.backup_lv_zst_3;
+            else if (lv <= 6) r = R.string.backup_lv_zst_5;
+            else if (lv <= 9) r = R.string.backup_lv_zst_9;
+            else if (lv <= 12) r = R.string.backup_lv_zst_12;
+            else if (lv <= 18) r = R.string.backup_lv_zst_18;
+            else r = R.string.backup_lv_zst_19;
+        } else if ("gz".equals(algo)) {
+            if (lv <= 2) r = R.string.backup_lv_gz_1;
+            else if (lv <= 5) r = R.string.backup_lv_gz_5;
+            else if (lv == 6) r = R.string.backup_lv_gz_6;
+            else if (lv <= 8) r = R.string.backup_lv_gz_8;
+            else r = R.string.backup_lv_gz_9;
+        } else {
+            if (lv <= 5) r = R.string.backup_lv_bz2_5;
+            else if (lv <= 8) r = R.string.backup_lv_bz2_8;
+            else r = R.string.backup_lv_bz2_9;
+        }
+        return getString(r);
+    }
+
+    private int adviceRes(String algo) {
+        if ("zst".equals(algo)) return R.string.backup_lv_advice_zst;
+        if ("gz".equals(algo)) return R.string.backup_lv_advice_gz;
+        return R.string.backup_lv_advice_bz2;
     }
 
     private void saveAlgo(String algo, int level) {
@@ -1058,26 +1133,14 @@ public class BackupActivity extends Activity {
         }).start();
     }
 
-    /** 单条恢复：按用户选的空间与内容来 */
+    /** 单条恢复也走过程页：进度、速度、日志和批量一样，失败原因能在日志里翻 */
     private void jobRestore(final AppData.Backup b, final int targetUser, final int parts) {
-        toast(getString(R.string.backup_working));
-        new Thread(new Runnable() {
-            public void run() {
-                final String r = AppData.restore(b, appIdOf(b.pkg), targetUser, parts);
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        if (r.startsWith("OK")) {
-                            toast(r.equals("OK_NOAPK")
-                                    ? getString(R.string.backup_restore_ok_noapk)
-                                    : getString(R.string.backup_restore_ok));
-                            reloadList();
-                        } else {
-                            toast(getString(R.string.backup_fail, r));
-                        }
-                    }
-                });
-            }
-        }).start();
+        android.content.Intent it = new android.content.Intent(this, BatchRunActivity.class);
+        it.putExtra(BatchRunActivity.EXTRA_MODE, BatchRunActivity.MODE_RESTORE);
+        it.putExtra(BatchRunActivity.EXTRA_PATHS, new String[]{b.path});
+        it.putExtra(BatchRunActivity.EXTRA_TARGET_USER, targetUser);
+        it.putExtra(BatchRunActivity.EXTRA_PARTS, parts);
+        startActivity(it);
     }
 
     /** 「日志」= 回到批量任务那一页：还在跑就直接看进度，跑完了看结果，进程重启过就看上次落盘的 */

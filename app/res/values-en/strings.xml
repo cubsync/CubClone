@@ -350,6 +350,7 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="backup_filter_count">%1$d spaces</string>
     <string name="backup_no_match">No matching backups</string>
     <string name="backup_algo_bad">unavailable</string>
+    <string name="backup_spaces_n">%1$d spaces</string>
     <string name="backup_pick_space">Choose space</string>
     <string name="backup_batch_title">Back up apps in %1$s</string>
     <string name="backup_batch_empty">No third-party apps to back up in this space</string>

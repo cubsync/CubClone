@@ -90,6 +90,25 @@ public final class BatchJob {
     }
 
     /**
+     * 一次备份多个空间：条目形如 "10|com.foo"（竖线分隔，包名里不会有竖线）。
+     * 支持「主空间 + 空间 1」这种组合，选中的应用按各自空间分开跑。
+     */
+    public static BatchJob startBackupMulti(Context c, List<String> items) {
+        BatchJob j = new BatchJob(c, false, 0, 0);
+        for (String s : items) {
+            int i = s.indexOf('|');
+            if (i <= 0) continue;
+            int u;
+            try { u = Integer.parseInt(s.substring(0, i).trim()); } catch (Throwable t) { continue; }
+            String pkg = s.substring(i + 1);
+            if (pkg.length() > 0) j.rows.add(new Row(pkg, u, ""));
+        }
+        j.algo = sp(c).getString("backup_algo", "zst");
+        j.level = sp(c).getInt("backup_level_" + j.algo, AppData.defaultLevel(j.algo));
+        return j.launch();
+    }
+
+    /**
      * 恢复：同空间同应用有多份时只留最新那份——按时间从旧到新跑等于旧的盖掉新的，白跑还丢数据。
      */
     public static BatchJob startRestore(Context c, List<String> paths, int targetUser, int parts) {
@@ -174,7 +193,8 @@ public final class BatchJob {
                     r.state = ST_OK;
                     r.detail = restore
                             ? spaceLabel(targetUser < 0 ? r.user : targetUser) + " · " + mmss(m.ms())
-                            : fileName(res) + " · " + m.summary();
+                            // 体积/速度放前面：文件名一长，单行里先被吃掉的就是它
+                            : m.summary() + " · " + fileName(res);
                     ok++;
                 } else {
                     r.state = ST_BAD;

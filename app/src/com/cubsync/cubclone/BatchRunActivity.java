@@ -38,6 +38,8 @@ public class BatchRunActivity extends Activity {
     public static final String EXTRA_PKGS = "pkgs";
     public static final String EXTRA_PATHS = "paths";
     public static final String EXTRA_USER = "user";
+    /** 多空间备份：每条 "空间\t包名"；带了它就不用 EXTRA_USER / EXTRA_PKGS */
+    public static final String EXTRA_ITEMS = "items";
     public static final String EXTRA_TARGET_USER = "target_user";
     public static final String EXTRA_PARTS = "parts";
     public static final String MODE_BACKUP = "backup";
@@ -165,10 +167,17 @@ public class BatchRunActivity extends Activity {
             return true;
         }
         if (backup) {
-            String[] pkgs = it.getStringArrayExtra(EXTRA_PKGS);
-            List<String> l = new ArrayList<String>();
-            if (pkgs != null) for (String p : pkgs) l.add(p);
-            job = BatchJob.startBackup(this, it.getIntExtra(EXTRA_USER, 0), l);
+            String[] items = it.getStringArrayExtra(EXTRA_ITEMS);
+            if (items != null && items.length > 0) {
+                List<String> l = new ArrayList<String>();
+                for (String s : items) l.add(s);
+                job = BatchJob.startBackupMulti(this, l);
+            } else {
+                String[] pkgs = it.getStringArrayExtra(EXTRA_PKGS);
+                List<String> l = new ArrayList<String>();
+                if (pkgs != null) for (String p : pkgs) l.add(p);
+                job = BatchJob.startBackup(this, it.getIntExtra(EXTRA_USER, 0), l);
+            }
         } else {
             String[] paths = it.getStringArrayExtra(EXTRA_PATHS);
             List<String> l = new ArrayList<String>();
@@ -345,6 +354,10 @@ public class BatchRunActivity extends Activity {
             }
             if (r.detail.length() > 0) sub.append(" · ").append(r.detail);
             t2.setText(sub.toString());
+            // 单行放不下就换行：文件名很长时，别把体积、速度挤没
+            t2.setSingleLine(false);
+            t2.setMaxLines(3);
+            t2.setEllipsize(null);
             t2.setTextColor(r.state == BatchJob.ST_BAD ? red
                     : r.state == BatchJob.ST_OK ? green : sec);
             more.setVisibility(View.GONE);

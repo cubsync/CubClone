@@ -1014,9 +1014,10 @@ public class BackupActivity extends Activity {
             t1.setText(labelOf(b.pkg));
             t1.setTextColor(fg);
             StringBuilder sub = new StringBuilder();
-            sub.append(spaceLabel(b.user))
-                    .append(" · ").append(b.ts)
-                    .append(" · ").append(b.sizeText());
+            // 体积放最前：后面还有空间、时间、算法，单行放不下时先被截掉的就是尾巴
+            sub.append(b.sizeText())
+                    .append(" · ").append(spaceLabel(b.user))
+                    .append(" · ").append(b.ts);
             if (b.packed()) {
                 sub.append(" · ").append(getString(R.string.backup_packed));
                 String an = b.algo;

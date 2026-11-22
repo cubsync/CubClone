@@ -50,11 +50,14 @@ public class BatchBackupActivity extends Activity {
     private final List<Integer> spaces = new ArrayList<Integer>();
     private final List<String> pkgs = new ArrayList<String>();
     private final List<String> labels = new ArrayList<String>();
+    private final List<Integer> rowUsers = new ArrayList<Integer>();
     private final List<Integer> shown = new ArrayList<Integer>();
+    /** 勾选按「空间 + 包名」记：同一个应用在两个空间里是两条 */
     private final Set<String> checked = new HashSet<String>();
     private final java.util.HashMap<String, String> labelCache = new java.util.HashMap<String, String>();
 
-    private int user = 0;
+    /** 选中的空间，可多选（主空间 + 某几个分身） */
+    private final java.util.LinkedHashSet<Integer> picked = new java.util.LinkedHashSet<Integer>();
     private String query = "";
     private boolean running = false;
 
@@ -131,30 +134,44 @@ public class BatchBackupActivity extends Activity {
                     public void run() {
                         spaces.clear();
                         spaces.addAll(r);
+                        if (picked.isEmpty()) picked.add(Integer.valueOf(0));
+                        // 空间被删过：把已经不存在的选择丢掉，实在空了就回主空间
+                        picked.retainAll(r);
+                        if (picked.isEmpty()) picked.add(Integer.valueOf(0));
                         renderSpace();
+                        loadApps();
                     }
                 });
             }
         }).start();
     }
 
+    /** 空间筛选：多选，主空间 + 任意几个分身可以一起备份 */
     private void pickSpace() {
         if (spaces.isEmpty()) return;
-        String[] items = new String[spaces.size()];
-        int cur = 0;
+        final String[] items = new String[spaces.size()];
+        final boolean[] on = new boolean[spaces.size()];
         for (int i = 0; i < spaces.size(); i++) {
             items[i] = spaceLabel(spaces.get(i).intValue());
-            if (spaces.get(i).intValue() == user) cur = i;
+            on[i] = picked.contains(spaces.get(i));
         }
         new AlertDialog.Builder(this)
                 .setTitle(R.string.backup_pick_space)
-                .setSingleChoiceItems(items, cur, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int which) {
-                        d.dismiss();
-                        int u = spaces.get(which).intValue();
-                        if (u == user) return;
-                        user = u;
-                        checked.clear();
+                .setMultiChoiceItems(items, on, new DialogInterface.OnMultiChoiceClickListener() {
+                    public void onClick(DialogInterface d, int which, boolean isChecked) {
+                        on[which] = isChecked;
+                    }
+                })
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        java.util.LinkedHashSet<Integer> next = new java.util.LinkedHashSet<Integer>();
+                        for (int i = 0; i < spaces.size(); i++) {
+                            if (on[i]) next.add(spaces.get(i));
+                        }
+                        if (next.isEmpty()) next.add(Integer.valueOf(0));   // 一个都不选就当主空间
+                        if (next.equals(picked)) return;
+                        picked.clear();
+                        picked.addAll(next);
                         renderSpace();
                         loadApps();
                     }
@@ -164,44 +181,55 @@ public class BatchBackupActivity extends Activity {
     }
 
     private void loadApps() {
-        final int u = user;
+        final List<Integer> us = new ArrayList<Integer>(picked);
         empty.setVisibility(View.VISIBLE);
         empty.setText(R.string.backup_working);
         list.setVisibility(View.GONE);
         new Thread(new Runnable() {
             public void run() {
-                java.util.TreeSet<String> uniq = new java.util.TreeSet<String>();
-                String out = Shell.exec("pm list packages -3 --user " + u + " 2>/dev/null");
-                for (String line : out.split("\n")) {
-                    String t = line.trim();
-                    if (t.startsWith("package:")) uniq.add(t.substring(8).trim());
-                }
-                final List<String> ps = new ArrayList<String>();
-                final List<String> ls = new ArrayList<String>();
-                for (String p : uniq) {
-                    ps.add(p);
-                    ls.add(labelOf(p));
+                List<String> ps = new ArrayList<String>();
+                List<String> ls = new ArrayList<String>();
+                List<Integer> ru = new ArrayList<Integer>();
+                for (Integer u : us) {
+                    java.util.TreeSet<String> uniq = new java.util.TreeSet<String>();
+                    String out = Shell.exec("pm list packages -3 --user " + u + " 2>/dev/null");
+                    for (String line : out.split("\n")) {
+                        String t = line.trim();
+                        if (t.startsWith("package:")) uniq.add(t.substring(8).trim());
+                    }
+                    for (String p : uniq) {
+                        ps.add(p);
+                        ls.add(labelOf(p));
+                        ru.add(u);
+                    }
                 }
                 java.util.List<Integer> order = new ArrayList<Integer>();
                 for (int i = 0; i < ps.size(); i++) order.add(Integer.valueOf(i));
                 java.util.Collections.sort(order, new java.util.Comparator<Integer>() {
                     public int compare(Integer a, Integer b) {
-                        return ls.get(a.intValue()).compareToIgnoreCase(ls.get(b.intValue()));
+                        int c = ls.get(a.intValue()).compareToIgnoreCase(ls.get(b.intValue()));
+                        if (c != 0) return c;
+                        int ua = ru.get(a.intValue()).intValue(), ub = ru.get(b.intValue()).intValue();
+                        return ua == ub ? 0 : (ua < ub ? -1 : 1);
                     }
                 });
                 final List<String> sp = new ArrayList<String>();
                 final List<String> sl = new ArrayList<String>();
+                final List<Integer> su = new ArrayList<Integer>();
                 for (Integer i : order) {
                     sp.add(ps.get(i.intValue()));
                     sl.add(ls.get(i.intValue()));
+                    su.add(ru.get(i.intValue()));
                 }
                 runOnUiThread(new Runnable() {
                     public void run() {
-                        if (u != user) return;   // 半路换了空间，丢掉旧结果
+                        if (!new ArrayList<Integer>(picked).equals(us)) return;   // 半路换了空间，丢掉旧结果
                         pkgs.clear();
                         pkgs.addAll(sp);
                         labels.clear();
                         labels.addAll(sl);
+                        rowUsers.clear();
+                        rowUsers.addAll(su);
                         checked.clear();
                         refilter();
                     }
@@ -230,7 +258,20 @@ public class BatchBackupActivity extends Activity {
     }
 
     private void renderSpace() {
-        spaceTv.setText(spaceLabel(user) + " ▾");
+        StringBuilder sb = new StringBuilder();
+        if (picked.size() <= 2) {
+            for (Integer u : picked) {
+                if (sb.length() > 0) sb.append(" + ");
+                sb.append(spaceLabel(u.intValue()));
+            }
+        } else {
+            sb.append(getString(R.string.backup_spaces_n, picked.size()));
+        }
+        spaceTv.setText(sb + " ▾");
+    }
+
+    private static String key(int u, String pkg) {
+        return u + "|" + pkg;
     }
 
     // ── 列表与选择 ───────────────────────────────────────────────────
@@ -264,7 +305,10 @@ public class BatchBackupActivity extends Activity {
         boolean all = shown.size() > 0 && checked.size() == shown.size();
         checked.clear();
         if (!all) {
-            for (Integer i : shown) checked.add(pkgs.get(i.intValue()));
+            for (Integer i : shown) {
+                int k = i.intValue();
+                checked.add(key(rowUsers.get(k).intValue(), pkgs.get(k)));
+            }
         }
         adapter.notifyDataSetChanged();
         renderBar();
@@ -273,9 +317,10 @@ public class BatchBackupActivity extends Activity {
     /** 反选：只看当前过滤出来的这批 */
     private void invert() {
         for (Integer i : shown) {
-            String p = pkgs.get(i.intValue());
-            if (checked.contains(p)) checked.remove(p);
-            else checked.add(p);
+            int k = i.intValue();
+            String id = key(rowUsers.get(k).intValue(), pkgs.get(k));
+            if (checked.contains(id)) checked.remove(id);
+            else checked.add(id);
         }
         adapter.notifyDataSetChanged();
         renderBar();
@@ -289,8 +334,9 @@ public class BatchBackupActivity extends Activity {
             return;
         }
         final List<String> sel = new ArrayList<String>();
-        for (String p : pkgs) {
-            if (checked.contains(p)) sel.add(p);
+        for (int k = 0; k < pkgs.size(); k++) {
+            String id = key(rowUsers.get(k).intValue(), pkgs.get(k));
+            if (checked.contains(id)) sel.add(id);
         }
         if (sel.isEmpty()) {
             toast(getString(R.string.backup_batch_none));
@@ -298,8 +344,7 @@ public class BatchBackupActivity extends Activity {
         }
         android.content.Intent it = new android.content.Intent(this, BatchRunActivity.class);
         it.putExtra(BatchRunActivity.EXTRA_MODE, BatchRunActivity.MODE_BACKUP);
-        it.putExtra(BatchRunActivity.EXTRA_USER, user);
-        it.putExtra(BatchRunActivity.EXTRA_PKGS, sel.toArray(new String[sel.size()]));
+        it.putExtra(BatchRunActivity.EXTRA_ITEMS, sel.toArray(new String[sel.size()]));
         startActivity(it);
         finish();   // 选完就退，回来时备份页 onResume 会重扫列表
     }
@@ -317,7 +362,10 @@ public class BatchBackupActivity extends Activity {
                 v = LayoutInflater.from(BatchBackupActivity.this)
                         .inflate(R.layout.item_backup, parent, false);
             }
-            final String pkg = pkgs.get(shown.get(i).intValue());
+            final int idx = shown.get(i).intValue();
+            final String pkg = pkgs.get(idx);
+            final int u = rowUsers.get(idx).intValue();
+            final String id = key(u, pkg);
             TextView t1 = v.findViewById(R.id.item_title);
             TextView t2 = v.findViewById(R.id.item_sub);
             TextView more = v.findViewById(R.id.item_more);
@@ -325,16 +373,16 @@ public class BatchBackupActivity extends Activity {
 
             t1.setText(labelOf(pkg));
             t1.setTextColor(fg);
-            t2.setText(pkg);
+            t2.setText(spaceLabel(u) + " · " + pkg);
             t2.setTextColor(sec);
             more.setVisibility(View.GONE);
             check.setVisibility(View.VISIBLE);
-            check.setChecked(checked.contains(pkg));
+            check.setChecked(checked.contains(id));
 
             v.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View x) {
-                    if (checked.contains(pkg)) checked.remove(pkg);
-                    else checked.add(pkg);
+                    if (checked.contains(id)) checked.remove(id);
+                    else checked.add(id);
                     adapter.notifyDataSetChanged();
                     renderBar();
                 }

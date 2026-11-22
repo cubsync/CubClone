@@ -350,6 +350,7 @@
     <string name="backup_filter_count">%1$d 个空间</string>
     <string name="backup_no_match">没有匹配的备份</string>
     <string name="backup_algo_bad">本机不可用</string>
+    <string name="backup_spaces_n">%1$d 个空间</string>
     <string name="backup_pick_space">选择空间</string>
     <string name="backup_batch_title">备份 %1$s 的应用</string>
     <string name="backup_batch_empty">这个空间没有可备份的第三方应用</string>

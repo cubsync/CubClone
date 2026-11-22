@@ -297,14 +297,18 @@ public class RemoveClonesActivity extends Activity {
     }
 
     /**
-     * 量各分身的数据体积：**每个空间一条 du**，不是每个包一条。
-     * 以前逐包 du，400 个分身就是 400 次 fork，二十秒起步，脚本还容易被截断——
-     * 界面就变成「刷新慢 + 全部无数据」。整目录一次遍历，两个空间不到一秒。
-     * 每量完一个空间就刷一次界面，数字是陆续出现的。
+     * 量各分身的数据体积：**每个空间一条命令**，不是每个包一条。
+     * 逐包跑（400 个分身 = 400 次 fork）会二十秒起步、脚本还容易被截断，
+     * 界面就成了「刷新慢 + 全部无数据」。整目录一次遍历，一个空间一两秒。
      *
-     * 口径必须是「应用真正占的地方」：CE(/data/user)、DE(/data/user_de)、
-     * 外部三块(Android/data|media|obb) 相加。只看 CE 会把芝麻粒这种数据都在 DE 的
-     * 报成 22 KB，再被当成空壳勾上。
+     * 口径 = 「应用自己写下的数据」：
+     *   CE(/data/user)、DE(/data/user_de)、外部三块(Android/data|media|obb) 全部相加，
+     *   **排除 cache / code_cache 段**。
+     * 为什么排除缓存：刚克隆出来、一次都没打开的应用，系统也会建出
+     * `/data/user/<U>/<包>/cache`、`code_cache` 两个空目录，du 量出来 22 KB——
+     * 按字节算就成了「有数据」，可它确实是空壳（空间 2 新建的 XRadiant 就是这样）。
+     * 只看真实文件（files/databases/shared_prefs/app_* 等）才等于用户眼里的「有没有数据」。
+     * 顺带：lib 是指向 /data/app 的符号链接，-type f 不会跟进去，本来就不会算。
      */
     private void measure() {
         if (rows.isEmpty()) return;
@@ -312,60 +316,35 @@ public class RemoveClonesActivity extends Activity {
         for (Row r : rows) users.add(Integer.valueOf(r.uid));
         for (final Integer u : users) {
             final int U = u.intValue();
-            StringBuilder cmd = new StringBuilder("du -sk");
-            cmd.append(" /data/user/").append(U).append("/*");
-            cmd.append(" /data/user_de/").append(U).append("/*");
+            StringBuilder cmd = new StringBuilder("find");
+            cmd.append(" /data/user/").append(U);
+            cmd.append(" /data/user_de/").append(U);
             for (String k : new String[]{"data", "media", "obb"}) {
-                cmd.append(" /data/media/").append(U).append("/Android/").append(k).append("/*");
+                cmd.append(" /data/media/").append(U).append("/Android/").append(k);
             }
-            cmd.append(" 2>/dev/null\n");
+            cmd.append(" -mindepth 2 -type f -printf '%s %p\\n' 2>/dev/null | awk '\n");
+            // 路径里只要有一级叫 cache / code_cache 就跳过
+            cmd.append("{ n=split($2,a,\"/\");\n");
+            cmd.append("  for(i=1;i<=n;i++) if(a[i]==\"cache\"||a[i]==\"code_cache\") next;\n");
+            // files/profileInstalled 是系统装完就写的 24 字节标记，不是用户数据
+            cmd.append("  if(a[n]==\"profileInstalled\") next;\n");
+            cmd.append("  pkg=\"\";\n");
+            cmd.append("  if(a[3]==\"user\"||a[3]==\"user_de\") pkg=a[5];\n");
+            cmd.append("  else if(a[3]==\"media\") pkg=a[7];\n");
+            cmd.append("  if(pkg!=\"\") s[pkg]+=$1 }\n");
+            // 有数据但不足 1 KB 的记 1，别让它显示成「无数据」
+            cmd.append("END{ for(k in s){ v=int((s[k]+512)/1024); if(v<1) v=1;")
+                    .append(" printf \"%s|%d\\n\", k, v } }'\n");
             String out = Shell.execScript(cmd.toString());
             final java.util.HashMap<String, Long> sum = new java.util.HashMap<String, Long>();
             for (String line : out.split("\n")) {
                 String t = line.trim();
-                int sp = t.indexOf('\t');
-                if (sp <= 0) sp = t.indexOf(' ');
-                if (sp <= 0) continue;
-                String k = t.substring(0, sp).trim();
-                String path = t.substring(sp + 1).trim();
-                int sl = path.lastIndexOf('/');
-                if (sl < 0) continue;
-                String pkg = path.substring(sl + 1);
-                Long old = sum.get(pkg);
-                sum.put(pkg, Long.valueOf((old == null ? 0 : old.longValue()) + atol(k)));
+                int bar = t.indexOf('|');
+                if (bar <= 0) continue;
+                sum.put(t.substring(0, bar).trim(),
+                        Long.valueOf(atol(t.substring(bar + 1))));
             }
-            // du 没出现的包：可能真没目录（空壳），也可能只是这一轮没扫到。逐个再量一次，
-            // 量到的按实数记；目录存在但确实是空的才算 0（进「仅无数据」那批）。
-            StringBuilder chk = new StringBuilder();
-            for (Row r : rows) {
-                if (r.uid != U || sum.containsKey(r.pkg)) continue;
-                String p = r.pkg;
-                chk.append("if [ -e /data/user/").append(U).append('/').append(p)
-                        .append(" ] || [ -e /data/user_de/").append(U).append('/').append(p);
-                for (String k : new String[]{"data", "media", "obb"}) {
-                    chk.append(" || [ -e /data/media/").append(U).append("/Android/")
-                            .append(k).append('/').append(p).append(" ]");
-                }
-                chk.append("; then echo '").append(p).append("|$(du -sk");
-                chk.append(" /data/user/").append(U).append('/').append(p);
-                chk.append(" /data/user_de/").append(U).append('/').append(p);
-                for (String k : new String[]{"data", "media", "obb"}) {
-                    chk.append(" /data/media/").append(U).append("/Android/").append(k).append('/').append(p);
-                }
-                chk.append(" 2>/dev/null | awk '{s+=$1} END{print s+0}')\"");
-                chk.append("; else echo '").append(p).append("|0'; fi\n");
-            }
-            if (chk.length() > 0) {
-                String r2 = Shell.execScript(chk.toString());
-                for (String line : r2.split("\n")) {
-                    String t = line.trim();
-                    int bar = t.indexOf('|');
-                    if (bar <= 0) continue;
-                    String pkg = t.substring(0, bar);
-                    long v = atol(t.substring(bar + 1));
-                    sum.put(pkg, Long.valueOf(v));
-                }
-            }
+            // 没出现的包 = 一个真实文件都没有（只剩 cache 骨架或干脆没目录）= 空壳
             for (Row r : rows) {
                 if (r.uid != U) continue;
                 Long v = sum.get(r.pkg);

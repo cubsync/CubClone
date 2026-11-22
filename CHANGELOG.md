@@ -63,6 +63,11 @@
   系统属性里，应用零权限 getprop 就能读，不需要 root。
 
 ### 变更
+- 恢复 `Android/media` 不再自己「猜」属主：内容归 MediaProvider（本机 `u0_a161`）、组 `media_rw`(1023)、
+  664/2775，顶层目录归该包 uid。属主/权限一律在底层 `/data/media` 上改——`/storage` 是 FUSE，
+  root 在那边 `chown` 静默无效（昨天的「改完还是原值」就是这么来的）。落权后逐项 `stat` 校验，
+  不符直接报失败，不再照常打印成功。
+- 恢复 `Android/obb` 的组改成 `ext_obb_rw`(1079)，与 `Android/data` 的 `ext_data_rw`(1078) 分开。
 - 修复模块（2.4）的属主迁移改成「只迁 sdcardfs 时代遗留的 media_rw(1023)」：
   应用自己建的文件与权限一律不动。2.3 那版把包目录里的内容无差别 chown 到本空间媒体服务，
   会把借主空间 MediaProvider 身份写文件的应用（XRadiant）改坏 —— 只能删掉被改过的目录让它自己重建。

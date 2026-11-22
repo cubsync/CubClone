@@ -29,8 +29,28 @@
 ```
 
 外部三块在设备上读自 `/data/media/<U>/Android/…`（root 视角，比 `/storage/emulated` 稳）。
-恢复时按目标空间写回同一位置，属主设 `media_rw`(1023)、上下文 `media_rw_data_file`，
-否则 FUSE 下应用和文件管理器都读不到。
+恢复时按目标空间写回同一位置，但**写回方式按挂载方式分开**：
+
+| 目录 | 挂载 | 写回方式 | 属主/组/权限 |
+|---|---|---|---|
+| `Android/data` | pass-through（f2fs）| 直接写底层 | 该包 uid : 1078，2770 / 660 |
+| `Android/obb` | pass-through（f2fs）| 直接写底层 | 该包 uid : 1079，2770 / 660 |
+| `Android/media` | FUSE（MediaProvider 代理）| 走 `/storage/emulated/<U>/…` 建文件 | 顶层目录 = 该包 uid : 1023；里面内容 = MediaProvider : 1023，2775 / 664 |
+
+`Android/media` 两条硬规则，都是踩出来的：
+
+1. **文件必须由 MediaProvider 建**（走 `/storage` 路径）。直接 `mv` 进底层，MediaProvider
+   不认这些 inode，之后应用 `ftruncate` / 新建一律 `EPERM` / `ENOENT`。
+2. **属主必须让 MediaProvider 改得动**。纯 FUSE 下读写全由它代理，它只是个进程：文件
+   属主是 `media_rw`(1023) 且组不是它的时候，它只有 other 读权限，写就是 EPERM。现场
+   表现是应用侧 `SQLITE_IOERR_SHMOPEN`、界面一直转圈。属主落在 MediaProvider（本机
+   `u0_a161`）、组 `media_rw`、664/2775 才是它能写、应用也能通过它写的形态。
+
+属主/权限一律在**底层路径**上改（`/data/media/…`）：`/storage` 是 FUSE，root 在那边
+`chown` 会静默失败（实测改完再看还是原值）。在底层只动元数据、不动 inode，MediaProvider
+不会因此「不认识」这些文件。落权后逐项 `stat` 校验顶层属主，不符就报「外部目录属主没落对」
+而不是照常报成功。
+
 
 ## 压缩
 

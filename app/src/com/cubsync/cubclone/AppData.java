@@ -695,6 +695,10 @@ public final class AppData {
         // 用主空间 appId 推出来的数字会把目录设成别的应用（曾把支付宝目录设成 u0_a161）
         s.append("AU=$(stat -c %u \"/data/user/").append(T).append('/').append(b.pkg)
                 .append("\" 2>/dev/null); [ -n \"$AU\" ] || AU=").append(uid).append("\n");
+        // MediaProvider 的 uid：Android/media 里的内容归它，SELinux 之外它还得有 POSIX 写权限
+        // （纯 FUSE 下所有读写都由它代理，属主不是它、组又不是 media_rw 的文件它改不动）。
+        s.append("MP=$(stat -c %u /data/user/0/com.android.providers.media.module 2>/dev/null);"
+                + " [ -n \"$MP\" ] || MP=$(stat -c %u /data/user/0/com.android.providers.media 2>/dev/null)\n");
 
         if (b.packed()) {
             String tmp = "/data/local/tmp/cc-restore-" + ts;
@@ -754,7 +758,10 @@ public final class AppData {
         // 外部三块：包里有 <pkg>/ext|obb|media 就换到 Android/… 对应目录。
         // Android/data 与 Android/obb 是 pass-through 直挂（f2fs），直接写底层即可；
         // Android/media 在 FUSE 后面，必须走 /storage 路径让 MediaProvider 亲自建文件——
-        // 绕过它直接 mv 进去，它不认这些 inode，之后应用 ftruncate/新建都被挡（EPERM/ENOENT）
+        // 绕过它直接 mv 进去，它不认这些 inode，之后 ftruncate/新建一律 EPERM/ENOENT。
+        // ⛔ 属主与权限一律在底层（/data/media）改：/storage 是 FUSE，root 在那边 chown 静默无效
+        //    （实测：chown 完再看还是 10161/1023，等于白改）。inode 是 MediaProvider 建的，
+        //    在底层只动元数据不会让它「不认识」这些文件。
         int[] extBits = {PART_EXT, PART_OBB, PART_MEDIA};
         String[] extIn = {"ext", "obb", "media"};
         String[] extOut = {"data", "obb", "media"};
@@ -762,9 +769,10 @@ public final class AppData {
         for (int k = 0; k < extBits.length; k++) {
             if ((parts & extBits[k]) == 0) continue;
             boolean viaFuse = "media".equals(extOut[k]);
-            String dst = (viaFuse ? "/storage/emulated/" : "/data/media/") + T
-                    + "/Android/" + extOut[k] + "/" + b.pkg;
-            extDstList.append(" '").append(dst).append('\'');
+            String raw = "/data/media/" + T + "/Android/" + extOut[k] + "/" + b.pkg;
+            String dst = viaFuse ? "/storage/emulated/" + T + "/Android/media/" + b.pkg : raw;
+            // 落权与校验一律用底层路径 raw（见上）
+            extDstList.append(" '").append(raw).append('\'');
             s.append("if [ -d \"$TMP/").append(b.pkg).append('/').append(extIn[k]).append("\" ]; then\n");
             s.append("  rm -rf '").append(dst).append("'\n");
             if (viaFuse) {
@@ -817,21 +825,35 @@ public final class AppData {
         if (extDstList.length() > 0) {
             s.append("for D in").append(extDstList).append("; do\n");
             s.append("  [ -d \"$D\" ] || continue\n");
-            // 系统约定（实测）：owner 是该空间里的应用真实 uid（/data/user/<T>/<pkg> 的属主），
-            // Android/data 的组是 ext_data_rw(1078)、Android/media|obb 的组是父目录的组(1023)。
-            // 组别自己算（uid+10000 会算成 u20_a238 这种应用根本没有的组）——MediaProvider
-            // 与文件管理器都靠组进来，错了应用侧只看到 EPERM。
-            // 这里也走 /storage 路径，顺带把改动同步给 MediaProvider
+            // 系统约定（实测，与「分身存储修复」模块一致）：
+            //   Android/data → 应用自己读写，属主=该包 uid，组 ext_data_rw(1078)，2770/660；
+            //                   obb 同形，组用 ext_obb_rw(1079)
+            //   Android/media → 纯 FUSE，读写全由 MediaProvider 代理：顶层目录归该包（隔离边界），
+            //                   里面的内容归 MediaProvider(MP)，组 media_rw(1023)，2775/664。
+            //                   属主给错了 MediaProvider 只是 other，应用一写就 EPERM——
+            //                   XRadiant 这种「库放在 media 里」的应用表现为界面一直转圈。
             s.append("  case \"$D\" in */Android/data/*)\n");
-            s.append("    chown -R ${AU:-0}:1078 \"$D\" 2>/dev/null\n");
+            s.append("    chown -R \"$AU:1078\" \"$D\" || echo ERR_OWN\n");
+            s.append("    find \"$D\" -type d -exec chmod 2770 {} + 2>/dev/null\n");
+            s.append("    find \"$D\" -type f -exec chmod 660 {} + 2>/dev/null;;\n");
+            s.append("  */Android/obb/*)\n");
+            s.append("    chown -R \"$AU:1079\" \"$D\" || echo ERR_OWN\n");
             s.append("    find \"$D\" -type d -exec chmod 2770 {} + 2>/dev/null\n");
             s.append("    find \"$D\" -type f -exec chmod 660 {} + 2>/dev/null;;\n");
             s.append("  *)\n");
-            s.append("    chown -R ${AU:-0}:1023 \"$D\" 2>/dev/null\n");
-            s.append("    find \"$D\" -type d -exec chmod 2775 {} + 2>/dev/null\n");
-            s.append("    find \"$D\" -type f -exec chmod 664 {} + 2>/dev/null;;\n");
+            s.append("    if [ -n \"$MP\" ]; then\n");
+            s.append("      chown -R \"$MP:1023\" \"$D\" || echo ERR_OWN\n");
+            s.append("      chown \"$AU:1023\" \"$D\" || echo ERR_OWN\n");
+            s.append("    else\n");
+            s.append("      [ \"$(stat -c %u \"$D\")\" = \"$AU\" ] || echo ERR_OWN\n");
+            s.append("    fi\n");
+            s.append("    chmod 2775 \"$D\" 2>/dev/null\n");
+            s.append("    find \"$D\" -mindepth 1 -type d -exec chmod 2775 {} + 2>/dev/null\n");
+            s.append("    find \"$D\" -mindepth 1 -type f -exec chmod 664 {} + 2>/dev/null;;\n");
             s.append("  esac\n");
             s.append("  chcon -R 'u:object_r:media_rw_data_file:s0' \"$D\" 2>/dev/null\n");
+            // 落权失败要能看见：以前全 2>/dev/null，错了也照样报成功
+            s.append("  [ \"$(stat -c %u \"$D\")\" = \"$AU\" ] || echo \"ERR_OWN $D\"\n");
             s.append("done\n");
         }
         s.append("rm -rf \"$OLD\"\n");
@@ -840,6 +862,8 @@ public final class AppData {
         String out = Shell.execScript(s.toString());
         // 外部目录写失败不能咽下去：那一步失败后脚本仍会照常往下跑并打印 CUB_OK
         if (out.contains("ERR_EXT")) return "ERR_EXT";
+        // 属主没落对等于应用写不了（纯 FUSE 下 MediaProvider 只是 other），必须报失败
+        if (out.contains("ERR_OWN")) return "ERR 外部目录属主没落对，应用会写不了";
         if (out.contains("CUB_OK")) {
             if (out.contains("ERR_APK")) return "OK_NOAPK";
             return "OK";

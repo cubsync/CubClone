@@ -55,7 +55,6 @@ public class BackupActivity extends Activity {
     private EditText search;
     private TextView filter;
     private TextView sortTv;
-    private TextView sortDirTv;
     private TextView addBtn;
     /** 上一次批量任务的日志 */
     private TextView logBtn;
@@ -116,7 +115,6 @@ public class BackupActivity extends Activity {
         search = findViewById(R.id.bk_search);
         filter = findViewById(R.id.bk_filter);
         sortTv = findViewById(R.id.bk_sort);
-        sortDirTv = findViewById(R.id.bk_sort_dir);
         addBtn = findViewById(R.id.bk_add);
         logBtn = findViewById(R.id.bk_log);
         dirRow = findViewById(R.id.bk_dir_row);
@@ -181,9 +179,6 @@ public class BackupActivity extends Activity {
         });
         sortTv.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { pickSort(); }
-        });
-        sortDirTv.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { flipSortDir(); }
         });
         selAll.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { toggleSelectAll(); }
@@ -298,7 +293,6 @@ public class BackupActivity extends Activity {
         search.setHintTextColor(sec);
         filter.setTextColor(accent);
         sortTv.setTextColor(accent);
-        sortDirTv.setTextColor(accent);
         renderSort();
         selCount.setTextColor(sec);
         selAll.setTextColor(accent);
@@ -715,7 +709,7 @@ public class BackupActivity extends Activity {
         return "size".equals(k);
     }
 
-    /** 排序按钮只写维度，方向看旁边的箭头 */
+    /** 工具栏只显示当前维度；方向在对话框里选，不在外面挂箭头 */
     private String sortShort() {
         String k = sortKey();
         if ("name".equals(k)) return getString(R.string.backup_sort_name);
@@ -726,15 +720,6 @@ public class BackupActivity extends Activity {
 
     private void renderSort() {
         sortTv.setText(sortShort() + " ▾");
-        boolean d = sortDesc();
-        sortDirTv.setText(d ? "↓" : "↑");
-        sortDirTv.setContentDescription(getString(d ? R.string.sort_dir_desc : R.string.sort_dir_asc));
-    }
-
-    private void flipSortDir() {
-        sp().edit().putString("backup_sort_dir_" + sortKey(), sortDesc() ? "asc" : "desc").apply();
-        renderSort();
-        refilter();
     }
 
     private void sortAll() {
@@ -760,7 +745,7 @@ public class BackupActivity extends Activity {
 
     private void pickSort() {
         final String[] keys = {"time", "name", "size", "space"};
-        String[] items = {
+        String[] labels = {
                 getString(R.string.backup_sort_time),
                 getString(R.string.backup_sort_name),
                 getString(R.string.backup_sort_size),
@@ -769,18 +754,16 @@ public class BackupActivity extends Activity {
         String k = sortKey();
         int cur = 0;
         for (int i = 0; i < keys.length; i++) if (keys[i].equals(k)) cur = i;
-        Theme.dialog(this)
-                .setTitle(R.string.backup_sort)
-                .setSingleChoiceItems(items, cur, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int which) {
-                        d.dismiss();
-                        sp().edit().putString("backup_sort", keys[which]).apply();
-                        renderSort();
-                        refilter();
-                    }
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
+        SortDialog.show(this, R.string.backup_sort, labels, cur, sortDesc(), new SortDialog.OnPick() {
+            public void onPick(int index, boolean desc) {
+                sp().edit()
+                        .putString("backup_sort", keys[index])
+                        .putString("backup_sort_dir_" + keys[index], desc ? "desc" : "asc")
+                        .apply();
+                renderSort();
+                refilter();
+            }
+        });
     }
 
     // ── 多选 ─────────────────────────────────────────────────────────

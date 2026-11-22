@@ -477,4 +477,6 @@
     <string name="sort_dir_asc">升序</string>
     <string name="sort_dir_desc">降序</string>
     <string name="backup_sort_time">时间</string>
+    <string name="sort_by">排序方式</string>
+    <string name="sort_order">顺序</string>
 </resources>

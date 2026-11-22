@@ -477,4 +477,6 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="sort_dir_asc">Ascending</string>
     <string name="sort_dir_desc">Descending</string>
     <string name="backup_sort_time">Time</string>
+    <string name="sort_by">By</string>
+    <string name="sort_order">Order</string>
 </resources>

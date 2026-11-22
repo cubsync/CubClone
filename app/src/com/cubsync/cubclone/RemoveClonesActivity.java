@@ -68,7 +68,6 @@ public class RemoveClonesActivity extends Activity {
     private TextView filter;
     private TextView hintTv;
     private TextView sortTv;
-    private TextView sortDirTv;
     private Button btnRemove;
     private android.widget.EditText search;
     private String query = "";
@@ -170,15 +169,6 @@ public class RemoveClonesActivity extends Activity {
             public void onClick(View v) { pickSort(); }
         });
         searchRow.addView(sortTv);
-
-        sortDirTv = new TextView(this);
-        sortDirTv.setTextSize(13);
-        sortDirTv.setTextColor(sec);
-        sortDirTv.setPadding(dp(6), dp(8), dp(2), dp(8));
-        sortDirTv.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { flipSortDir(); }
-        });
-        searchRow.addView(sortDirTv);
 
         // 空间筛选：点开多选，全不勾 = 全部。和排序同一行（搜索 | 排序 | 筛选），与「数据备份」页一致；
         // 单独占一行会把顶部撑成两行，列表能看见的内容就少一截。
@@ -509,7 +499,7 @@ public class RemoveClonesActivity extends Activity {
         return sp().getString("rc_sort", "space");
     }
 
-    /** 排序按钮只写维度，方向看旁边的箭头 */
+    /** 工具栏只显示当前维度；方向在对话框里选，不在外面挂箭头 */
     private String sortShort() {
         String k = sortKey();
         if ("size".equals(k)) return getString(R.string.rc_sort_size);
@@ -524,37 +514,23 @@ public class RemoveClonesActivity extends Activity {
         return "desc".equals(saved);
     }
 
-    private void flipSortDir() {
-        sp().edit().putString("rc_sort_dir_" + sortKey(), sortDesc() ? "asc" : "desc").apply();
-        renderSort();
-        refresh();
-    }
-
     private void renderSort() {
-        boolean d = sortDesc();
         sortTv.setText(sortShort() + " ▾");
         sortTv.setTextColor(accent);
-        sortDirTv.setText(d ? "↓" : "↑");
-        sortDirTv.setTextColor(accent);
-        sortDirTv.setContentDescription(getString(d ? R.string.sort_dir_desc : R.string.sort_dir_asc));
     }
 
     private void pickSort() {
         final String[] keys = {"space", "size", "name"};
-        String[] items = {getString(R.string.rc_sort_space), getString(R.string.rc_sort_size),
-                getString(R.string.rc_sort_name)};
+        String[] labels = {
+                getString(R.string.rc_sort_space),
+                getString(R.string.rc_sort_size),
+                getString(R.string.rc_sort_name),
+        };
+        String k = sortKey();
         int cur = 0;
-        for (int i = 0; i < keys.length; i++) if (keys[i].equals(sortKey())) cur = i;
-        Theme.dialog(this)
-                .setTitle(R.string.rc_sort)
-                .setSingleChoiceItems(items, cur, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int which) {
-                        sp().edit().putString("rc_sort", keys[which]).apply();
-                        d.dismiss();
-                        refresh();
-                    }
-                })
-                .setNeutralButton(R.string.rc_recount, new DialogInterface.OnClickListener() {
+        for (int i = 0; i < keys.length; i++) if (keys[i].equals(k)) cur = i;
+        SortDialog.show(this, R.string.rc_sort, labels, cur, sortDesc(),
+                R.string.rc_recount, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
                         title.setText(getString(R.string.rc_loading));
                         new Thread(new Runnable() {
@@ -566,9 +542,17 @@ public class RemoveClonesActivity extends Activity {
                             }
                         }).start();
                     }
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                },
+                new SortDialog.OnPick() {
+                    public void onPick(int index, boolean desc) {
+                        sp().edit()
+                                .putString("rc_sort", keys[index])
+                                .putString("rc_sort_dir_" + keys[index], desc ? "desc" : "asc")
+                                .apply();
+                        renderSort();
+                        refresh();
+                    }
+                });
     }
 
     /** 空间筛选支持多选：勾几个看几个，全不勾等于全部 */

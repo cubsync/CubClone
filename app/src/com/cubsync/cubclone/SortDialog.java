@@ -13,10 +13,13 @@ import android.widget.RadioGroup;
 import android.widget.TextView;
 
 /**
- * 排序对话框：上面一组选「按什么排」，下面一组选「升序 / 降序」，点任一项立即生效。
+ * 排序对话框：上面一组选「按什么排」，下面一组选「升序 / 降序」，点「确定」才生效。
  *
- * 别在工具栏外面挂一个翻方向的箭头——方向属于排序的一部分，跟维度一起在同一张对话框里选。
- * 参考系统文件管理器、Google Files 与 MaterialFiles 的做法：一个入口，进来两组单选。
+ * 两条硬要求：
+ *  1) 每一行整行可点（撑满宽度 + 48dp 高 + 水波纹），不是只有圆点和文字能点；
+ *  2) 选项只是选中，按「确定」才应用，按「取消」什么都不改。
+ *
+ * 方向属于排序的一部分，别在工具栏外面另挂一个箭头。
  */
 final class SortDialog {
 
@@ -42,14 +45,13 @@ final class SortDialog {
 
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
-        int pad = dp(a, 20);
-        box.setPadding(pad, dp(a, 6), pad, dp(a, 2));
+        // 两侧留白自己做：DeviceDefault 的对话框正文区没有内边距，交给它会贴边
+        int side = dp(a, 20);
+        box.setPadding(side, dp(a, 2), side, 0);
 
         box.addView(caption(a, a.getString(R.string.sort_by), sec));
         final RadioGroup dims = new RadioGroup(a);
-        for (int i = 0; i < labels.length; i++) {
-            dims.addView(radio(a, labels[i], fg, accent), i);
-        }
+        for (int i = 0; i < labels.length; i++) dims.addView(radio(a, labels[i], fg, accent), i);
         box.addView(dims);
 
         box.addView(caption(a, a.getString(R.string.sort_order), sec));
@@ -58,48 +60,36 @@ final class SortDialog {
         order.addView(radio(a, a.getString(R.string.sort_dir_desc), fg, accent), 1);
         box.addView(order);
 
-        // 选中态必须在注册监听前设好，否则一打开就当作用户点了
+        // 选中态必须在注册监听前设好
         ((RadioButton) dims.getChildAt(curIndex)).setChecked(true);
         ((RadioButton) order.getChildAt(curDesc ? 1 : 0)).setChecked(true);
 
-        final AlertDialog[] holder = new AlertDialog[1];
         AlertDialog.Builder b = Theme.dialog(a)
                 .setTitle(titleRes)
                 .setView(box)
-                .setNegativeButton(android.R.string.cancel, null);
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        int idx = indexOf(dims, dims.getCheckedRadioButtonId());
+                        if (idx < 0) return;
+                        cb.onPick(idx, currentDesc(order));
+                    }
+                });
         if (neutralRes != 0) b.setNeutralButton(neutralRes, neutral);
         AlertDialog dlg = b.create();
-        holder[0] = dlg;
-
-        dims.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
-            public void onCheckedChanged(RadioGroup g, int id) {
-                int idx = indexOf(g, id);
-                if (idx < 0) return;
-                holder[0].dismiss();
-                cb.onPick(idx, currentDesc(order));
-            }
-        });
-        order.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
-            public void onCheckedChanged(RadioGroup g, int id) {
-                int idx = indexOf(dims, checkedId(dims, curIndex));
-                if (idx < 0) return;
-                holder[0].dismiss();
-                cb.onPick(idx, id == ((RadioButton) g.getChildAt(1)).getId());
-            }
-        });
         dlg.show();
+        // 别让它按屏幕宽度铺满：固定一个窄一点的宽度，右侧不留大片空框
+        android.view.Window w = dlg.getWindow();
+        if (w != null) {
+            int screen = a.getResources().getDisplayMetrics().widthPixels;
+            w.setLayout(Math.min(dp(a, 300), (int) (screen * 0.82f)),
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
     }
 
     private static boolean currentDesc(RadioGroup order) {
         View v = order.getChildAt(1);
         return v != null && v.getId() == order.getCheckedRadioButtonId();
-    }
-
-    private static int checkedId(RadioGroup g, int fallback) {
-        int id = g.getCheckedRadioButtonId();
-        if (id != -1) return id;
-        View v = g.getChildAt(fallback);
-        return v == null ? -1 : v.getId();
     }
 
     private static int indexOf(RadioGroup g, int id) {
@@ -125,7 +115,12 @@ final class SortDialog {
         rb.setTextSize(15);
         rb.setTextColor(fg);
         rb.setButtonTintList(ColorStateList.valueOf(accent));
-        rb.setPadding(dp(a, 4), dp(a, 10), dp(a, 4), dp(a, 10));
+        // 整行可点：宽度撑满、48dp 高、带点按反馈；否则框再大也只有文字那一小截能点
+        rb.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 44)));
+        rb.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        int bg = Theme.ripple(a);
+        if (bg != 0) rb.setBackgroundResource(bg); else rb.setBackground(null);
         return rb;
     }
 

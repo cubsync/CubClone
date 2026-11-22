@@ -151,7 +151,7 @@ final class Theme {
      * 那是属性 id（0x0101030e），不是 drawable 资源 id，运行时会 Resources$NotFoundException
      * 直接闪退（aapt2 编译期查不出来）。必须先从当前主题 resolve 出 resourceId。
      */
-    private static int ripple(Context c) {
+    static int ripple(Context c) {
         android.util.TypedValue tv = new android.util.TypedValue();
         if (c.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
                 && tv.resourceId != 0) {

@@ -63,6 +63,10 @@
   系统属性里，应用零权限 getprop 就能读，不需要 root。
 
 ### 修复
+- 批量删除页的体积**不再每次打开都全量扫**：结果写入 `files/size-cache.txt`（按空间记时间戳），
+  进来先用上次的数字秒显；缓存 10 分钟内且没有新克隆的包就不重扫。排序菜单里加了「重新统计体积」手动刷新。
+  实测同一台机：首次 274 ms，第二次 168 ms 且缓存文件未被改写（没重扫）。
+- 统计线程降到后台优先级，几百个分身时也不跟界面抢 CPU。
 - 批量删除分身不再要求 root：列表（`cmd user list`、`pm list packages --user`）和删除
   （`pm uninstall --user`）都走 `Shell.exec`（root 优先、Shizuku 兜底）。实测 shell 身份执行
   `pm uninstall --user 11 <不存在包>` 返回 `Failure [not installed for 11]`——权限检查通过，

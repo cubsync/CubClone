@@ -249,6 +249,7 @@
     <string name="rc_filter_count">%1$d 个空间</string>
     <string name="rc_filter_title">按空间筛选</string>
     <string name="rc_filter_reset">清空</string>
+    <string name="rc_recount">重新统计体积</string>
     <string name="rc_sort">排序</string>
     <string name="rc_sort_space">按空间</string>
     <string name="rc_sort_space_short">空间</string>

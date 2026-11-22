@@ -249,6 +249,7 @@ Owner data is not touched.</string>
     <string name="rc_filter_count">%1$d spaces</string>
     <string name="rc_filter_title">Filter by space</string>
     <string name="rc_filter_reset">Clear</string>
+    <string name="rc_recount">Recount sizes</string>
     <string name="rc_sort">Sort</string>
     <string name="rc_sort_space">By space</string>
     <string name="rc_sort_space_short">Space</string>

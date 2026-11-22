@@ -70,6 +70,13 @@ public class RemoveClonesActivity extends Activity {
 
     private boolean loading = true;
 
+    /** 体积缓存：打开页面先用上次结果秒显，只有过期或出现新包才重算。
+     *  几百个分身时全量遍历要好几秒（成本按文件数算，十几个空间累加很可观），
+     *  而用户看这一页就是想删几个空壳，没必要每次都扫一遍。 */
+    private static final long SIZE_TTL_MS = 10 * 60 * 1000L;
+    private final java.util.HashMap<String, Long> cacheSize = new java.util.HashMap<String, Long>();
+    private final java.util.HashMap<Integer, Long> cacheTs = new java.util.HashMap<Integer, Long>();
+
     private Adapter adapter;
 
     protected void onCreate(Bundle b) {
@@ -279,7 +286,16 @@ public class RemoveClonesActivity extends Activity {
                                 RemoveClonesActivity.spaceName(RemoveClonesActivity.this, u.intValue())));
                     }
                 }
-                if (canMeasure) measure();
+                readCache();
+                for (Row r : rows) {
+                    Long v = cacheSize.get(r.uid + "|" + r.pkg);
+                    if (v != null) r.bytes = v.longValue();
+                }
+                // 先把缓存里的数字画出来，用户不用等遍历
+                runOnUiThread(new Runnable() {
+                    public void run() { refresh(); }
+                });
+                if (canMeasure) measure(false);
                 runOnUiThread(new Runnable() {
                     public void run() {
                         loading = false;
@@ -328,12 +344,28 @@ public class RemoveClonesActivity extends Activity {
      * 在本机也没有 shell 实现（No shell command implementation）。所以用 root 读同一批文件，
      * 按系统同一个公式（文件字节、排缓存）算，结果与系统页面一致。
      */
-    private void measure() {
+    private void measure(boolean force) {
         if (rows.isEmpty()) return;
+        // 后台优先级：几百个分身遍历时别跟界面抢 CPU
+        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
         Set<Integer> users = new java.util.LinkedHashSet<Integer>();
         for (Row r : rows) users.add(Integer.valueOf(r.uid));
         for (final Integer u : users) {
             final int U = u.intValue();
+            Long ts = cacheTs.get(u);
+            boolean missing = false;
+            for (Row r : rows) {
+                if (r.uid == U && !cacheSize.containsKey(U + "|" + r.pkg)) { missing = true; break; }
+            }
+            if (!force && !missing && ts != null
+                    && System.currentTimeMillis() - ts.longValue() < SIZE_TTL_MS) {
+                for (Row r : rows) {
+                    if (r.uid != U) continue;
+                    Long v = cacheSize.get(U + "|" + r.pkg);
+                    if (v != null) r.bytes = v.longValue();
+                }
+                continue;
+            }
             StringBuilder cmd = new StringBuilder("find");
             cmd.append(" /data/user/").append(U);
             cmd.append(" /data/user_de/").append(U);
@@ -362,11 +394,69 @@ public class RemoveClonesActivity extends Activity {
                 if (r.uid != U) continue;
                 Long v = sum.get(r.pkg);
                 r.bytes = v == null ? 0 : v.longValue();
+                cacheSize.put(U + "|" + r.pkg, Long.valueOf(r.bytes));
             }
+            cacheTs.put(u, Long.valueOf(System.currentTimeMillis()));
+            saveCache();
             runOnUiThread(new Runnable() {
                 public void run() { refresh(); }
             });
         }
+    }
+
+    // ── 体积缓存 ────────────────────────────────────────────────────
+    /** 格式：`<uid>|<pkg> <bytes>` 每行一条，另有 `#<uid> <ts>` 记该空间上次统计时间 */
+    private java.io.File cacheFile() {
+        return new java.io.File(getFilesDir(), "size-cache.txt");
+    }
+
+    private void readCache() {
+        cacheSize.clear();
+        cacheTs.clear();
+        java.io.BufferedReader r = null;
+        try {
+            r = new java.io.BufferedReader(new java.io.InputStreamReader(
+                    new java.io.FileInputStream(cacheFile()), "UTF-8"));
+            String line;
+            while ((line = r.readLine()) != null) {
+                int sp = line.indexOf(' ');
+                if (sp <= 0) continue;
+                String k = line.substring(0, sp);
+                long v = atol(line.substring(sp + 1));
+                if (k.startsWith("#")) {
+                    cacheTs.put(Integer.valueOf(atoi(k.substring(1))), Long.valueOf(v));
+                } else {
+                    cacheSize.put(k, Long.valueOf(v));
+                }
+            }
+        } catch (Throwable t) {
+            // 第一次打开没有缓存，正常
+        } finally {
+            if (r != null) try { r.close(); } catch (Throwable t) { }
+        }
+    }
+
+    private void saveCache() {
+        StringBuilder sb = new StringBuilder();
+        for (java.util.Map.Entry<String, Long> e : cacheSize.entrySet()) {
+            sb.append(e.getKey()).append(' ').append(e.getValue().longValue()).append('\n');
+        }
+        for (java.util.Map.Entry<Integer, Long> e : cacheTs.entrySet()) {
+            sb.append('#').append(e.getKey()).append(' ').append(e.getValue().longValue()).append('\n');
+        }
+        java.io.FileOutputStream f = null;
+        try {
+            f = new java.io.FileOutputStream(cacheFile());
+            f.write(sb.toString().getBytes("UTF-8"));
+        } catch (Throwable t) {
+        } finally {
+            if (f != null) try { f.close(); } catch (Throwable t) { }
+        }
+    }
+
+    /** 删掉一个分身就把它的缓存条目去掉，下次进来不会还挂着旧体积 */
+    private void dropCache(int uid, String pkg) {
+        if (cacheSize.remove(uid + "|" + pkg) != null) saveCache();
     }
 
     private static int atoi(String s) {
@@ -420,6 +510,23 @@ public class RemoveClonesActivity extends Activity {
                         sp().edit().putString("rc_sort", keys[which]).apply();
                         d.dismiss();
                         refresh();
+                    }
+                })
+                .setNeutralButton(R.string.rc_recount, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int which) {
+                        if (!Shell.rootOk) {
+                            toast(getString(R.string.rc_hint_no_root));
+                            return;
+                        }
+                        title.setText(getString(R.string.rc_loading));
+                        new Thread(new Runnable() {
+                            public void run() {
+                                measure(true);
+                                runOnUiThread(new Runnable() {
+                                    public void run() { refresh(); }
+                                });
+                            }
+                        }).start();
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
@@ -619,6 +726,7 @@ public class RemoveClonesActivity extends Activity {
                         CloneStore.unmarkKept(RemoveClonesActivity.this, r.uid, r.pkg);
                         MainActivity.unpinShortcut(RemoveClonesActivity.this, r.uid, r.pkg);
                         r.on = false;
+                        dropCache(r.uid, r.pkg);
                     } else {
                         bad++;
                     }

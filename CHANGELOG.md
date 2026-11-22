@@ -63,6 +63,10 @@
   系统属性里，应用零权限 getprop 就能读，不需要 root。
 
 ### 修复
+- 批量删除页一点就闪退（`Resources$NotFoundException: Resource ID #0x101030e`）：文字按钮的水波纹
+  背景把属性 id 直接当 drawable 资源用了，必须先 `resolveAttribute` 取 `resourceId`。
+- 新增 `app/tools/smoke.sh`：装完包把每个自绘页面真实打开一遍，检查前台页面与崩溃缓冲区；
+  构建只有 aapt2 + javac，这类「编译过、一跑就崩」的问题必须靠它拦。
 - 批量删除分身页：「仅无数据」原来把「不到 1 MB」都算空壳，芝麻粒这种数据都在 DE 的
   （CE 只有 22 KB）会被误勾。现在口径与列表显示一致——CE + DE + 外部三块都没有目录才算「无数据」，
   有数字的一律不勾；进页面也不再默认勾任何人，删谁由用户决定。

@@ -97,7 +97,8 @@ final class Theme {
     /** 文字按钮（顶部工具条那类）：只有文字，点一下有水波纹 */
     static void chip(TextView v, int color) {
         v.setTextColor(color);
-        v.setBackgroundResource(ripple());
+        int bg = ripple(v.getContext());
+        if (bg != 0) v.setBackgroundResource(bg); else v.setBackground(null);
         v.setPadding(dp(v, 12), dp(v, 8), dp(v, 12), dp(v, 8));
         v.setAllCaps(false);
     }
@@ -128,8 +129,19 @@ final class Theme {
         b.setTextColor(sec(ctx));
     }
 
-    private static int ripple() {
-        return android.R.attr.selectableItemBackground;
+    /**
+     * 水波纹背景的资源 id。
+     * ⚠ 不能把 `android.R.attr.selectableItemBackground` 直接塞给 setBackgroundResource——
+     * 那是属性 id（0x0101030e），不是 drawable 资源 id，运行时会 Resources$NotFoundException
+     * 直接闪退（aapt2 编译期查不出来）。必须先从当前主题 resolve 出 resourceId。
+     */
+    private static int ripple(Context c) {
+        android.util.TypedValue tv = new android.util.TypedValue();
+        if (c.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                && tv.resourceId != 0) {
+            return tv.resourceId;
+        }
+        return 0;
     }
 
     static int dp(android.view.View v, int n) {

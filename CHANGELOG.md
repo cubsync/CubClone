@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-22
+
 ### 新增
 - 备份内容可选：「应用数据（user）」「设备数据（user_de）」「安装包（APK）」「权限」。
   默认数据 + 设备数据 + 权限；APK 默认只存一份，可选按空间各存一份。
@@ -63,6 +65,10 @@
   系统属性里，应用零权限 getprop 就能读，不需要 root。
 
 ### 修复
+- 对话框统一跟随应用内的深浅设置（新增 `Theme.dialog()`，41 处全部改走它）：
+  以前对话框跟系统深浅、页面跟应用设置，两者不一致时对话框里的自绘文字会白底浅字 / 黑底黑字。
+- 恢复选项里的说明、目标空间、缺项提示与复选框统一取色（`Theme.sec/accent/check`）；
+  「最近打开」标题、备份页算法复选框、批量备份页复选框补上取色。
 - 批量删除页的体积**改用系统命令** `cmd package get-package-storage-stats --user <U> <包>`，
   和「应用信息 → 存储」同源（`IPackageManager.getPackageStorageStats`），**不再需要 root**：
   列表、删除、体积三者都只用 shell 身份，Shizuku 就够。
@@ -215,5 +221,6 @@
 首个对外版本：多空间管理、批量分身、网格/列表视图、主题与中英界面、
 Shizuku / root 双模式、单分身改名 / 启用 / 禁用 / 隐藏 / 移除。
 
-[Unreleased]: https://github.com/cubsync/CubClone/compare/v0.6.52...HEAD
+[Unreleased]: https://github.com/cubsync/CubClone/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/cubsync/CubClone/releases/tag/v0.7.0
 [0.6.52]: https://github.com/cubsync/CubClone/releases/tag/v0.6.52

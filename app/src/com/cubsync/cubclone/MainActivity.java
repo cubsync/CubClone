@@ -1627,7 +1627,7 @@ public class MainActivity extends Activity {
                                     + getString(has[i] ? R.string.space_has_app : R.string.space_free);
                         }
                         final boolean[] checked = new boolean[spaces.size()];
-                        new AlertDialog.Builder(MainActivity.this)
+                        Theme.dialog(MainActivity.this)
                                 .setTitle(getString(R.string.pick_space_for_title, g.label))
                                 .setMultiChoiceItems(items, checked,
                                         new DialogInterface.OnMultiChoiceClickListener() {
@@ -1686,7 +1686,7 @@ public class MainActivity extends Activity {
         final EditText et = new EditText(this);
         et.setHint(R.string.new_space_name);
         et.setSingleLine(true);
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.btn_new_space)
                 .setView(et)
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
@@ -1892,7 +1892,7 @@ public class MainActivity extends Activity {
             }
             items.add(getString(R.string.menu_remove_all, cnt)); acts.add(4);
         }
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(g.label)
                 .setItems(items.toArray(new String[0]),
                         new DialogInterface.OnClickListener() {
@@ -1957,7 +1957,7 @@ public class MainActivity extends Activity {
             list.add(c);
         }
         if (list.isEmpty()) return;
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.remove_all_title)
                 .setMessage(getString(R.string.remove_all_msg, g.label, list.size()))
                 .setPositiveButton(R.string.delete_clone_btn, new DialogInterface.OnClickListener() {
@@ -2016,7 +2016,7 @@ public class MainActivity extends Activity {
             items[i] = spaceLabel(targets.get(i).intValue());
         }
         final boolean[] checked = new boolean[items.length];
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.copy_data_pick_title)
                 .setMultiChoiceItems(items, checked, new DialogInterface.OnMultiChoiceClickListener() {
                     public void onClick(DialogInterface d, int which, boolean isChecked) {
@@ -2046,7 +2046,7 @@ public class MainActivity extends Activity {
             toast(getString(R.string.root_need));
             return;
         }
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.backup_now_title)
                 .setMessage(getString(R.string.backup_now_msg) + "\n\n"
                         + spaceLabel(user) + " · " + g.label)
@@ -2078,7 +2078,7 @@ public class MainActivity extends Activity {
             if (names.length() > 0) names.append("\u3001");
             names.append(spaceLabel(u.intValue()));
         }
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.copy_data_title)
                 .setMessage(getString(R.string.copy_data_msg,
                         spaceLabel(srcUser), g.label, names.toString()))
@@ -2254,6 +2254,7 @@ public class MainActivity extends Activity {
         recentTitle = new TextView(this);
         recentTitle.setText(R.string.recent_opened);
         recentTitle.setTextSize(13);
+        recentTitle.setTextColor(Theme.sec(this));
         recentRow = new LinearLayout(this);
         recentRow.setOrientation(LinearLayout.VERTICAL);
         recentHeader.addView(recentTitle);
@@ -2437,7 +2438,7 @@ public class MainActivity extends Activity {
         et.setSingleLine(true);
         et.setInputType(InputType.TYPE_CLASS_TEXT);
         et.setText(suffixOf(c.uid, pkg, idx));
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.rename_title)
                 .setView(et)
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
@@ -2462,7 +2463,7 @@ public class MainActivity extends Activity {
             say(getString(R.string.space_readonly));
             return;
         }
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.remove_clone_title)
                 .setMessage(getString(R.string.remove_clone_msg, g.label))
                 .setPositiveButton(R.string.delete_clone_btn, new DialogInterface.OnClickListener() {
@@ -2504,7 +2505,7 @@ public class MainActivity extends Activity {
     private void askRecycleSpace(final int uid) {
         // 只读空间（别人建的）永远不给「删空间」这个入口，哪怕上层判断漏了也要挡住
         if (!CloneStore.isOurs(null, uid)) return;
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.recycle_title)
                 .setMessage(getString(R.string.recycle_msg))
                 .setPositiveButton(R.string.recycle_btn, new DialogInterface.OnClickListener() {

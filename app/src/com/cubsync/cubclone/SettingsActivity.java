@@ -443,7 +443,7 @@ public class SettingsActivity extends Activity {
         int cur = sp().getInt("theme", THEME_AUTO);
         int sel = 0;
         for (int i = 0; i < values.length; i++) if (values[i] == cur) sel = i;
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.label_theme)
                 .setSingleChoiceItems(names, sel,
                         new DialogInterface.OnClickListener() {
@@ -474,7 +474,7 @@ public class SettingsActivity extends Activity {
         };
         String cur = currentLanguageTag();
         int sel = cur == null ? 0 : (cur.startsWith("en") ? 2 : 1);
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.label_language)
                 .setSingleChoiceItems(names, sel, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
@@ -501,7 +501,7 @@ public class SettingsActivity extends Activity {
         for (int i = 0; i < values.length; i++) if (values[i] == cur) sel = i;
         String[] names = new String[values.length];
         for (int i = 0; i < values.length; i++) names[i] = String.valueOf(values[i]);
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.label_grid_cols)
                 .setSingleChoiceItems(names, sel, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
@@ -522,7 +522,7 @@ public class SettingsActivity extends Activity {
         for (int i = 0; i < values.length; i++) if (values[i] == cur) sel = i;
         String[] names = new String[values.length];
         for (int i = 0; i < values.length; i++) names[i] = String.valueOf(values[i]);
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.label_grid_rows)
                 .setSingleChoiceItems(names, sel, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
@@ -543,7 +543,7 @@ public class SettingsActivity extends Activity {
         for (int i = 0; i < values.length; i++) if (values[i] == cur) sel = i;
         String[] names = new String[values.length];
         for (int i = 0; i < values.length; i++) names[i] = String.valueOf(values[i]);
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.label_recent_rows)
                 .setSingleChoiceItems(names, sel, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
@@ -567,7 +567,7 @@ public class SettingsActivity extends Activity {
         int cur = sp().getInt("recent_cols", 0);
         int sel = 0;
         for (int i = 0; i < values.length; i++) if (values[i] == cur) sel = i;
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.label_recent_cols)
                 .setSingleChoiceItems(names, sel, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
@@ -1054,7 +1054,7 @@ public class SettingsActivity extends Activity {
         btns.addView(all);
         root.addView(btns);
 
-        final AlertDialog dlg = new AlertDialog.Builder(this)
+        final AlertDialog dlg = Theme.dialog(this)
                 .setTitle(R.string.keep_extra_title)
                 .setView(root)
                 .setPositiveButton(R.string.save, new DialogInterface.OnClickListener() {
@@ -1194,7 +1194,7 @@ public class SettingsActivity extends Activity {
         btns.addView(all);
         root.addView(btns);
 
-        final AlertDialog dlg = new AlertDialog.Builder(this)
+        final AlertDialog dlg = Theme.dialog(this)
                 .setTitle(R.string.uninstall_extra_title)
                 .setView(root)
                 .setPositiveButton(R.string.save, new DialogInterface.OnClickListener() {
@@ -1319,7 +1319,7 @@ public class SettingsActivity extends Activity {
         btns.addView(all);
         root.addView(btns);
 
-        final AlertDialog dlg = new AlertDialog.Builder(this)
+        final AlertDialog dlg = Theme.dialog(this)
                 .setTitle(R.string.hidden_sys_title)
                 .setView(root)
                 .setPositiveButton(R.string.save, new DialogInterface.OnClickListener() {
@@ -1376,7 +1376,7 @@ public class SettingsActivity extends Activity {
         String state = moduleVer == null
                 ? getString(R.string.fix_module_state_none, CloneStore.MODULE_VERSION)
                 : getString(R.string.fix_module_state, moduleVer, CloneStore.MODULE_VERSION);
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.fix_module_title)
                 .setMessage(state + "\n\n" + getString(R.string.fix_module_msg))
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
@@ -1500,7 +1500,7 @@ public class SettingsActivity extends Activity {
             names[i] = all.get(i)[1];
             checked[i] = !ex.contains(all.get(i)[0]);
         }
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.ime_pick_title)
                 .setMultiChoiceItems(names, checked, new DialogInterface.OnMultiChoiceClickListener() {
                     public void onClick(DialogInterface d, int which, boolean isChecked) {
@@ -1759,7 +1759,7 @@ public class SettingsActivity extends Activity {
         restoreAll.setPadding(0, dp(8), 0, dp(8));
         restoreAll.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                new AlertDialog.Builder(SettingsActivity.this)
+                Theme.dialog(SettingsActivity.this)
                         .setTitle(R.string.hidden_restore_all)
                         .setMessage(R.string.hidden_restore_all_confirm)
                         .setPositiveButton(R.string.hidden_restore_all,
@@ -1787,7 +1787,7 @@ public class SettingsActivity extends Activity {
         btns.addView(restoreAll);
         root.addView(btns);
 
-        holder[0] = new AlertDialog.Builder(this)
+        holder[0] = Theme.dialog(this)
                 .setTitle(getString(R.string.hidden_title, total))
                 .setView(root)
                 .setNegativeButton(android.R.string.cancel, null)
@@ -1830,7 +1830,7 @@ public class SettingsActivity extends Activity {
         nameEt.setSingleLine(true);
         box.addView(nameEt);
 
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.btn_new_space)
                 .setView(box)
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
@@ -1923,7 +1923,7 @@ public class SettingsActivity extends Activity {
         final EditText et = new EditText(this);
         et.setSingleLine(true);
         et.setHint(R.string.new_space_name);
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.rename_space)
                 .setView(et)
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
@@ -1960,7 +1960,7 @@ public class SettingsActivity extends Activity {
             toast("uid " + uid + " 不是分身，拒绝操作");
             return;
         }
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.delete_space)
                 .setMessage(getString(
                         CloneStore.isOurs(null, uid)

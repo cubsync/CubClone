@@ -2,7 +2,7 @@
 <!-- versionCode 不写在这里：app/build.sh 从 versionName 推导后传给 aapt2，见 docs/VERSIONING.md -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.cubsync.cubclone"
-    android:versionName="0.6.52">
+    android:versionName="0.7.0">
 
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="33" />
 

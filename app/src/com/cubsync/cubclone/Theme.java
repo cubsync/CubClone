@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.graphics.drawable.GradientDrawable;
+import android.app.AlertDialog;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.TextView;
@@ -91,6 +92,21 @@ final class Theme {
     static int green(Context c) { return isNight(c) ? GREEN_NIGHT : GREEN_LIGHT; }
 
     static int red(Context c) { return isNight(c) ? RED_NIGHT : RED_LIGHT; }
+
+    /**
+     * 对话框统一入口。
+     *
+     * Activity 用的是 `Theme.DeviceDefault.NoActionBar`（跟系统深浅），而页面背景是按应用内的
+     * 「跟随/深色/浅色」画的。两者不一致时，对话框里的自绘控件（用 Theme.fg/sec 上色）会撞上
+     * 系统给对话框的底色：应用选深色、系统是浅色 → 白底浅字；反过来就是黑底黑字。
+     * 所以对话框必须跟应用同一个判断走，一律从这里建。
+     */
+    static AlertDialog.Builder dialog(Context c) {
+        int style = isNight(c)
+                ? android.R.style.Theme_DeviceDefault_Dialog_Alert
+                : android.R.style.Theme_DeviceDefault_Light_Dialog_Alert;
+        return new AlertDialog.Builder(new android.view.ContextThemeWrapper(c, style));
+    }
 
     // ── 控件 ────────────────────────────────────────────────────────
 

@@ -40,11 +40,14 @@ public final class RestoreDialog {
 
         TextView hint = new TextView(a);
         hint.setTextSize(13);
+        hint.setTextColor(Theme.sec(a));
         hint.setText(a.getString(R.string.restore_msg_count, count));
         box.addView(hint);
 
         final TextView space = new TextView(a);
         space.setTextSize(15);
+        // 这一行可点（换目标空间），用强调色标出来，否则跟普通说明文字没区别
+        space.setTextColor(Theme.accent(a));
         space.setPadding(0, dp(a, 14), 0, dp(a, 6));
         space.setText(spaceText(a, backupUser, target[0]));
         space.setOnClickListener(new View.OnClickListener() {
@@ -62,7 +65,7 @@ public final class RestoreDialog {
                             : spaceName(a, u);
                 }
                 int cur = us.indexOf(Integer.valueOf(target[0]));
-                new AlertDialog.Builder(a)
+                Theme.dialog(a)
                         .setTitle(R.string.restore_space)
                         .setSingleChoiceItems(items, cur, new DialogInterface.OnClickListener() {
                             public void onClick(DialogInterface d, int which) {
@@ -93,11 +96,12 @@ public final class RestoreDialog {
         box.addView(media);
         TextView miss = new TextView(a);
         miss.setTextSize(12);
+        miss.setTextColor(Theme.sec(a));
         miss.setPadding(0, dp(a, 8), 0, 0);
         miss.setText(R.string.restore_part_missing);
         box.addView(miss);
 
-        new AlertDialog.Builder(a)
+        Theme.dialog(a)
                 .setTitle(R.string.restore_options)
                 .setView(box)
                 .setPositiveButton(R.string.backup_restore, new DialogInterface.OnClickListener() {
@@ -122,6 +126,7 @@ public final class RestoreDialog {
         c.setText(text);
         c.setTextSize(15);
         c.setChecked(on);
+        Theme.check(c, a);
         c.setPadding(0, dp(a, 4), 0, dp(a, 4));
         return c;
     }

@@ -155,7 +155,7 @@ public class BatchBackupActivity extends Activity {
             items[i] = spaceLabel(spaces.get(i).intValue());
             on[i] = picked.contains(spaces.get(i));
         }
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.backup_pick_space)
                 .setMultiChoiceItems(items, on, new DialogInterface.OnMultiChoiceClickListener() {
                     public void onClick(DialogInterface d, int which, boolean isChecked) {

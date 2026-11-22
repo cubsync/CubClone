@@ -504,7 +504,7 @@ public class RemoveClonesActivity extends Activity {
                 getString(R.string.rc_sort_name)};
         int cur = 0;
         for (int i = 0; i < keys.length; i++) if (keys[i].equals(sortKey())) cur = i;
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.rc_sort)
                 .setSingleChoiceItems(items, cur, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
@@ -543,7 +543,7 @@ public class RemoveClonesActivity extends Activity {
             items[i] = spaceName(this, u);
             checked[i] = filterUsers.contains(Integer.valueOf(u));
         }
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.rc_filter_title)
                 .setMultiChoiceItems(items, checked, new DialogInterface.OnMultiChoiceClickListener() {
                     public void onClick(DialogInterface d, int which, boolean isChecked) {
@@ -691,7 +691,7 @@ public class RemoveClonesActivity extends Activity {
         if (sel.isEmpty()) return;
         boolean withData = false;
         for (Row r : sel) if (r.bytes > 0) withData = true;
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(withData ? R.string.rc_confirm_data_title : R.string.rc_confirm_title)
                 .setMessage(withData
                         ? getString(R.string.rc_confirm_data, sel.size(), sizeOf(total))

@@ -403,7 +403,7 @@ public class BackupActivity extends Activity {
         box.addView(obb);
         box.addView(media);
 
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.backup_parts_title)
                 .setView(box)
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
@@ -432,6 +432,7 @@ public class BackupActivity extends Activity {
         c.setText(text);
         c.setTextSize(15);
         c.setChecked(on);
+        Theme.check(c, this);
         return c;
     }
 
@@ -452,7 +453,7 @@ public class BackupActivity extends Activity {
         }
         // 单选列表：当前用的算法直接打勾，点哪项就切哪项并接着选级别。
         // 选到本机不可用的，就地按 zstd → gzip → bzip2 → 纯打包 回落并告知
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.backup_algo_pick)
                 .setSingleChoiceItems(items, cur, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
@@ -534,7 +535,7 @@ public class BackupActivity extends Activity {
             public void onStopTrackingTouch(SeekBar s) { }
         });
 
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(getString(R.string.backup_level_title, algoName(algo)))
                 .setView(box)
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
@@ -652,7 +653,7 @@ public class BackupActivity extends Activity {
             items[i] = spaceLabel(u);
             checked[i] = filterUsers.contains(Integer.valueOf(u));
         }
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.backup_filter_title)
                 .setMultiChoiceItems(items, checked, new DialogInterface.OnMultiChoiceClickListener() {
                     public void onClick(DialogInterface d, int which, boolean isChecked) {
@@ -729,7 +730,7 @@ public class BackupActivity extends Activity {
         };
         int cur = 0;
         for (int i = 0; i < keys.length; i++) if (keys[i].equals(currentSort())) cur = i;
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(R.string.backup_sort)
                 .setSingleChoiceItems(items, cur, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
@@ -819,7 +820,7 @@ public class BackupActivity extends Activity {
                         getString(R.string.backup_sel_delete)};
         final int iDelete = canZip ? 2 : 1;
 
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(getString(R.string.backup_sel_count, sel.size()))
                 .setItems(acts, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
@@ -828,7 +829,7 @@ public class BackupActivity extends Activity {
                             return;
                         }
                         if (which == iDelete) {
-                            new AlertDialog.Builder(BackupActivity.this)
+                            Theme.dialog(BackupActivity.this)
                                     .setTitle(R.string.backup_delete)
                                     .setMessage(getString(R.string.backup_delete_many_msg, sel.size()))
                                     .setPositiveButton(android.R.string.ok,
@@ -1057,7 +1058,7 @@ public class BackupActivity extends Activity {
                 : new String[]{getString(R.string.backup_restore),
                         getString(R.string.backup_delete)};
 
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(labelOf(b.pkg) + " · " + b.ts)
                 .setItems(acts, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
@@ -1083,7 +1084,7 @@ public class BackupActivity extends Activity {
     private void confirm(int titleRes, int msgRes, final AppData.Backup b, final int kind) {
         String msg = getString(msgRes);
         if (kind == 3) msg = msg + "\n\n" + algoSummary();
-        new AlertDialog.Builder(this)
+        Theme.dialog(this)
                 .setTitle(titleRes)
                 .setMessage(msg)
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {

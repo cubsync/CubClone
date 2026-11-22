@@ -63,6 +63,9 @@
   系统属性里，应用零权限 getprop 就能读，不需要 root。
 
 ### 修复
+- 批量删除页**彻底不预选**：入口原来会把「多选里选中的包」或「长按的那一个」带进去自动勾上，
+  结果一进来第一个有数据的分身（10 MB 的 XRadiant）就是勾着的。现在两个入口都不传、页面也不读，
+  勾选只能靠用户自己点。
 - 批量删除页一点就闪退（`Resources$NotFoundException: Resource ID #0x101030e`）：文字按钮的水波纹
   背景把属性 id 直接当 drawable 资源用了，必须先 `resolveAttribute` 取 `resourceId`。
 - 新增 `app/tools/smoke.sh`：装完包把每个自绘页面真实打开一遍，检查前台页面与崩溃缓冲区；

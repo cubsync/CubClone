@@ -32,10 +32,6 @@ import java.util.Set;
  */
 public class RemoveClonesActivity extends Activity {
 
-    static final String EXTRA_PKGS = "pkgs";
-    /** 进来时预选哪个分身，格式 uid:pkg；传空 = 列全部分身 */
-    static final String EXTRA_SEL = "sel";
-
     private static final class Row {
         final String pkg;
         final int uid;
@@ -77,8 +73,7 @@ public class RemoveClonesActivity extends Activity {
         super.onCreate(b);
         CloneStore.attach(this);
         buildUi();
-        final String[] pkgs = getIntent().getStringArrayExtra(EXTRA_PKGS);
-        load(pkgs == null ? new String[0] : pkgs, getIntent().getStringExtra(EXTRA_SEL));
+        load();
     }
 
     private void buildUi() {
@@ -240,7 +235,7 @@ public class RemoveClonesActivity extends Activity {
     }
 
     // ── 数据 ────────────────────────────────────────────────────────
-    private void load(final String[] pkgs, final String sel) {
+    private void load() {
         loading = true;
         refresh();
         new Thread(new Runnable() {
@@ -263,7 +258,7 @@ public class RemoveClonesActivity extends Activity {
                         if (u2 > 0) usable.add(u2);
                     }
                 }
-                // 总是列全部：从多选进来只给几个包名时，也只当作「预选」，列表照旧完整
+                // 列表永远是全部分身：入口（多选工具条 / 长按菜单）都不再带预选
                 for (Integer u : usable) {
                     Set<String> want = installedOf(u.intValue(), true);
                     for (String p : want) {
@@ -277,13 +272,8 @@ public class RemoveClonesActivity extends Activity {
                     public void run() {
                         loading = false;
                         if (!canShell) empty.setText(R.string.backup_need_root);
-                        for (Row r : rows) {
-                            // 默认一个都不勾：删谁都由用户决定，勾错一次就是数据没了
-                            r.on = false;
-                            // 从某个分身长按进来的，把那一个勾上（哪怕它有数据，用户点的是它）
-                            if (sel != null && sel.equals(r.uid + ":" + r.pkg)) r.on = true;
-                            else for (String p : pkgs) if (p.equals(r.pkg)) { r.on = true; break; }
-                        }
+                        // 一个都不勾：只有用户点了才勾，任何自动勾选都可能删掉有数据的分身
+                        for (Row r : rows) r.on = false;
                         refresh();
                     }
                 });

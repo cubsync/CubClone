@@ -373,13 +373,9 @@ public class MainActivity extends Activity {
         btnRemove = findViewById(R.id.btn_remove);
         btnRemove.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                if (selected.isEmpty()) {
-                    toast(getString(R.string.batch_none_selected));
-                    return;
-                }
-                Intent it = new Intent(MainActivity.this, RemoveClonesActivity.class);
-                it.putExtra(RemoveClonesActivity.EXTRA_PKGS, selected.toArray(new String[selected.size()]));
-                startActivity(it);
+                // 进这一页就是「把全部分身列出来」，一个都不预选：
+                // 删谁必须在那一页里自己勾，任何自动勾选都可能删掉有数据的分身。
+                startActivity(new Intent(MainActivity.this, RemoveClonesActivity.class));
             }
         });
         btnSelectAll.setOnClickListener(new View.OnClickListener() {
@@ -1864,9 +1860,10 @@ public class MainActivity extends Activity {
                                 else if (a == 6) pickCopyTarget(g, c.uid);
                                 else if (a == 7) backupData(g, c.uid);
                                 else if (a == 9) {
-                                    Intent it = new Intent(MainActivity.this, RemoveClonesActivity.class);
-                                    it.putExtra(RemoveClonesActivity.EXTRA_SEL, c.uid + ":" + g.pkg);
-                                    startActivity(it);
+                                    // 不把它预选上：这一页只负责列全部分身，
+                                    // 勾选一律由用户在那页里点（以前预选过，一进去就勾着有数据的）
+                                    startActivity(new Intent(MainActivity.this,
+                                            RemoveClonesActivity.class));
                                 } else confirmRemove(c, g);
                             }
                         })

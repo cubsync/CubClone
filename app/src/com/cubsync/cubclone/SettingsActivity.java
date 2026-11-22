@@ -1957,7 +1957,7 @@ public class SettingsActivity extends Activity {
 
     private void confirmRemoveSpace(final int uid) {
         if (!Launcher.safe(uid)) {
-            toast("uid " + uid + " 不是分身，拒绝操作");
+            toast(getString(R.string.err_not_clone, uid));
             return;
         }
         Theme.dialog(this)

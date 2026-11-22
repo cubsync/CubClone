@@ -34,6 +34,13 @@ import java.util.List;
  */
 public class BatchRunActivity extends Activity {
 
+
+    /** 界面语言跟随应用设置（Locales），不能只靠系统语言 */
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(Locales.wrap(base));
+    }
+
     public static final String EXTRA_MODE = "mode";
     public static final String EXTRA_PKGS = "pkgs";
     public static final String EXTRA_PATHS = "paths";

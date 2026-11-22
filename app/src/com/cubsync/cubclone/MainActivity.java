@@ -1311,7 +1311,7 @@ public class MainActivity extends Activity {
 
     /** 第二级：挑目标空间（可多选，也可勾「新建一个空间」） */
     private void showSpacePicker() {
-        say("正在读取分身空间…");
+        say(getString(R.string.loading_spaces));
         new Thread(new Runnable() {
             public void run() {
                 final List<Integer> spaces = CloneStore.listSpaceUids();
@@ -1331,8 +1331,8 @@ public class MainActivity extends Activity {
                         for (int i = 0; i < spaces.size(); i++) {
                             int u = spaces.get(i).intValue();
                             Integer n = counts.get(Integer.valueOf(u));
-                            items[i] = spaceLabel(u) + " · "
-                                    + (n == null ? 0 : n.intValue()) + " 个分身";
+                            items[i] = getString(R.string.space_item_count_full, spaceLabel(u),
+                                    n == null ? 0 : n.intValue());
                         }
                         items[spaces.size()] = getString(R.string.new_space_option);
                         final boolean[] checked = new boolean[items.length];
@@ -1371,7 +1371,7 @@ public class MainActivity extends Activity {
     /** 对「应用 × 空间」逐个安装，装过的跳过，最后汇总 */
     private void doBatch(final List<String> pkgs, final List<Integer> targets,
             final boolean wantNew) {
-        say("正在批量创建分身…");
+        say(getString(R.string.batch_creating));
         multiBar.setEnabled(false);
         if (wantNew) {
             askSpaceName(new NameCb() {
@@ -1610,7 +1610,7 @@ public class MainActivity extends Activity {
             say(getString(R.string.need_perm));
             return;
         }
-        say("正在读取分身空间…");
+        say(getString(R.string.loading_spaces));
         new Thread(new Runnable() {
             public void run() {
                 final List<Integer> spaces = CloneStore.listSpaceUids();

@@ -863,7 +863,7 @@ public final class AppData {
         // 外部目录写失败不能咽下去：那一步失败后脚本仍会照常往下跑并打印 CUB_OK
         if (out.contains("ERR_EXT")) return "ERR_EXT";
         // 属主没落对等于应用写不了（纯 FUSE 下 MediaProvider 只是 other），必须报失败
-        if (out.contains("ERR_OWN")) return "ERR 外部目录属主没落对，应用会写不了";
+        if (out.contains("ERR_OWN")) return "ERR_EXT_OWN";
         if (out.contains("CUB_OK")) {
             if (out.contains("ERR_APK")) return "OK_NOAPK";
             return "OK";

@@ -26,7 +26,7 @@ public final class Shell {
     public static String exec(String cmd) {
         if (rootOk && !forceShizuku) return raw("su", "-c", cmd);
         if (shizukuOk) return shizuku(cmd);
-        return "ERR 无 root 且未授权 Shizuku";
+        return "ERR_NO_PERM";
     }
 
     /**
@@ -64,7 +64,7 @@ public final class Shell {
      */
     public static String execWithRoot(String cmd) {
         if (checkRoot()) return raw("su", "-c", cmd);
-        return "ERR 需要 root";
+        return "ERR_NEED_ROOT";
     }
 
     /**
@@ -74,7 +74,7 @@ public final class Shell {
      * 命令行只剩 base64 字符，不存在任何需要转义的东西。
      */
     public static String execScript(String script) {
-        if (!checkRoot()) return "ERR 需要 root";
+        if (!checkRoot()) return "ERR_NEED_ROOT";
         String b64;
         try {
             b64 = android.util.Base64.encodeToString(
@@ -111,10 +111,10 @@ public final class Shell {
         try {
             moe.shizuku.server.IShizukuService svc =
                     moe.shizuku.server.IShizukuService.Stub.asInterface(Shizuku.getBinder());
-            if (svc == null) return "ERR Shizuku 服务为空";
+            if (svc == null) return "ERR_SHIZUKU_SVC";
             moe.shizuku.server.IRemoteProcess p =
                     svc.newProcess(new String[]{"sh", "-c", cmd}, null, null);
-            if (p == null) return "ERR newProcess 返回空";
+            if (p == null) return "ERR_NEWPROC";
             drain(new android.os.ParcelFileDescriptor.AutoCloseInputStream(p.getInputStream()), sb);
             drain(new android.os.ParcelFileDescriptor.AutoCloseInputStream(p.getErrorStream()), sb);
             p.waitFor();
@@ -169,10 +169,10 @@ public final class Shell {
             if (shizukuOk) {
                 moe.shizuku.server.IShizukuService svc =
                         moe.shizuku.server.IShizukuService.Stub.asInterface(Shizuku.getBinder());
-                if (svc == null) return "ERR Shizuku 服务为空";
+                if (svc == null) return "ERR_SHIZUKU_SVC";
                 moe.shizuku.server.IRemoteProcess p =
                         svc.newProcess(new String[]{"sh", "-c", cmd}, null, null);
-                if (p == null) return "ERR newProcess 返回空";
+                if (p == null) return "ERR_NEWPROC";
                 java.io.OutputStream os =
                         new android.os.ParcelFileDescriptor.AutoCloseOutputStream(p.getOutputStream());
                 os.write(data);
@@ -186,6 +186,6 @@ public final class Shell {
         } catch (Throwable t) {
             return "ERR " + t;
         }
-        return "ERR 无 root 且未授权 Shizuku";
+        return "ERR_NO_PERM";
     }
 }

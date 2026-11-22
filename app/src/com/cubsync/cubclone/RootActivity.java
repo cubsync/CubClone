@@ -20,6 +20,13 @@ import android.widget.TextView;
  */
 public class RootActivity extends Activity {
 
+
+    /** 界面语言跟随应用设置（Locales），不能只靠系统语言 */
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(Locales.wrap(base));
+    }
+
     private LinearLayout root;
     private LinearLayout header;
     private TextView title;

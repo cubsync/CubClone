@@ -36,12 +36,13 @@ if [ "$ABI" != universal ]; then
   [ -f "$OUT/assets/zstd-$ABI" ] || { echo "assets 里没有 zstd-$ABI"; exit 1; }
 fi
 
-echo "[0/7] UI 配色自检"
+echo "[0/7] 自检：UI 配色 + 中英资源"
 # 背景色由应用自己按深浅色画，系统主题给的 Button/CheckBox 默认色不会跟着变；
 # 这类「深色下按钮变黑字」的问题反复出现，编译前直接拦住（tools/check-ui-colors.py）。
 PYEXE="${PYTHON_EXE:-D:/Dev/Python/Env/Python312/python.exe}"
 if [ -f "$PYEXE" ]; then
   "$PYEXE" tools/check-ui-colors.py
+  "$PYEXE" tools/check-i18n.py || exit 1
 else
   echo "  跳过：找不到 python（$PYEXE），设 PYTHON_EXE 指过去再编"
 fi

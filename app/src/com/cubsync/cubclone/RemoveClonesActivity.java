@@ -32,6 +32,13 @@ import java.util.Set;
  */
 public class RemoveClonesActivity extends Activity {
 
+
+    /** 界面语言跟随应用设置（Locales），不能只靠系统语言 */
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(Locales.wrap(base));
+    }
+
     private static final class Row {
         final String pkg;
         final int uid;

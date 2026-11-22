@@ -36,7 +36,9 @@ public final class CloneStore {
 
     static void attach(Context c) {
         if (appCtx == null && c != null) {
-            appCtx = c.getApplicationContext();
+            // 走 Locales.wrap：默认空间名（「空间 N」/「Clone N」）要按应用内语言生成，
+            // getApplicationContext() 拿的是系统语言，英文模式会落成中文名。
+            appCtx = Locales.wrap(c);
             mirrorPrefs();
         }
     }

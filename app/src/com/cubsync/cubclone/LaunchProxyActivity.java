@@ -15,6 +15,13 @@ import android.os.Bundle;
  */
 public class LaunchProxyActivity extends Activity {
 
+
+    /** 界面语言跟随应用设置（Locales），不能只靠系统语言 */
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(Locales.wrap(base));
+    }
+
     private static String lastKey;
     private static long lastAt;
 

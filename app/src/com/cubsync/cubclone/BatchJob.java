@@ -74,7 +74,9 @@ public final class BatchJob {
     private BatchJob(Context c, boolean restore, int targetUser, int parts) {
         // Zstd / CloneStore 都靠 appCtx 找 Context；过程页可能先于任何页面被拉起
         CloneStore.attach(c);
-        this.ctx = c.getApplicationContext();
+        // 不能用 getApplicationContext()：那是系统语言的 Configuration，英文模式下
+        // 过程页日志、通知全落回中文。Locales.wrap 出来的是独立配置上下文，不持有 Activity。
+        this.ctx = Locales.wrap(c);
         this.restore = restore;
         this.targetUser = targetUser;
         this.parts = parts;
@@ -198,7 +200,7 @@ public final class BatchJob {
                     ok++;
                 } else {
                     r.state = ST_BAD;
-                    r.detail = res.replace("ERR ", "");
+                    r.detail = Err.text(ctx, res);
                     bad++;
                 }
                 done = i + 1;

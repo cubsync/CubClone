@@ -33,35 +33,35 @@
         <activity
             android:name=".SettingsActivity"
             android:exported="false"
-            android:label="设置" />
+            android:label="@string/settings_title" />
 
         <!-- 数据备份：列表 + 每项操作 -->
         <activity
             android:name=".BackupActivity"
             android:exported="false"
-            android:label="数据备份" />
+            android:label="@string/sec_backup" />
 
         <!-- 批量备份：选空间 → 勾应用 → 一次跑完 -->
         <activity
             android:name=".BatchBackupActivity"
             android:exported="false"
-            android:label="批量备份" />
+            android:label="@string/batch_backup_title" />
 
         <!-- Root 功能：总开关 + 单项开关 -->
         <activity
             android:name=".BatchRunActivity"
             android:exported="false"
-            android:label="批量任务" />
+            android:label="@string/batch_task_title" />
 
         <activity
             android:name=".RemoveClonesActivity"
             android:exported="false"
-            android:label="删除分身" />
+            android:label="@string/rc_title" />
 
         <activity
             android:name=".RootActivity"
             android:exported="false"
-            android:label="Root 功能" />
+            android:label="@string/sec_root" />
 
         <!-- 桌面快捷方式落地页：收到 uid/pkg 后直接启动分身里的应用 -->
         <activity

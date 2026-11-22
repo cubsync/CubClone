@@ -223,13 +223,8 @@
     <string name="backup_restore_many_done">已恢复 %1$d 项，失败 %2$d 项</string>
     <string name="backup_restore_many_skip">同空间同应用有多份，只恢复了最新的 %1$d 份</string>
     <string name="backup_sort">排序</string>
-    <string name="backup_sort_time_desc">时间（新→旧）</string>
-    <string name="backup_sort_time_asc">时间（旧→新）</string>
-    <string name="backup_sort_time_desc_short">时间↓</string>
-    <string name="backup_sort_time_asc_short">时间↑</string>
     <string name="backup_sort_name">名称</string>
-    <string name="backup_sort_size">大小（大→小）</string>
-    <string name="backup_sort_size_short">大小↓</string>
+    <string name="backup_sort_size">大小</string>
     <string name="backup_sort_space">空间</string>
     <string name="backup_dir_bad">这个目录转不成路径，换一个试试</string>
     <string name="backup_dir_row">备份目录</string>
@@ -251,11 +246,9 @@
     <string name="rc_filter_reset">清空</string>
     <string name="rc_recount">重新统计体积</string>
     <string name="rc_sort">排序</string>
-    <string name="rc_sort_space">按空间</string>
-    <string name="rc_sort_space_short">空间</string>
-    <string name="rc_sort_size">按体积（大的在前）</string>
-    <string name="rc_sort_size_short">体积</string>
-    <string name="rc_sort_name">按名称</string>
+    <string name="rc_sort_space">空间</string>
+    <string name="rc_sort_size">体积</string>
+    <string name="rc_sort_name">名称</string>
     <string name="rc_search">搜索应用</string>
     <string name="rc_space_all">全部空间</string>
     <string name="rc_title_count">删除分身  %1$d 个 · 已选 %2$d</string>
@@ -481,4 +474,7 @@
     <string name="err_newproc_fail">起 shell 进程失败</string>
     <string name="err_ext_own">外部目录属主没落对，应用会写不了</string>
     <string name="batch_task_title">批量任务</string>
+    <string name="sort_dir_asc">升序</string>
+    <string name="sort_dir_desc">降序</string>
+    <string name="backup_sort_time">时间</string>
 </resources>

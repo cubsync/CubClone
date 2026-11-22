@@ -136,6 +136,16 @@
             android:textSize="13sp" />
 
         <TextView
+            android:id="@+id/bk_sort_dir"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="6dp"
+            android:paddingEnd="2dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:textSize="13sp" />
+
+        <TextView
             android:id="@+id/bk_filter"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

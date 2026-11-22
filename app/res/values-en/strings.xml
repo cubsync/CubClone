@@ -223,13 +223,8 @@ Owner data is not touched.</string>
     <string name="backup_restore_many_done">Restored %1$d, failed %2$d</string>
     <string name="backup_restore_many_skip">%1$d older duplicate(s) skipped — only the newest per app per space was restored</string>
     <string name="backup_sort">Sort</string>
-    <string name="backup_sort_time_desc">Time (newest first)</string>
-    <string name="backup_sort_time_asc">Time (oldest first)</string>
-    <string name="backup_sort_time_desc_short">Newest</string>
-    <string name="backup_sort_time_asc_short">Oldest</string>
     <string name="backup_sort_name">Name</string>
-    <string name="backup_sort_size">Size (largest first)</string>
-    <string name="backup_sort_size_short">Largest</string>
+    <string name="backup_sort_size">Size</string>
     <string name="backup_sort_space">Space</string>
     <string name="backup_dir_bad">That folder could not be resolved to a path — pick another</string>
     <string name="backup_dir_row">Backup folder</string>
@@ -251,11 +246,9 @@ Owner data is not touched.</string>
     <string name="rc_filter_reset">Clear</string>
     <string name="rc_recount">Recount sizes</string>
     <string name="rc_sort">Sort</string>
-    <string name="rc_sort_space">By space</string>
-    <string name="rc_sort_space_short">Space</string>
-    <string name="rc_sort_size">By size (largest first)</string>
-    <string name="rc_sort_size_short">Size</string>
-    <string name="rc_sort_name">By name</string>
+    <string name="rc_sort_space">Space</string>
+    <string name="rc_sort_size">Size</string>
+    <string name="rc_sort_name">Name</string>
     <string name="rc_search">Search</string>
     <string name="rc_space_all">All spaces</string>
     <string name="rc_title_count">Delete clones  %1$d · %2$d selected</string>
@@ -481,4 +474,7 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="err_newproc_fail">Failed to start a shell process</string>
     <string name="err_ext_own">External dir owner is wrong; apps cannot write</string>
     <string name="batch_task_title">Batch task</string>
+    <string name="sort_dir_asc">Ascending</string>
+    <string name="sort_dir_desc">Descending</string>
+    <string name="backup_sort_time">Time</string>
 </resources>

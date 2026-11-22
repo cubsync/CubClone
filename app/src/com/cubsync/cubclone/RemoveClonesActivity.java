@@ -68,6 +68,7 @@ public class RemoveClonesActivity extends Activity {
     private TextView filter;
     private TextView hintTv;
     private TextView sortTv;
+    private TextView sortDirTv;
     private Button btnRemove;
     private android.widget.EditText search;
     private String query = "";
@@ -169,6 +170,15 @@ public class RemoveClonesActivity extends Activity {
             public void onClick(View v) { pickSort(); }
         });
         searchRow.addView(sortTv);
+
+        sortDirTv = new TextView(this);
+        sortDirTv.setTextSize(13);
+        sortDirTv.setTextColor(sec);
+        sortDirTv.setPadding(dp(6), dp(8), dp(2), dp(8));
+        sortDirTv.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { flipSortDir(); }
+        });
+        searchRow.addView(sortDirTv);
 
         // 空间筛选：点开多选，全不勾 = 全部。和排序同一行（搜索 | 排序 | 筛选），与「数据备份」页一致；
         // 单独占一行会把顶部撑成两行，列表能看见的内容就少一截。
@@ -499,11 +509,34 @@ public class RemoveClonesActivity extends Activity {
         return sp().getString("rc_sort", "space");
     }
 
+    /** 排序按钮只写维度，方向看旁边的箭头 */
     private String sortShort() {
         String k = sortKey();
-        if ("size".equals(k)) return getString(R.string.rc_sort_size_short);
+        if ("size".equals(k)) return getString(R.string.rc_sort_size);
         if ("name".equals(k)) return getString(R.string.rc_sort_name);
-        return getString(R.string.rc_sort_space_short);
+        return getString(R.string.rc_sort_space);
+    }
+
+    /** 方向按维度各记一份：空间/名称默认正序，体积默认大的在前 */
+    private boolean sortDesc() {
+        String saved = sp().getString("rc_sort_dir_" + sortKey(), null);
+        if (saved == null) return "size".equals(sortKey());
+        return "desc".equals(saved);
+    }
+
+    private void flipSortDir() {
+        sp().edit().putString("rc_sort_dir_" + sortKey(), sortDesc() ? "asc" : "desc").apply();
+        renderSort();
+        refresh();
+    }
+
+    private void renderSort() {
+        boolean d = sortDesc();
+        sortTv.setText(sortShort() + " ▾");
+        sortTv.setTextColor(accent);
+        sortDirTv.setText(d ? "↓" : "↑");
+        sortDirTv.setTextColor(accent);
+        sortDirTv.setContentDescription(getString(d ? R.string.sort_dir_desc : R.string.sort_dir_asc));
     }
 
     private void pickSort() {
@@ -592,8 +625,7 @@ public class RemoveClonesActivity extends Activity {
         sb.append(" ▾");
         filter.setText(sb.toString());
         filter.setTextColor(accent);
-        sortTv.setText(sortShort() + " ▾");
-        sortTv.setTextColor(accent);
+        renderSort();
     }
 
     // ── 列表 ────────────────────────────────────────────────────────
@@ -607,18 +639,21 @@ public class RemoveClonesActivity extends Activity {
             shown.add(r);
         }
         final String k = sortKey();
+        final boolean desc = sortDesc();
         Collections.sort(shown, new Comparator<Row>() {
             public int compare(Row a, Row b) {
+                int c;
                 if ("size".equals(k)) {
-                    if (a.bytes != b.bytes) return a.bytes > b.bytes ? -1 : 1;
+                    c = Long.valueOf(a.bytes).compareTo(Long.valueOf(b.bytes));
                 } else if ("name".equals(k)) {
-                    int c = a.label.compareToIgnoreCase(b.label);
-                    if (c != 0) return c;
+                    c = a.label.compareToIgnoreCase(b.label);
                 } else {
-                    if (a.uid != b.uid) return a.uid < b.uid ? -1 : 1;
+                    c = Integer.valueOf(a.uid).compareTo(Integer.valueOf(b.uid));
                 }
-                int c = a.label.compareToIgnoreCase(b.label);
-                return c != 0 ? c : a.pkg.compareTo(b.pkg);
+                if (desc) c = -c;
+                if (c != 0) return c;
+                int n = a.label.compareToIgnoreCase(b.label);   // 并列时按名称、包名兜底
+                return n != 0 ? n : a.pkg.compareTo(b.pkg);
             }
         });
         int sel = 0;

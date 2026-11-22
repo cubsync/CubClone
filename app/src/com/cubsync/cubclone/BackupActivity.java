@@ -55,6 +55,7 @@ public class BackupActivity extends Activity {
     private EditText search;
     private TextView filter;
     private TextView sortTv;
+    private TextView sortDirTv;
     private TextView addBtn;
     /** 上一次批量任务的日志 */
     private TextView logBtn;
@@ -115,6 +116,7 @@ public class BackupActivity extends Activity {
         search = findViewById(R.id.bk_search);
         filter = findViewById(R.id.bk_filter);
         sortTv = findViewById(R.id.bk_sort);
+        sortDirTv = findViewById(R.id.bk_sort_dir);
         addBtn = findViewById(R.id.bk_add);
         logBtn = findViewById(R.id.bk_log);
         dirRow = findViewById(R.id.bk_dir_row);
@@ -179,6 +181,9 @@ public class BackupActivity extends Activity {
         });
         sortTv.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { pickSort(); }
+        });
+        sortDirTv.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { flipSortDir(); }
         });
         selAll.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { toggleSelectAll(); }
@@ -293,7 +298,8 @@ public class BackupActivity extends Activity {
         search.setHintTextColor(sec);
         filter.setTextColor(accent);
         sortTv.setTextColor(accent);
-        sortTv.setText(sortShort());
+        sortDirTv.setTextColor(accent);
+        renderSort();
         selCount.setTextColor(sec);
         selAll.setTextColor(accent);
         selInv.setTextColor(accent);
@@ -689,61 +695,87 @@ public class BackupActivity extends Activity {
     }
 
     // ── 排序 ─────────────────────────────────────────────────────────
-    private String currentSort() {
-        return sp().getString("backup_sort", "time_desc");
+    /** 维度：time / name / size / space。旧版把方向也塞进这个键（time_desc/time_asc），读到时迁过来。 */
+    private String sortKey() {
+        String k = sp().getString("backup_sort", "time");
+        if ("time_desc".equals(k) || "time_asc".equals(k)) {
+            sp().edit().putString("backup_sort", "time")
+                    .putBoolean("backup_sort_desc", "time_desc".equals(k)).apply();
+            return "time";
+        }
+        return k;
     }
 
-    /** 顶栏只放得下短标签 */
+    /** 方向按维度各记一份：时间/大小默认倒序，名称/空间默认正序 */
+    private boolean sortDesc() {
+        String k = sortKey();
+        String saved = sp().getString("backup_sort_dir_" + k, null);
+        if (saved != null) return "desc".equals(saved);
+        if ("time".equals(k)) return sp().getBoolean("backup_sort_desc", true);
+        return "size".equals(k);
+    }
+
+    /** 排序按钮只写维度，方向看旁边的箭头 */
     private String sortShort() {
-        String k = currentSort();
-        if ("time_asc".equals(k)) return getString(R.string.backup_sort_time_asc_short);
+        String k = sortKey();
         if ("name".equals(k)) return getString(R.string.backup_sort_name);
-        if ("size".equals(k)) return getString(R.string.backup_sort_size_short);
+        if ("size".equals(k)) return getString(R.string.backup_sort_size);
         if ("space".equals(k)) return getString(R.string.backup_sort_space);
-        return getString(R.string.backup_sort_time_desc_short);
+        return getString(R.string.backup_sort_time);
     }
 
-    /** 默认按时间倒序：刚做的备份排最上面，和备份工具的惯例一致 */
+    private void renderSort() {
+        sortTv.setText(sortShort() + " ▾");
+        boolean d = sortDesc();
+        sortDirTv.setText(d ? "↓" : "↑");
+        sortDirTv.setContentDescription(getString(d ? R.string.sort_dir_desc : R.string.sort_dir_asc));
+    }
+
+    private void flipSortDir() {
+        sp().edit().putString("backup_sort_dir_" + sortKey(), sortDesc() ? "asc" : "desc").apply();
+        renderSort();
+        refilter();
+    }
+
     private void sortAll() {
-        final String key = currentSort();
+        final String key = sortKey();
+        final boolean desc = sortDesc();
         java.util.Collections.sort(all, new java.util.Comparator<AppData.Backup>() {
             public int compare(AppData.Backup a, AppData.Backup b) {
+                int c;
                 if ("name".equals(key)) {
-                    int c = labelOf(a.pkg).compareToIgnoreCase(labelOf(b.pkg));
-                    return c != 0 ? c : b.ts.compareTo(a.ts);
+                    c = labelOf(a.pkg).compareToIgnoreCase(labelOf(b.pkg));
+                } else if ("size".equals(key)) {
+                    c = Long.valueOf(a.sizeKb).compareTo(Long.valueOf(b.sizeKb));
+                } else if ("space".equals(key)) {
+                    c = Integer.valueOf(a.user).compareTo(Integer.valueOf(b.user));
+                } else {
+                    c = a.ts.compareTo(b.ts);
                 }
-                if ("size".equals(key)) {
-                    int c = Long.valueOf(b.sizeKb).compareTo(Long.valueOf(a.sizeKb));
-                    return c != 0 ? c : b.ts.compareTo(a.ts);
-                }
-                if ("space".equals(key)) {
-                    int c = Integer.valueOf(a.user).compareTo(Integer.valueOf(b.user));
-                    return c != 0 ? c : b.ts.compareTo(a.ts);
-                }
-                if ("time_asc".equals(key)) return a.ts.compareTo(b.ts);
-                return b.ts.compareTo(a.ts);     // time_desc
+                if (desc) c = -c;
+                return c != 0 ? c : b.ts.compareTo(a.ts);   // 并列时新的在前
             }
         });
     }
 
     private void pickSort() {
-        final String[] keys = {"time_desc", "time_asc", "name", "size", "space"};
+        final String[] keys = {"time", "name", "size", "space"};
         String[] items = {
-                getString(R.string.backup_sort_time_desc),
-                getString(R.string.backup_sort_time_asc),
+                getString(R.string.backup_sort_time),
                 getString(R.string.backup_sort_name),
                 getString(R.string.backup_sort_size),
                 getString(R.string.backup_sort_space),
         };
+        String k = sortKey();
         int cur = 0;
-        for (int i = 0; i < keys.length; i++) if (keys[i].equals(currentSort())) cur = i;
+        for (int i = 0; i < keys.length; i++) if (keys[i].equals(k)) cur = i;
         Theme.dialog(this)
                 .setTitle(R.string.backup_sort)
                 .setSingleChoiceItems(items, cur, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
                         d.dismiss();
                         sp().edit().putString("backup_sort", keys[which]).apply();
-                        sortTv.setText(sortShort());
+                        renderSort();
                         refilter();
                     }
                 })

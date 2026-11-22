@@ -297,27 +297,42 @@ public class RemoveClonesActivity extends Activity {
         return s;
     }
 
-    /** 一次脚本把所有分身的数据体积量完：du 逐目录，几十个包也就几秒 */
+    /**
+     * 量各分身的数据体积：**每个空间一条 du**，不是每个包一条。
+     * 以前逐包 du，400 个分身就是 400 次 fork，二十秒起步，脚本还容易被截断——
+     * 界面就变成「刷新慢 + 全部无数据」。整目录一次遍历，两个空间不到一秒。
+     * 每量完一个空间就刷一次界面，数字是陆续出现的。
+     */
     private void measure() {
         if (rows.isEmpty()) return;
-        StringBuilder s = new StringBuilder();
-        for (Row r : rows) {
-            s.append("S=$(du -sk '/data/user/").append(r.uid).append('/').append(r.pkg)
-                    .append("' 2>/dev/null | cut -f1); echo ").append(r.uid).append('|')
-                    .append(r.pkg).append("|${S:-0}\n");
-        }
-        String out = Shell.execScript(s.toString());
-        for (String line : out.split("\n")) {
-            String t = line.trim();
-            int a = t.indexOf('|'), b2 = t.lastIndexOf('|');
-            if (a <= 0 || b2 <= a) continue;
-            String u = t.substring(0, a), p = t.substring(a + 1, b2), k = t.substring(b2 + 1);
-            for (Row r : rows) {
-                if (r.uid == atoi(u) && r.pkg.equals(p)) {
-                    r.kb = atol(k);
-                    break;
+        Set<Integer> users = new java.util.LinkedHashSet<Integer>();
+        for (Row r : rows) users.add(Integer.valueOf(r.uid));
+        for (final Integer u : users) {
+            String out = Shell.execScript("du -sk /data/user/" + u + "/* 2>/dev/null");
+            for (String line : out.split("\n")) {
+                String t = line.trim();
+                int sp = t.indexOf('\t');
+                if (sp <= 0) sp = t.indexOf(' ');
+                if (sp <= 0) continue;
+                String k = t.substring(0, sp).trim();
+                String path = t.substring(sp + 1).trim();
+                int sl = path.lastIndexOf('/');
+                if (sl < 0) continue;
+                String pkg = path.substring(sl + 1);
+                for (Row r : rows) {
+                    if (r.uid == u.intValue() && r.pkg.equals(pkg)) {
+                        r.kb = atol(k);
+                        break;
+                    }
                 }
             }
+            // 这个空间里没有目录的（空壳被清过、只剩安装记录）就是 0，别让它一直挂「…」
+            for (Row r : rows) {
+                if (r.uid == u.intValue() && r.kb < 0) r.kb = 0;
+            }
+            runOnUiThread(new Runnable() {
+                public void run() { refresh(); }
+            });
         }
     }
 
@@ -468,8 +483,8 @@ public class RemoveClonesActivity extends Activity {
     }
 
     private String sizeText(Row r) {
-        if (loading && r.kb < 0) return "…";
-        if (r.kb <= 0) return getString(R.string.rc_no_data);
+        if (r.kb < 0) return "…";          // 还没量到，别显示成「无数据」
+        if (r.kb == 0) return getString(R.string.rc_no_data);
         if (r.kb < 1024) return r.kb + " KB";
         if (r.kb < 1024 * 1024) return String.format(java.util.Locale.US, "%.1f MB", r.kb / 1024.0);
         return String.format(java.util.Locale.US, "%.2f GB", r.kb / 1048576.0);

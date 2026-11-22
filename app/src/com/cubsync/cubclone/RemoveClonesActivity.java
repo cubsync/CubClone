@@ -37,7 +37,9 @@ public class RemoveClonesActivity extends Activity {
         final int uid;
         final String label;
         final String space;
-        long kb = -1;      // -1 = 还没量
+        /** 用户数据字节数，口径同系统「应用信息 → 用户数据」：文件的字节总和，缓存另算。
+         *  -1 = 还没量。 */
+        long bytes = -1;
         boolean on;
 
         Row(String pkg, int uid, String label, String space) {
@@ -225,12 +227,12 @@ public class RemoveClonesActivity extends Activity {
     }
 
     /**
-     * 只勾「没有数据」的：判定与列表显示同一条口径——三处目录都不存在才显示「无数据」。
-     * 还有数字的一律不动（以前把不到 1 MB 当空壳，芝麻粒这种只有几十 KB 配置的会被误勾）。
+     * 只勾「没有数据」的：判定与列表显示同一条口径——用户数据 0 字节才显示「无数据」。
+     * 有字节的一律不动（哪怕只有 24 B 的系统标记，也说明这个应用在分身里启动过）。
      * 还没量到的（显示「…」）也不勾，宁可少选不可误删。
      */
     private void selectNoData() {
-        for (Row r : shown) r.on = r.kb == 0;
+        for (Row r : shown) r.on = r.bytes == 0;
         refresh();
     }
 
@@ -297,18 +299,23 @@ public class RemoveClonesActivity extends Activity {
     }
 
     /**
-     * 量各分身的数据体积：**每个空间一条命令**，不是每个包一条。
+     * 量各分身的「用户数据」：**每个空间一条命令**，不是每个包一条。
      * 逐包跑（400 个分身 = 400 次 fork）会二十秒起步、脚本还容易被截断，
      * 界面就成了「刷新慢 + 全部无数据」。整目录一次遍历，一个空间一两秒。
      *
-     * 口径 = 「应用自己写下的数据」：
-     *   CE(/data/user)、DE(/data/user_de)、外部三块(Android/data|media|obb) 全部相加，
-     *   **排除 cache / code_cache 段**。
-     * 为什么排除缓存：刚克隆出来、一次都没打开的应用，系统也会建出
-     * `/data/user/<U>/<包>/cache`、`code_cache` 两个空目录，du 量出来 22 KB——
-     * 按字节算就成了「有数据」，可它确实是空壳（空间 2 新建的 XRadiant 就是这样）。
-     * 只看真实文件（files/databases/shared_prefs/app_* 等）才等于用户眼里的「有没有数据」。
-     * 顺带：lib 是指向 /data/app 的符号链接，-type f 不会跟进去，本来就不会算。
+     * 口径照系统「应用信息 → 用户数据」：**文件字节总和，缓存另算**
+     * （系统的 StorageStats 里 dataBytes 含缓存、cacheBytes 是其中缓存部分，
+     *  Settings 分两行显示；这里只算前者减后者，也就是用户数据）。
+     * 所以：路径里出现 `cache` / `code_cache` 段的跳过，其它文件一律算——
+     * **包括 `files/profileInstalled` 这种 24 字节系统标记**，系统也把它算进用户数据。
+     * 实测：u10 芝麻粒 = 24 B（只有这一个文件，但确实启动过、在用）；
+     *      u11 刚克隆没打开的 XRadiant = 0（只有两个空的缓存目录）。
+     * 目录 inode 一律不算，否则空目录也能凑出 22 KB。
+     *
+     * 为什么不直接调 StorageStatsManager：应用在 u0、要查 u10/u11 的 uid 属于跨用户，
+     * 需要 INTERACT_ACROSS_USERS（system 级），普通应用拿不到；`cmd storagestats`
+     * 在本机也没有 shell 实现（No shell command implementation）。所以用 root 读同一批文件，
+     * 按系统同一个公式（文件字节、排缓存）算，结果与系统页面一致。
      */
     private void measure() {
         if (rows.isEmpty()) return;
@@ -323,32 +330,27 @@ public class RemoveClonesActivity extends Activity {
                 cmd.append(" /data/media/").append(U).append("/Android/").append(k);
             }
             cmd.append(" -mindepth 2 -type f -printf '%s %p\\n' 2>/dev/null | awk '\n");
-            // 路径里只要有一级叫 cache / code_cache 就跳过
             cmd.append("{ n=split($2,a,\"/\");\n");
             cmd.append("  for(i=1;i<=n;i++) if(a[i]==\"cache\"||a[i]==\"code_cache\") next;\n");
-            // files/profileInstalled 是系统装完就写的 24 字节标记，不是用户数据
-            cmd.append("  if(a[n]==\"profileInstalled\") next;\n");
             cmd.append("  pkg=\"\";\n");
             cmd.append("  if(a[3]==\"user\"||a[3]==\"user_de\") pkg=a[5];\n");
             cmd.append("  else if(a[3]==\"media\") pkg=a[7];\n");
             cmd.append("  if(pkg!=\"\") s[pkg]+=$1 }\n");
-            // 有数据但不足 1 KB 的记 1，别让它显示成「无数据」
-            cmd.append("END{ for(k in s){ v=int((s[k]+512)/1024); if(v<1) v=1;")
-                    .append(" printf \"%s|%d\\n\", k, v } }'\n");
+            cmd.append("END{ for(k in s) printf \"%s|%d\\n\", k, s[k] }'\n");
+
             String out = Shell.execScript(cmd.toString());
             final java.util.HashMap<String, Long> sum = new java.util.HashMap<String, Long>();
             for (String line : out.split("\n")) {
                 String t = line.trim();
                 int bar = t.indexOf('|');
                 if (bar <= 0) continue;
-                sum.put(t.substring(0, bar).trim(),
-                        Long.valueOf(atol(t.substring(bar + 1))));
+                sum.put(t.substring(0, bar).trim(), Long.valueOf(atol(t.substring(bar + 1))));
             }
-            // 没出现的包 = 一个真实文件都没有（只剩 cache 骨架或干脆没目录）= 空壳
+            // 没出现的包 = 一个非缓存文件都没有 = 空壳
             for (Row r : rows) {
                 if (r.uid != U) continue;
                 Long v = sum.get(r.pkg);
-                r.kb = v == null ? 0 : v.longValue();
+                r.bytes = v == null ? 0 : v.longValue();
             }
             runOnUiThread(new Runnable() {
                 public void run() { refresh(); }
@@ -481,7 +483,7 @@ public class RemoveClonesActivity extends Activity {
         Collections.sort(shown, new Comparator<Row>() {
             public int compare(Row a, Row b) {
                 if ("size".equals(k)) {
-                    if (a.kb != b.kb) return a.kb > b.kb ? -1 : 1;
+                    if (a.bytes != b.bytes) return a.bytes > b.bytes ? -1 : 1;
                 } else if ("name".equals(k)) {
                     int c = a.label.compareToIgnoreCase(b.label);
                     if (c != 0) return c;
@@ -507,11 +509,9 @@ public class RemoveClonesActivity extends Activity {
     }
 
     private String sizeText(Row r) {
-        if (r.kb < 0) return "…";          // 还没量到，别显示成「无数据」
-        if (r.kb == 0) return getString(R.string.rc_no_data);
-        if (r.kb < 1024) return r.kb + " KB";
-        if (r.kb < 1024 * 1024) return String.format(java.util.Locale.US, "%.1f MB", r.kb / 1024.0);
-        return String.format(java.util.Locale.US, "%.2f GB", r.kb / 1048576.0);
+        if (r.bytes < 0) return "…";        // 还没量到，别显示成「无数据」
+        if (r.bytes == 0) return getString(R.string.rc_no_data);
+        return sizeOf(r.bytes);
     }
 
     private final class Adapter extends BaseAdapter {
@@ -565,18 +565,18 @@ public class RemoveClonesActivity extends Activity {
     // ── 删除 ────────────────────────────────────────────────────────
     private void confirmDelete() {
         final List<Row> sel = new ArrayList<Row>();
-        long kb = 0;
+        long total = 0;
         for (Row r : rows) {
-            if (r.on) { sel.add(r); if (r.kb > 0) kb += r.kb; }
+            if (r.on) { sel.add(r); if (r.bytes > 0) total += r.bytes; }
         }
         if (sel.isEmpty()) return;
         boolean withData = false;
-        for (Row r : sel) if (r.kb > 0) withData = true;
+        for (Row r : sel) if (r.bytes > 0) withData = true;
         new AlertDialog.Builder(this)
                 .setTitle(withData ? R.string.rc_confirm_data_title : R.string.rc_confirm_title)
                 .setMessage(withData
-                        ? getString(R.string.rc_confirm_data, sel.size(), sizeOf(kb * 1024))
-                        : getString(R.string.rc_confirm, sel.size(), sizeOf(kb * 1024)))
+                        ? getString(R.string.rc_confirm_data, sel.size(), sizeOf(total))
+                        : getString(R.string.rc_confirm, sel.size(), sizeOf(total)))
                 .setPositiveButton(R.string.delete_clone_btn, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int w) { run(sel); }
                 })

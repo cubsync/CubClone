@@ -238,6 +238,7 @@ Owner data is not touched.</string>
     <string name="backup_dir_ok">Moved %1$s backup(s) to the new folder</string>
     <string name="backup_dir_note">Backups are packed straight into this folder and restored from it; any file manager can browse or copy them.</string>
     <string name="rc_title">Delete clones</string>
+    <string name="rc_hint_no_root">Size needs root: a clone\'s data dir is readable only by root. Listing and deleting work with Shizuku alone; \"No data only\" needs root.</string>
     <string name="rc_hint">Nothing is pre-selected. "No data only" ticks the rows shown as no data; ticking a clone with data deletes the data too, irreversible.</string>
     <string name="rc_all_with_data">All + data</string>
     <string name="rc_all_data_warn_title">Select clones with data too?</string>

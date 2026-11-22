@@ -59,6 +59,7 @@ public class RemoveClonesActivity extends Activity {
     private TextView empty;
     private TextView title;
     private TextView filter;
+    private TextView hintTv;
     private TextView sortTv;
     private Button btnRemove;
     private android.widget.EditText search;
@@ -112,12 +113,12 @@ public class RemoveClonesActivity extends Activity {
         bar.addView(title);
         root.addView(bar);
 
-        TextView hint = new TextView(this);
-        hint.setText(R.string.rc_hint);
-        hint.setTextSize(12);
-        hint.setTextColor(sec);
-        hint.setPadding(dp(16), 0, dp(16), dp(6));
-        root.addView(hint);
+        hintTv = new TextView(this);
+        hintTv.setText(R.string.rc_hint);
+        hintTv.setTextSize(12);
+        hintTv.setTextColor(sec);
+        hintTv.setPadding(dp(16), 0, dp(16), dp(6));
+        root.addView(hintTv);
 
         // 搜索 + 排序：和「数据备份」页同一套用法
         LinearLayout searchRow = new LinearLayout(this);
@@ -232,6 +233,12 @@ public class RemoveClonesActivity extends Activity {
      * 还没量到的（显示「…」）也不勾，宁可少选不可误删。
      */
     private void selectNoData() {
+        // 没有 root 就量不到体积，rows 全是「…」——这时候按 0 勾会一个都勾不到，
+        // 真按「空」处理又会把有数据的一起勾上，所以直接不给用。
+        if (!Shell.rootOk) {
+            toast(getString(R.string.rc_hint_no_root));
+            return;
+        }
         for (Row r : shown) r.on = r.bytes == 0;
         refresh();
     }
@@ -246,6 +253,9 @@ public class RemoveClonesActivity extends Activity {
                 // 所有 profile.CLONE 空间都列出来（系统的工作资料不是 CLONE，不会被误列）
                 if (!Shell.ready()) Shell.checkRoot();
                 final boolean canShell = Shell.ready();
+                // 体积只能 root 量：分身的包目录是 0700 uNN_aXXX，shell 身份读不进去。
+                // 删除不需要 root —— `pm uninstall --user` 是 shell 能力，Shizuku 就够。
+                final boolean canMeasure = Shell.rootOk;
                 Set<Integer> usable = new HashSet<Integer>();
                 if (canShell) {
                     String ul = Shell.exec("cmd user list --all -v");
@@ -269,11 +279,12 @@ public class RemoveClonesActivity extends Activity {
                                 RemoveClonesActivity.spaceName(RemoveClonesActivity.this, u.intValue())));
                     }
                 }
-                measure();
+                if (canMeasure) measure();
                 runOnUiThread(new Runnable() {
                     public void run() {
                         loading = false;
                         if (!canShell) empty.setText(R.string.backup_need_root);
+                        if (canShell && !canMeasure) hintTv.setText(R.string.rc_hint_no_root);
                         // 一个都不勾：只有用户点了才勾，任何自动勾选都可能删掉有数据的分身
                         for (Row r : rows) r.on = false;
                         refresh();
@@ -364,6 +375,10 @@ public class RemoveClonesActivity extends Activity {
 
     private static long atol(String s) {
         try { return Long.parseLong(s.trim()); } catch (Throwable t) { return 0; }
+    }
+
+    private void toast(String m) {
+        Toast.makeText(this, m, Toast.LENGTH_LONG).show();
     }
 
     private String labelOf(String pkg) {

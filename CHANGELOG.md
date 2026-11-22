@@ -63,6 +63,13 @@
   系统属性里，应用零权限 getprop 就能读，不需要 root。
 
 ### 修复
+- 批量删除分身不再要求 root：列表（`cmd user list`、`pm list packages --user`）和删除
+  （`pm uninstall --user`）都走 `Shell.exec`（root 优先、Shizuku 兜底）。实测 shell 身份执行
+  `pm uninstall --user 11 <不存在包>` 返回 `Failure [not installed for 11]`——权限检查通过，
+  说明 Shizuku 就能删。
+- 体积统计仍然只能 root：分身的包目录是 `0700 uNN_aXXX`，shell 身份 `ls` 直接 Permission denied。
+  没有 root 时列表体积显示「…」、「仅无数据」禁用并说明原因，不再把「量不到」当成 0
+  （那样一点「仅无数据」就会把有数据的分身全勾上）。
 - 批量删除页改用系统「应用信息 → 用户数据」的口径：CE + DE + 外部三块的**文件字节**相加，
   只排除 `cache` / `code_cache`（系统把缓存单独算在 cacheBytes，Settings 也分两行显示），
   其余文件都算——包括 `files/profileInstalled` 这种 24 字节系统标记。

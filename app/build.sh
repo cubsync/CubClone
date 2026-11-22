@@ -75,12 +75,17 @@ VCODE=$(printf '%s\n' "$BASE" | awk -v pre="$PRE" '{
 case "$VCODE" in ''|*[!0-9]*) echo "versionCode 计算失败: [$VCODE]（versionName=$VNAME，预发布后缀只认 dev/alpha/beta/rc）"; exit 1;; esac
 echo "    版本 $VNAME  versionCode $VCODE（由 versionName 推导）"
 
-# 构建标记：SemVer §5 的构建元数据，只用于认出「设备上这一版是哪次提交」，不参与版本优先级、不占版本号。
-# 有未提交改动就带 -dirty，提醒这包不对应任何提交。
-SHA=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)
-if ! git diff --quiet -- . 2>/dev/null; then SHA="$SHA-dirty"; fi
-BUILDV="$VNAME+$SHA"
-echo "    构建标记 $BUILDV"
+# 构建标记：只给预发布/开发期包加 SemVer §5 的构建元数据（+<短提交号>，有未提交改动带 -dirty），
+# 用来认出「设备上这一版是哪次提交」。正式版必须保持干净版本号——用户点「关于」看到的只能是 0.7.0。
+if [ -n "$PRE" ]; then
+  SHA=$(git -C .. rev-parse --short HEAD 2>/dev/null || echo nogit)
+  if ! git -C .. diff --quiet 2>/dev/null; then SHA="$SHA-dirty"; fi
+  BUILDV="$VNAME+$SHA"
+  echo "    构建标记 $BUILDV"
+else
+  BUILDV="$VNAME"
+  echo "    正式版，不加构建标记"
+fi
 
 # 源码里的清单只写干净版本号；带构建标记的副本只落在 build/，不污染 AndroidManifest.xml
 sed "s|android:versionName=\"$VNAME\"|android:versionName=\"$BUILDV\"|" \
@@ -125,10 +130,10 @@ AL=$(sed -n 's/^keyAlias=//p' "$PROPS")
 KP=$(sed -n 's/^keyPassword=//p' "$PROPS")
 [ -n "$KS" ] && [ -f "$KS" ] || { echo "keystore 不存在: $KS"; exit 1; }
 mkdir -p "$DIST"
-# 产物名与 versionName 完全一致（含 +<短提交号>）：设备上看到的版本就是这个文件名。
-# 出新测试包就把同版本的旧测试包删掉，dist/ 里始终只有一份在测的包。
+# 产物名与 versionName 完全一致：正式版 CubClone-0.7.0-arm64-v8a.apk，测试包带 +<短提交号>。
+# 出新包就把同版本的旧测试包删掉，dist/ 里始终只有一份在用的包。
 SUFFIX="-$ABI"
-rm -f "$DIST"/CubClone-"$VNAME"+*"$SUFFIX".apk
+rm -f "$DIST"/CubClone-"$VNAME"+*"$SUFFIX".apk "$DIST"/CubClone-"$VNAME"+*"$SUFFIX".apk.idsig
 APK="$DIST/CubClone-$BUILDV$SUFFIX.apk"
 "$BT/apksigner.bat" sign --ks "$KS" --ks-key-alias "$AL" \
   --ks-pass "pass:$SP" --key-pass "pass:$KP" --out "$APK" "$OUT/aligned.apk"

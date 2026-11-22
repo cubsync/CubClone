@@ -238,7 +238,7 @@ Owner data is not touched.</string>
     <string name="backup_dir_ok">Moved %1$s backup(s) to the new folder</string>
     <string name="backup_dir_note">Backups are packed straight into this folder and restored from it; any file manager can browse or copy them.</string>
     <string name="rc_title">Delete clones</string>
-    <string name="rc_hint">Only empty clones (no data) are pre-selected; ticking one with data deletes the data too — irreversible.</string>
+    <string name="rc_hint">Nothing is pre-selected. "No data only" ticks the rows shown as no data; ticking a clone with data deletes the data too, irreversible.</string>
     <string name="rc_all_with_data">All + data</string>
     <string name="rc_all_data_warn_title">Select clones with data too?</string>
     <string name="rc_all_data_warn">This also ticks %1$d clones holding %2$s of data. Deleted data cannot be recovered.</string>
@@ -260,7 +260,7 @@ Owner data is not touched.</string>
     <string name="rc_empty">Nothing to delete</string>
     <string name="rc_select_all">All</string>
     <string name="rc_invert">Invert</string>
-    <string name="rc_only_light">Empty only</string>
+    <string name="rc_only_light">No data only</string>
     <string name="rc_no_data">no data</string>
     <string name="rc_btn">Delete %1$d</string>
     <string name="rc_confirm_title">Confirm</string>

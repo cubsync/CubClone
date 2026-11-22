@@ -262,21 +262,15 @@ public class BackupActivity extends Activity {
     }
 
     private boolean isNight() {
-        int t = sp().getInt("theme", 0);
-        if (t == 2) return true;
-        if (t == 1) return false;
-        return (getResources().getConfiguration().uiMode
-                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        return Theme.isNight(this);
     }
 
     private void applyChrome() {
-        boolean night = isNight();
-        boolean black = night && sp().getBoolean("amoled", false);
-        int bg = black ? 0xFF000000 : (night ? 0xFF121317 : 0xFFFDFDFE);
-        fg = night ? 0xFFEDEDED : 0xFF1B1B1F;
-        sec = black ? 0xFF8A8F96 : (night ? 0xFF9AA0A6 : 0xFF5F6368);
-        accent = night ? 0xFF9EC1FF : 0xFF0B57D0;
-        int line = black ? 0xFF1C1C1C : (night ? 0xFF2C2D31 : 0xFFE3E3E8);
+        int bg = Theme.bg(this);
+        fg = Theme.fg(this);
+        sec = Theme.sec(this);
+        accent = Theme.accent(this);
+        int line = Theme.line(this);
 
         root.setBackgroundColor(bg);
         header.setBackgroundColor(bg);

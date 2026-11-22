@@ -26,7 +26,8 @@ import java.util.Set;
  *
  * 为什么单独一页：主界面多选只能「建」，删要靠长按一个个点；分身多起来（几十上百个）
  * 就没法用了。这里把所有空间里的分身摊平成一列，带每个分身的数据体积，
- * **默认只勾没有数据的空壳**——有数据的要自己动手勾，删了不可恢复。
+ * **默认一个都不勾**；「仅无数据」只勾那些三处目录都不存在的（列表里写「无数据」的），
+ * 有数据的一律要自己动手勾，删了不可恢复。
  * 顶部筛选/排序与「数据备份」页保持一致：搜索框 + 空间多选 + 排序。
  */
 public class RemoveClonesActivity extends Activity {
@@ -34,8 +35,6 @@ public class RemoveClonesActivity extends Activity {
     static final String EXTRA_PKGS = "pkgs";
     /** 进来时预选哪个分身，格式 uid:pkg；传空 = 列全部分身 */
     static final String EXTRA_SEL = "sel";
-
-    private static final long LIGHT_KB = 1024;   // < 1 MB 视为空壳
 
     private static final class Row {
         final String pkg;
@@ -68,6 +67,7 @@ public class RemoveClonesActivity extends Activity {
     private String query = "";
     private int fg = 0xFF1B1B1F;
     private int sec = 0xFF5F6368;
+    private int accent = 0xFF0B57D0;
 
     private boolean loading = true;
 
@@ -82,12 +82,10 @@ public class RemoveClonesActivity extends Activity {
     }
 
     private void buildUi() {
-        boolean dark = (getResources().getConfiguration().uiMode
-                & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        fg = dark ? 0xFFEDEDED : 0xFF1B1B1F;
-        sec = dark ? 0xFF9AA0A6 : 0xFF5F6368;
-        int bg = dark ? 0xFF121212 : 0xFFFFFFFF;
+        fg = Theme.fg(this);
+        sec = Theme.sec(this);
+        accent = Theme.accent(this);
+        int bg = Theme.bg(this);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -172,18 +170,18 @@ public class RemoveClonesActivity extends Activity {
         LinearLayout tools = new LinearLayout(this);
         tools.setOrientation(LinearLayout.HORIZONTAL);
         tools.setPadding(dp(12), 0, dp(12), dp(4));
-        // 全选就是全选（含数据）；只要空壳用右边那个按钮。删掉的确认框会写明数据量。
-        tools.addView(toolBtn(R.string.rc_select_all, new View.OnClickListener() {
-            public void onClick(View v) { setAll(true, Long.MAX_VALUE); }
+        // 全选就是全选（含数据）；只勾没数据的用右边那个按钮。删掉的确认框会写明数据量。
+        tools.addView(chipBtn(R.string.rc_select_all, new View.OnClickListener() {
+            public void onClick(View v) { setAll(true); }
         }));
-        tools.addView(toolBtn(R.string.rc_invert, new View.OnClickListener() {
+        tools.addView(chipBtn(R.string.rc_invert, new View.OnClickListener() {
             public void onClick(View v) {
                 for (Row r : shown) r.on = !r.on;
                 refresh();
             }
         }));
-        tools.addView(toolBtn(R.string.rc_only_light, new View.OnClickListener() {
-            public void onClick(View v) { setAll(true, LIGHT_KB); }
+        tools.addView(chipBtn(R.string.rc_only_light, new View.OnClickListener() {
+            public void onClick(View v) { selectNoData(); }
         }));
         root.addView(tools);
 
@@ -205,6 +203,7 @@ public class RemoveClonesActivity extends Activity {
         btnRemove = new Button(this);
         btnRemove.setText(getString(R.string.rc_btn, 0));
         btnRemove.setEnabled(false);
+        Theme.disabledPrimary(btnRemove, this);
         btnRemove.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { confirmDelete(); }
         });
@@ -216,18 +215,27 @@ public class RemoveClonesActivity extends Activity {
         setContentView(root);
     }
 
-    private Button toolBtn(int text, View.OnClickListener l) {
-        Button b = new Button(this);
-        b.setText(text);
-        b.setAllCaps(false);
-        b.setTextSize(13);
-        b.setOnClickListener(l);
-        return b;
+    private TextView chipBtn(int text, View.OnClickListener l) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextSize(13);
+        Theme.chip(t, accent);
+        t.setOnClickListener(l);
+        return t;
     }
 
-    /** 勾选：maxKb 以内（含未量的）全勾上，超过的清掉 */
-    private void setAll(boolean on, long maxKb) {
-        for (Row r : shown) r.on = on && (r.kb < 0 || r.kb <= maxKb);
+    private void setAll(boolean on) {
+        for (Row r : shown) r.on = on;
+        refresh();
+    }
+
+    /**
+     * 只勾「没有数据」的：判定与列表显示同一条口径——三处目录都不存在才显示「无数据」。
+     * 还有数字的一律不动（以前把不到 1 MB 当空壳，芝麻粒这种只有几十 KB 配置的会被误勾）。
+     * 还没量到的（显示「…」）也不勾，宁可少选不可误删。
+     */
+    private void selectNoData() {
+        for (Row r : shown) r.on = r.kb == 0;
         refresh();
     }
 
@@ -270,7 +278,8 @@ public class RemoveClonesActivity extends Activity {
                         loading = false;
                         if (!canShell) empty.setText(R.string.backup_need_root);
                         for (Row r : rows) {
-                            r.on = r.kb >= 0 && r.kb <= LIGHT_KB;
+                            // 默认一个都不勾：删谁都由用户决定，勾错一次就是数据没了
+                            r.on = false;
                             // 从某个分身长按进来的，把那一个勾上（哪怕它有数据，用户点的是它）
                             if (sel != null && sel.equals(r.uid + ":" + r.pkg)) r.on = true;
                             else for (String p : pkgs) if (p.equals(r.pkg)) { r.on = true; break; }
@@ -302,13 +311,26 @@ public class RemoveClonesActivity extends Activity {
      * 以前逐包 du，400 个分身就是 400 次 fork，二十秒起步，脚本还容易被截断——
      * 界面就变成「刷新慢 + 全部无数据」。整目录一次遍历，两个空间不到一秒。
      * 每量完一个空间就刷一次界面，数字是陆续出现的。
+     *
+     * 口径必须是「应用真正占的地方」：CE(/data/user)、DE(/data/user_de)、
+     * 外部三块(Android/data|media|obb) 相加。只看 CE 会把芝麻粒这种数据都在 DE 的
+     * 报成 22 KB，再被当成空壳勾上。
      */
     private void measure() {
         if (rows.isEmpty()) return;
         Set<Integer> users = new java.util.LinkedHashSet<Integer>();
         for (Row r : rows) users.add(Integer.valueOf(r.uid));
         for (final Integer u : users) {
-            String out = Shell.execScript("du -sk /data/user/" + u + "/* 2>/dev/null");
+            final int U = u.intValue();
+            StringBuilder cmd = new StringBuilder("du -sk");
+            cmd.append(" /data/user/").append(U).append("/*");
+            cmd.append(" /data/user_de/").append(U).append("/*");
+            for (String k : new String[]{"data", "media", "obb"}) {
+                cmd.append(" /data/media/").append(U).append("/Android/").append(k).append("/*");
+            }
+            cmd.append(" 2>/dev/null\n");
+            String out = Shell.execScript(cmd.toString());
+            final java.util.HashMap<String, Long> sum = new java.util.HashMap<String, Long>();
             for (String line : out.split("\n")) {
                 String t = line.trim();
                 int sp = t.indexOf('\t');
@@ -319,16 +341,45 @@ public class RemoveClonesActivity extends Activity {
                 int sl = path.lastIndexOf('/');
                 if (sl < 0) continue;
                 String pkg = path.substring(sl + 1);
-                for (Row r : rows) {
-                    if (r.uid == u.intValue() && r.pkg.equals(pkg)) {
-                        r.kb = atol(k);
-                        break;
-                    }
+                Long old = sum.get(pkg);
+                sum.put(pkg, Long.valueOf((old == null ? 0 : old.longValue()) + atol(k)));
+            }
+            // du 没出现的包：可能真没目录（空壳），也可能只是这一轮没扫到。逐个再量一次，
+            // 量到的按实数记；目录存在但确实是空的才算 0（进「仅无数据」那批）。
+            StringBuilder chk = new StringBuilder();
+            for (Row r : rows) {
+                if (r.uid != U || sum.containsKey(r.pkg)) continue;
+                String p = r.pkg;
+                chk.append("if [ -e /data/user/").append(U).append('/').append(p)
+                        .append(" ] || [ -e /data/user_de/").append(U).append('/').append(p);
+                for (String k : new String[]{"data", "media", "obb"}) {
+                    chk.append(" || [ -e /data/media/").append(U).append("/Android/")
+                            .append(k).append('/').append(p).append(" ]");
+                }
+                chk.append("; then echo '").append(p).append("|$(du -sk");
+                chk.append(" /data/user/").append(U).append('/').append(p);
+                chk.append(" /data/user_de/").append(U).append('/').append(p);
+                for (String k : new String[]{"data", "media", "obb"}) {
+                    chk.append(" /data/media/").append(U).append("/Android/").append(k).append('/').append(p);
+                }
+                chk.append(" 2>/dev/null | awk '{s+=$1} END{print s+0}')\"");
+                chk.append("; else echo '").append(p).append("|0'; fi\n");
+            }
+            if (chk.length() > 0) {
+                String r2 = Shell.execScript(chk.toString());
+                for (String line : r2.split("\n")) {
+                    String t = line.trim();
+                    int bar = t.indexOf('|');
+                    if (bar <= 0) continue;
+                    String pkg = t.substring(0, bar);
+                    long v = atol(t.substring(bar + 1));
+                    sum.put(pkg, Long.valueOf(v));
                 }
             }
-            // 这个空间里没有目录的（空壳被清过、只剩安装记录）就是 0，别让它一直挂「…」
             for (Row r : rows) {
-                if (r.uid == u.intValue() && r.kb < 0) r.kb = 0;
+                if (r.uid != U) continue;
+                Long v = sum.get(r.pkg);
+                r.kb = v == null ? 0 : v.longValue();
             }
             runOnUiThread(new Runnable() {
                 public void run() { refresh(); }
@@ -442,7 +493,9 @@ public class RemoveClonesActivity extends Activity {
         if (query.length() > 0) sb.append(" • ").append(query);
         sb.append(" ▾");
         filter.setText(sb.toString());
+        filter.setTextColor(accent);
         sortTv.setText(sortShort() + " ▾");
+        sortTv.setTextColor(accent);
     }
 
     // ── 列表 ────────────────────────────────────────────────────────
@@ -474,6 +527,8 @@ public class RemoveClonesActivity extends Activity {
         for (Row r : rows) if (r.on) sel++;
         btnRemove.setText(getString(R.string.rc_btn, sel));
         btnRemove.setEnabled(sel > 0);
+        if (sel > 0) Theme.primary(btnRemove, this);
+        else Theme.disabledPrimary(btnRemove, this);
         title.setText(loading ? getString(R.string.rc_loading)
                 : getString(R.string.rc_title_count, rows.size(), sel));
         empty.setVisibility(shown.isEmpty() && !loading ? View.VISIBLE : View.GONE);
@@ -505,7 +560,7 @@ public class RemoveClonesActivity extends Activity {
                 box.setPadding(dp(14), dp(10), dp(14), dp(10));
                 cb = new CheckBox(RemoveClonesActivity.this);
                 cb.setTextSize(15);
-                cb.setTextColor(fg);
+                Theme.check(cb, RemoveClonesActivity.this);
                 sub = new TextView(RemoveClonesActivity.this);
                 sub.setTextSize(12);
                 sub.setTextColor(sec);
@@ -547,7 +602,7 @@ public class RemoveClonesActivity extends Activity {
         }
         if (sel.isEmpty()) return;
         boolean withData = false;
-        for (Row r : sel) if (r.kb > LIGHT_KB) withData = true;
+        for (Row r : sel) if (r.kb > 0) withData = true;
         new AlertDialog.Builder(this)
                 .setTitle(withData ? R.string.rc_confirm_data_title : R.string.rc_confirm_title)
                 .setMessage(withData

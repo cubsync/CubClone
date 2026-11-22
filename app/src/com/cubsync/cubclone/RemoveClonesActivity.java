@@ -82,6 +82,8 @@ public class RemoveClonesActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         CloneStore.attach(this);
+        // 自测开关：--ez noRoot true 时强制走 Shizuku，验证不依赖 root 的那条路
+        if (getIntent().getBooleanExtra("noRoot", false)) Shell.forceShizuku = true;
         buildUi();
         load();
     }
@@ -258,7 +260,7 @@ public class RemoveClonesActivity extends Activity {
             public void run() {
                 // 这一页是「清理分身」用的，不能因为空间不是我们建的就把应用藏起来：
                 // 所有 profile.CLONE 空间都列出来（系统的工作资料不是 CLONE，不会被误列）
-                if (!Shell.ready()) Shell.checkRoot();
+                if (!Shell.ready()) Shell.probe();
                 final boolean canShell = Shell.ready();
                 // 体积只能 root 量：分身的包目录是 0700 uNN_aXXX，shell 身份读不进去。
                 // 删除不需要 root —— `pm uninstall --user` 是 shell 能力，Shizuku 就够。
@@ -296,10 +298,14 @@ public class RemoveClonesActivity extends Activity {
                     public void run() { refresh(); }
                 });
                 if (canMeasure) measure(false);
+                // 一行日志能直接看出这条路径靠什么权限跑起来（没有 root 时应是 shizuku）
+                android.util.Log.i("CubClone", "rc load spaces=" + usable.size()
+                        + " rows=" + rows.size() + " canShell=" + canShell
+                        + " canMeasure=" + canMeasure);
                 runOnUiThread(new Runnable() {
                     public void run() {
                         loading = false;
-                        if (!canShell) empty.setText(R.string.backup_need_root);
+                        if (!canShell) empty.setText(R.string.rc_need_shell);
                         if (canShell && !canMeasure) hintTv.setText(R.string.rc_hint_no_root);
                         // 一个都不勾：只有用户点了才勾，任何自动勾选都可能删掉有数据的分身
                         for (Row r : rows) r.on = false;
@@ -631,6 +637,9 @@ public class RemoveClonesActivity extends Activity {
     }
 
     private String sizeText(Row r) {
+        // 没有 root 就没法量（分身包目录 0700，shell 读不进去）：显示「—」而不是
+        // 晃着的「…」，别让人以为一直在算
+        if (!Shell.rootOk) return "—";
         if (r.bytes < 0) return "…";        // 还没量到，别显示成「无数据」
         if (r.bytes == 0) return getString(R.string.rc_no_data);
         return sizeOf(r.bytes);

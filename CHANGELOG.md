@@ -63,6 +63,12 @@
   系统属性里，应用零权限 getprop 就能读，不需要 root。
 
 ### 修复
+- 批量删除**不再因为「本进程没初始化过 Shizuku 状态」把人挡在外面**：进页面现探一次权限
+  （`Shell.probe()`：root 优先，没有就看 Shizuku 是否已授权且服务在跑）。实测强制走 Shizuku 的
+  那条路：`probe root=false shizuku=true` → `rc load spaces=2 rows=8 canShell=true canMeasure=false`，
+  两个空间的 8 个分身全部列出。
+- 没有 root 时体积显示「—」而不是一直「…」；提示改成「要 Root 或 Shizuku 授权」，
+  不再误写成「需要 root」。
 - 批量删除页的体积**不再每次打开都全量扫**：结果写入 `files/size-cache.txt`（按空间记时间戳），
   进来先用上次的数字秒显；缓存 10 分钟内且没有新克隆的包就不重扫。排序菜单里加了「重新统计体积」手动刷新。
   实测同一台机：首次 274 ms，第二次 168 ms 且缓存文件未被改写（没重扫）。

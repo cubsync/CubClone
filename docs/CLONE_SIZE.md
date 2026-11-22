@@ -57,6 +57,20 @@ volume 试过 `private`、`primary_physical`），结果是：
 
 结论：**这个 ROM 上该 API 拿不到按空间的数据体积**，所以用 root 读文件、按系统同一公式算。
 
+## 没有 root 时
+
+体积只能靠 root 读文件，没有 root 一律显示「—」，不做假数字；「仅无数据」按钮禁用并说明原因。
+**列表和删除不受影响**：两者只用 shell 身份（`cmd user list`、`pm list packages --user`、
+`pm uninstall --user`），Shizuku 就够。
+
+实测（同机，uid 2000 = shell = Shizuku 身份）：
+
+```
+pm list packages -3 --user 11        → 正常列出
+pm uninstall --user 11 <不存在包>     → Failure [not installed for 11]   ← 权限检查通过
+ls /data/user/11/<包>                → Permission denied                 ← 这就是必须 root 的原因
+```
+
 ## 成本
 
 成本取决于**文件总数**，不取决于应用个数（APK 在 `/data/app` 共享，不扫）。

@@ -14,6 +14,9 @@ public final class Shell {
     public static boolean rootOk;
     public static boolean shizukuOk;
 
+    /** 自测用：有 root 也强制走 Shizuku，验证「只有 Shizuku 授权」这条路径是否真能跑 */
+    public static boolean forceShizuku;
+
     private Shell() {}
 
     public static boolean ready() {
@@ -21,9 +24,29 @@ public final class Shell {
     }
 
     public static String exec(String cmd) {
-        if (rootOk) return raw("su", "-c", cmd);
+        if (rootOk && !forceShizuku) return raw("su", "-c", cmd);
         if (shizukuOk) return shizuku(cmd);
         return "ERR 无 root 且未授权 Shizuku";
+    }
+
+    /**
+     * 现探一次提权能力：root 优先，没有 root 就看 Shizuku 是否已授权且服务在跑。
+     * 批量删除只要 shell 身份（`pm uninstall --user`），不需要 root；
+     * 页面不能因为「本进程还没初始化过 Shizuku 状态」就把人挡在外面。
+     */
+    public static boolean probe() {
+        if (rootOk || shizukuOk) return true;
+        if (!forceShizuku && checkRoot()) return true;
+        try {
+            if (Shizuku.pingBinder()
+                    && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
+                shizukuOk = true;
+            }
+        } catch (Throwable t) {
+            // 没装 Shizuku / 服务没起，保持 false
+        }
+        android.util.Log.i("CubClone", "probe root=" + rootOk + " shizuku=" + shizukuOk);
+        return ready();
     }
 
     public static boolean checkRoot() {

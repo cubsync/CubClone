@@ -63,6 +63,30 @@ release 点成正式。
 - 任何时刻远端应该只有 `main`（加正在进行的 `feat/`、`fix/`）。
 - 单人开发的例外：改动很小且当场验证通过，允许直接在 `main` 提交（本文档与 CHANGELOG 的维护就是这样）。
 
+## 回滚
+
+**不需要保留版本分支**，tag 就是那个版本的永久记录。三种用法：
+
+| 场景 | 做法 |
+|---|---|
+| 装回旧版（最常用） | 从 GitHub Release 下对应版本的 APK 覆盖装；`versionCode` 只增不减，降级要 `adb install -r -d` 或先卸载 |
+| 看那版代码 | `git switch --detach v0.7.0`、`git diff v0.6.52 v0.7.0` |
+| 给旧版打补丁 | `git switch -c fix/<问题> v0.7.0` → 改 → 合回 main → 打 `v0.7.1` |
+
+## 为什么不保留每个版本的分支
+
+业界做法一致：release 分支合并后删除，**tag 才是版本的永久锚点**。
+
+- GitFlow 原作者的操作流程里，`release finish` 的最后一步就是删分支；
+  各路实践指南的回答同样直接——「Should release branches be deleted after merging? Yes.」
+- 长期留下的唯一真实收益是「方便切回去看」，而这用 `git switch v0.7.0` 一样做到。
+  代价却是实打实的：没人合并、没人验证的分支会越漂越远，真要回补时还得从 tag 重建，
+  而且它和 tag 摆在一起，看的人会以为那里面是「最新代码」。
+- 只有**同时维护多个已发布版本、需要长期回补**的产品（企业软件 LTS、对外 SDK）才保留
+  per-version 分支。本项目不是这种形态。
+
+结论：远端常态只有 `main`；`feat/`、`fix/` 合完即删；收版用 `release/<版本号>`，发完即删。
+
 ## 发布
 
 1. 收版时才改 `AndroidManifest.xml` 的 `versionName`，构建一次确认 `versionCode` 推导正确。

@@ -239,7 +239,6 @@
     <string name="backup_dir_note">备份会直接打包到这个目录，恢复也从这里读；文件管理器能直接看、能拷走。</string>
     <string name="rc_title">删除分身</string>
     <string name="rc_need_shell">这一页要 Root 或 Shizuku 授权：列出分身、删除分身都用 shell 权限。授权后重新进入即可。</string>
-    <string name="rc_hint_no_root">体积统计需要 root（分身的数据目录只有 root 读得进去）；列表和删除用 Shizuku 就够，「仅无数据」在没有 root 时会禁用。</string>
     <string name="rc_hint">默认不勾选任何分身。「仅无数据」只勾列表里显示「无数据」的；勾上有数据的会连数据一起删，不可撤销。</string>
     <string name="rc_all_with_data">全选含数据</string>
     <string name="rc_all_data_warn_title">连有数据的一起选？</string>

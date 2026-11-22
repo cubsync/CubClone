@@ -244,10 +244,6 @@ public class RemoveClonesActivity extends Activity {
     private void selectNoData() {
         // 没有 root 就量不到体积，rows 全是「…」——这时候按 0 勾会一个都勾不到，
         // 真按「空」处理又会把有数据的一起勾上，所以直接不给用。
-        if (!Shell.rootOk) {
-            toast(getString(R.string.rc_hint_no_root));
-            return;
-        }
         for (Row r : shown) r.on = r.bytes == 0;
         refresh();
     }
@@ -264,7 +260,9 @@ public class RemoveClonesActivity extends Activity {
                 final boolean canShell = Shell.ready();
                 // 体积只能 root 量：分身的包目录是 0700 uNN_aXXX，shell 身份读不进去。
                 // 删除不需要 root —— `pm uninstall --user` 是 shell 能力，Shizuku 就够。
-                final boolean canMeasure = Shell.rootOk;
+                // 体积走 `cmd package get-package-storage-stats`，shell 身份就够，
+                // 不再需要 root（root 只是让 shell 命令跑得更早一点）
+                final boolean canMeasure = canShell;
                 Set<Integer> usable = new HashSet<Integer>();
                 if (canShell) {
                     String ul = Shell.exec("cmd user list --all -v");
@@ -306,7 +304,6 @@ public class RemoveClonesActivity extends Activity {
                     public void run() {
                         loading = false;
                         if (!canShell) empty.setText(R.string.rc_need_shell);
-                        if (canShell && !canMeasure) hintTv.setText(R.string.rc_hint_no_root);
                         // 一个都不勾：只有用户点了才勾，任何自动勾选都可能删掉有数据的分身
                         for (Row r : rows) r.on = false;
                         refresh();
@@ -333,26 +330,21 @@ public class RemoveClonesActivity extends Activity {
 
     /**
      * 量各分身的「用户数据」：**每个空间一条命令**，不是每个包一条。
-     * 逐包跑（400 个分身 = 400 次 fork）会二十秒起步、脚本还容易被截断，
-     * 界面就成了「刷新慢 + 全部无数据」。整目录一次遍历，一个空间一两秒。
+     * 数据来源：`cmd package get-package-storage-stats --user <U> <包>`——这就是系统的
+     * 「应用信息 → 存储」用的那套（`IPackageManager.getPackageStorageStats` → installd）。
+     * 一次只查一个包（约 40 ms），所以按空间攒成一条 shell 循环，几十个包一秒内跑完。
      *
-     * 口径照系统「应用信息 → 用户数据」：**文件字节总和，缓存另算**
-     * （系统的 StorageStats 里 dataBytes 含缓存、cacheBytes 是其中缓存部分，
-     *  Settings 分两行显示；这里只算前者减后者，也就是用户数据）。
-     * 所以：路径里出现 `cache` / `code_cache` 段的跳过，其它文件一律算——
-     * **包括 `files/profileInstalled` 这种 24 字节系统标记**，系统也把它算进用户数据。
-     * 实测：u10 芝麻粒 = 24 B（只有这一个文件，但确实启动过、在用）；
-     *      u11 刚克隆没打开的 XRadiant = 0（只有两个空的缓存目录）。
-     * 目录 inode 一律不算，否则空目录也能凑出 22 KB。
+     * 只要求 shell 身份：root 或 Shizuku 都行，**不需要 root**。
+     * 这正是之前挖不到的入口——直接调 `storagestats` 服务在本 ROM 上 data 恒 0，
+     * 而走 `cmd package` 这条 CLI 封装拿到的是真值，且天然按空间分开。
      *
-     * 为什么不直接调 StorageStatsManager：应用在 u0、要查 u10/u11 的 uid 属于跨用户，
-     * 需要 INTERACT_ACROSS_USERS（system 级），普通应用拿不到；`cmd storagestats`
-     * 在本机也没有 shell 实现（No shell command implementation）。所以用 root 读同一批文件，
-     * 按系统同一个公式（文件字节、排缓存）算，结果与系统页面一致。
+     * 口径：`data` 含缓存（系统的 dataBytes 就是这样），减掉 `cache` 才是「用户数据」，
+     * 与 Settings 页面显示的一致。实测 u10 芝麻粒 data=143360 cache=139264 → 4096 B，
+     * 和「应用信息」里看到的 4 KB 对得上；u11 刚克隆没打开的 XRadiant data=0 → 空壳。
      */
     private void measure(boolean force) {
         if (rows.isEmpty()) return;
-        // 后台优先级：几百个分身遍历时别跟界面抢 CPU
+        // 后台优先级：几百个分身时别跟界面抢 CPU
         android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
         Set<Integer> users = new java.util.LinkedHashSet<Integer>();
         for (Row r : rows) users.add(Integer.valueOf(r.uid));
@@ -372,30 +364,33 @@ public class RemoveClonesActivity extends Activity {
                 }
                 continue;
             }
-            StringBuilder cmd = new StringBuilder("find");
-            cmd.append(" /data/user/").append(U);
-            cmd.append(" /data/user_de/").append(U);
-            for (String k : new String[]{"data", "media", "obb"}) {
-                cmd.append(" /data/media/").append(U).append("/Android/").append(k);
-            }
-            cmd.append(" -mindepth 2 -type f -printf '%s %p\\n' 2>/dev/null | awk '\n");
-            cmd.append("{ n=split($2,a,\"/\");\n");
-            cmd.append("  for(i=1;i<=n;i++) if(a[i]==\"cache\"||a[i]==\"code_cache\") next;\n");
-            cmd.append("  pkg=\"\";\n");
-            cmd.append("  if(a[3]==\"user\"||a[3]==\"user_de\") pkg=a[5];\n");
-            cmd.append("  else if(a[3]==\"media\") pkg=a[7];\n");
-            cmd.append("  if(pkg!=\"\") s[pkg]+=$1 }\n");
-            cmd.append("END{ for(k in s) printf \"%s|%d\\n\", k, s[k] }'\n");
+            java.util.List<String> want = new java.util.ArrayList<String>();
+            for (Row r : rows) if (r.uid == U) want.add(r.pkg);
 
-            String out = Shell.execScript(cmd.toString());
             final java.util.HashMap<String, Long> sum = new java.util.HashMap<String, Long>();
-            for (String line : out.split("\n")) {
-                String t = line.trim();
-                int bar = t.indexOf('|');
-                if (bar <= 0) continue;
-                sum.put(t.substring(0, bar).trim(), Long.valueOf(atol(t.substring(bar + 1))));
+            // 一条 shell 里循环；分块是为了不让单条命令长到被截断
+            final int CHUNK = 40;
+            for (int from = 0; from < want.size(); from += CHUNK) {
+                int to = Math.min(from + CHUNK, want.size());
+                StringBuilder cmd = new StringBuilder("for p in");
+                for (int i = from; i < to; i++) cmd.append(' ').append(want.get(i));
+                cmd.append("; do L=$(cmd package get-package-storage-stats --user ").append(U)
+                        .append(" $p 2>/dev/null | awk '/^data:/{d=$2} /^cache:/{c=$2}")
+                        .append(" END{print d+0\"|\"c+0}'); echo \"$p|$L\"; done");
+                String out = Shell.exec(cmd.toString());
+                for (String line : out.split("\n")) {
+                    String t = line.trim();
+                    int b1 = t.indexOf('|');
+                    if (b1 <= 0) continue;
+                    int b2 = t.indexOf('|', b1 + 1);
+                    if (b2 < 0) continue;
+                    long data = atol(t.substring(b1 + 1, b2));
+                    long cache = atol(t.substring(b2 + 1));
+                    long used = data - cache;
+                    if (used < 0) used = 0;
+                    sum.put(t.substring(0, b1).trim(), Long.valueOf(used));
+                }
             }
-            // 没出现的包 = 一个非缓存文件都没有 = 空壳
             for (Row r : rows) {
                 if (r.uid != U) continue;
                 Long v = sum.get(r.pkg);
@@ -520,10 +515,6 @@ public class RemoveClonesActivity extends Activity {
                 })
                 .setNeutralButton(R.string.rc_recount, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface d, int which) {
-                        if (!Shell.rootOk) {
-                            toast(getString(R.string.rc_hint_no_root));
-                            return;
-                        }
                         title.setText(getString(R.string.rc_loading));
                         new Thread(new Runnable() {
                             public void run() {
@@ -637,9 +628,6 @@ public class RemoveClonesActivity extends Activity {
     }
 
     private String sizeText(Row r) {
-        // 没有 root 就没法量（分身包目录 0700，shell 读不进去）：显示「—」而不是
-        // 晃着的「…」，别让人以为一直在算
-        if (!Shell.rootOk) return "—";
         if (r.bytes < 0) return "…";        // 还没量到，别显示成「无数据」
         if (r.bytes == 0) return getString(R.string.rc_no_data);
         return sizeOf(r.bytes);

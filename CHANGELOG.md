@@ -63,12 +63,18 @@
   系统属性里，应用零权限 getprop 就能读，不需要 root。
 
 ### 修复
+- 批量删除页的体积**改用系统命令** `cmd package get-package-storage-stats --user <U> <包>`，
+  和「应用信息 → 存储」同源（`IPackageManager.getPackageStorageStats`），**不再需要 root**：
+  列表、删除、体积三者都只用 shell 身份，Shizuku 就够。
+- 体积口径取 `data - cache`（用户数据）。实测 u10 芝麻粒 `data=143360 / cache=139264` → 4 KB，
+  和系统页面显示一致；u11 刚克隆没打开的 XRadiant `data=0` → 空壳。
+- 单包约 40 ms，按空间攒成一条 shell 循环批量跑；配合缓存，首次 247 ms 出界面、
+  二次 228 ms 不重扫。
 - 批量删除**不再因为「本进程没初始化过 Shizuku 状态」把人挡在外面**：进页面现探一次权限
-  （`Shell.probe()`：root 优先，没有就看 Shizuku 是否已授权且服务在跑）。实测强制走 Shizuku 的
-  那条路：`probe root=false shizuku=true` → `rc load spaces=2 rows=8 canShell=true canMeasure=false`，
-  两个空间的 8 个分身全部列出。
-- 没有 root 时体积显示「—」而不是一直「…」；提示改成「要 Root 或 Shizuku 授权」，
-  不再误写成「需要 root」。
+  （`Shell.probe()`：root 优先，没有就看 Shizuku 是否已授权且服务在跑）。实测强制走 Shizuku：
+  `probe root=false shizuku=true` → `rc load spaces=2 rows=8 canShell=true canMeasure=true`，
+  两个空间的 8 个分身全部列出、体积也照常显示。
+- 空状态文案改「要 Root 或 Shizuku 授权」，不再误写成「需要 root」。
 - 批量删除页的体积**不再每次打开都全量扫**：结果写入 `files/size-cache.txt`（按空间记时间戳），
   进来先用上次的数字秒显；缓存 10 分钟内且没有新克隆的包就不重扫。排序菜单里加了「重新统计体积」手动刷新。
   实测同一台机：首次 274 ms，第二次 168 ms 且缓存文件未被改写（没重扫）。

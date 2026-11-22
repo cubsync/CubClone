@@ -169,17 +169,18 @@ public class RemoveClonesActivity extends Activity {
             public void onClick(View v) { pickSort(); }
         });
         searchRow.addView(sortTv);
-        root.addView(searchRow);
 
-        // 空间筛选：点开多选，全不勾 = 全部
+        // 空间筛选：点开多选，全不勾 = 全部。和排序同一行（搜索 | 排序 | 筛选），与「数据备份」页一致；
+        // 单独占一行会把顶部撑成两行，列表能看见的内容就少一截。
         filter = new TextView(this);
         filter.setTextSize(13);
         filter.setTextColor(sec);
-        filter.setPadding(dp(16), 0, dp(16), dp(6));
+        filter.setPadding(dp(10), dp(8), dp(4), dp(8));
         filter.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { pickFilter(); }
         });
-        root.addView(filter);
+        searchRow.addView(filter);
+        root.addView(searchRow);
 
         LinearLayout tools = new LinearLayout(this);
         tools.setOrientation(LinearLayout.HORIZONTAL);

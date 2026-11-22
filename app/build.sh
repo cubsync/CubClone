@@ -36,9 +36,18 @@ if [ "$ABI" != universal ]; then
   [ -f "$OUT/assets/zstd-$ABI" ] || { echo "assets 里没有 zstd-$ABI"; exit 1; }
 fi
 
+echo "[0/7] UI 配色自检"
+# 背景色由应用自己按深浅色画，系统主题给的 Button/CheckBox 默认色不会跟着变；
+# 这类「深色下按钮变黑字」的问题反复出现，编译前直接拦住（tools/check-ui-colors.py）。
+PYEXE="${PYTHON_EXE:-D:/Dev/Python/Env/Python312/python.exe}"
+if [ -f "$PYEXE" ]; then
+  "$PYEXE" tools/check-ui-colors.py
+else
+  echo "  跳过：找不到 python（$PYEXE），设 PYTHON_EXE 指过去再编"
+fi
+
 echo "[1/7] aapt2 compile"
 "$BT/aapt2.exe" compile --dir res -o "$OUT/res.zip"
-
 # 版本号唯一真源＝AndroidManifest 的 versionName；versionCode 由它推导，见 docs/VERSIONING.md
 # 正式版 0.7.0 -> 70000。预发布占用本版本号下 100 个槽之前的那段，保证「预发布 < 正式版」且单调：
 #   dev.N 69901-69909 · alpha.N 69911-69929 · beta.N 69931-69959 · rc.N 69961-69989

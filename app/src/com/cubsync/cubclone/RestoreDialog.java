@@ -55,7 +55,7 @@ public final class RestoreDialog {
                 final List<Integer> us = new ArrayList<Integer>();
                 if (backupUser >= 0) us.add(Integer.valueOf(-1));
                 us.add(Integer.valueOf(0));
-                for (Integer u : CloneStore.listSpaceUids()) {
+                for (Integer u : CloneStore.pickableSpaceUids(a)) {
                     if (u.intValue() != 0 && !us.contains(u)) us.add(u);
                 }
                 String[] items = new String[us.size()];
@@ -139,7 +139,9 @@ public final class RestoreDialog {
 
     static String spaceName(Context c, int u) {
         String n = u == 0 ? c.getString(R.string.space_main) : CloneStore.nameOf(c, u);
-        return n + " (" + u + ")";
+        String s = n + " (" + u + ")";
+        return u == 0 || CloneStore.isOurs(null, u)
+                ? s : s + " · " + c.getString(R.string.space_foreign_tag);
     }
 
     private static int dp(Context c, int v) {

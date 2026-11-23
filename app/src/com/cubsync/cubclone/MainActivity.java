@@ -1314,7 +1314,7 @@ public class MainActivity extends Activity {
         say(getString(R.string.loading_spaces));
         new Thread(new Runnable() {
             public void run() {
-                final List<Integer> spaces = CloneStore.listSpaceUids();
+                final List<Integer> spaces = CloneStore.pickableSpaceUids(MainActivity.this);
                 // 每个空间里 enabled 的三方应用数（和主页显示一致，不再用登记表猜）
                 final java.util.Map<Integer, Integer> counts = new java.util.HashMap<Integer, Integer>();
                 for (Integer u : spaces) {
@@ -1331,7 +1331,7 @@ public class MainActivity extends Activity {
                         for (int i = 0; i < spaces.size(); i++) {
                             int u = spaces.get(i).intValue();
                             Integer n = counts.get(Integer.valueOf(u));
-                            items[i] = getString(R.string.space_item_count_full, spaceLabel(u),
+                            items[i] = getString(R.string.space_item_count_full, pickSpaceLabel(u),
                                     n == null ? 0 : n.intValue());
                         }
                         items[spaces.size()] = getString(R.string.new_space_option);
@@ -1415,8 +1415,7 @@ public class MainActivity extends Activity {
                 int ok = 0, skip = 0, fail = 0;
                 for (String pkg : pkgs) {
                     for (int uid : t) {
-                        Set<String> kept = CloneStore.keptPkgs(MainActivity.this, uid);
-                        if (kept != null && kept.contains(pkg)) {
+                        if (CloneStore.spaceHas(MainActivity.this, uid, pkg)) {
                             skip++;
                             continue;
                         }
@@ -1424,7 +1423,7 @@ public class MainActivity extends Activity {
                         String low = ir.toLowerCase();
                         boolean good = low.contains("installed") || low.contains("success");
                         if (good) {
-                            CloneStore.markKept(MainActivity.this, uid, pkg);
+                            CloneStore.markKeptIfOurs(MainActivity.this, uid, pkg);
                             ok++;
                         } else {
                             fail++;
@@ -1555,7 +1554,7 @@ public class MainActivity extends Activity {
                 // 先把应用塞进已有空间里还没装它的那个（红米/LOS 只允许 1 个空间，只能这样）
                 int spare = CloneStore.pickReusableSpace(MainActivity.this, g.pkg);
                 if (spare > 0) {
-                    installIntoClone(g, spare, true, "");
+                    installIntoClone(g, spare, true, "", true);
                     return;
                 }
                 // 每个空间里都已经有它了（想要再开一份），才新建一个空间
@@ -1596,7 +1595,7 @@ public class MainActivity extends Activity {
                     });
                     return;
                 }
-                installIntoClone(g, uid, false, name);
+                installIntoClone(g, uid, false, name, true);
             }
         }).start();
     }
@@ -1613,17 +1612,21 @@ public class MainActivity extends Activity {
         say(getString(R.string.loading_spaces));
         new Thread(new Runnable() {
             public void run() {
-                final List<Integer> spaces = CloneStore.listSpaceUids();
+                final List<Integer> spaces = CloneStore.pickableSpaceUids(MainActivity.this);
+                // 非自建空间没有登记表，「装没装」要问系统（一次 shell），不能放主线程
+                final boolean[] has0 = new boolean[spaces.size()];
+                for (int i = 0; i < spaces.size(); i++) {
+                    has0[i] = CloneStore.spaceHas(MainActivity.this,
+                            spaces.get(i).intValue(), g.pkg);
+                }
                 runOnUiThread(new Runnable() {
                     public void run() {
                         // 多选：一次勾几个空间一起建；已经有这个应用的空间照旧提示、跳过
                         final String[] items = new String[spaces.size()];
-                        final boolean[] has = new boolean[spaces.size()];
+                        final boolean[] has = has0;
                         for (int i = 0; i < spaces.size(); i++) {
                             int u = spaces.get(i).intValue();
-                            java.util.Set<String> kept = CloneStore.keptPkgs(MainActivity.this, u);
-                            has[i] = kept != null && kept.contains(g.pkg);
-                            items[i] = spaceLabel(u) + " · "
+                            items[i] = pickSpaceLabel(u) + " · "
                                     + getString(has[i] ? R.string.space_has_app : R.string.space_free);
                         }
                         final boolean[] checked = new boolean[spaces.size()];
@@ -1707,7 +1710,8 @@ public class MainActivity extends Activity {
         new Thread(new Runnable() {
             public void run() {
                 for (Integer u : uids) {
-                    installIntoClone(g, u.intValue(), true, "");
+                    installIntoClone(g, u.intValue(), true, "",
+                            CloneStore.isOurs(null, u.intValue()));
                 }
                 final int n = uids.size();
                 runOnUiThread(new Runnable() {
@@ -1719,20 +1723,22 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    /** 拿到空间 uid 后：登记归属 → 装应用 → 精简 → 反馈 */
+    /** 拿到空间 uid 后：登记归属 → 装应用 → 精简 → 反馈
+     *  claim＝这个空间是不是「我们建的」（新建的、或本来就是我们建的）：
+     *  非自建空间只装应用、绝不写归属标记，否则 loadMarks 会把它认成我们的。 */
     private void installIntoClone(final Group g, final int uid, final boolean reused,
-            final String name) {
-        CloneStore.markOurs(uid);          // 归属登记：以后靠它 + 名字前缀认自己人
+            final String name, final boolean claim) {
+        if (claim) CloneStore.markOurs(uid);   // 归属登记：以后靠它 + 名字前缀认自己人
         // 不主动 start：建号时系统已经把档案拉起来了，这里再 start 只会让桌面
         // 把「刚灌进来还没删的那批应用」bind 一遍
-        Launcher.hideSelfFrom(uid);
+        if (claim) Launcher.hideSelfFrom(uid);   // 只动自己的空间；别人的空间不碰它的包
         final String ir = Launcher.installExisting(uid, g.pkg);
         // ⚠pm install-existing 成功时输出 "Package X installed for user: N"，没有 success 字样。
         // 以前只认 success ⇒ 每次创建都被当成失败：不登记、不清理、界面还报「没装进分身」
         final String low = ir.toLowerCase();
         final boolean installed = low.contains("installed") || low.contains("success");
         // 登记：这个空间里「该有」的包。清理只认这张表，不再靠「三方还是系统」猜
-        if (installed) CloneStore.markKept(MainActivity.this, uid, g.pkg);
+        if (installed && claim) CloneStore.markKept(MainActivity.this, uid, g.pkg);
         // 新空间：装上主空间输入法并抄一份设置。
         // 老空间再装：只有这次装的正好是输入法时才同步——否则包进去了，但
         // enabled_input_methods 里没有它，键盘列表里根本选不到（看着就是「没装上」）。
@@ -1993,6 +1999,13 @@ public class MainActivity extends Activity {
     private String spaceLabel(int uid) {
         String n = uid == 0 ? getString(R.string.space_main) : CloneStore.nameOf(this, uid);
         return n + " (" + uid + ")";
+    }
+
+    /** 目标空间选择里的名字：非自建空间加个标记，免得跟自己的空间混在一起认不出 */
+    private String pickSpaceLabel(int uid) {
+        String s = spaceLabel(uid);
+        return CloneStore.isOurs(null, uid)
+                ? s : s + " · " + getString(R.string.space_foreign_tag);
     }
 
     /**
@@ -2543,7 +2556,7 @@ public class MainActivity extends Activity {
         try {
             ShortcutManager sm = (ShortcutManager) a.getSystemService(Context.SHORTCUT_SERVICE);
             if (sm == null) return;
-            java.util.List<Integer> alive = CloneStore.listSpaceUids();
+            java.util.List<Integer> alive = CloneStore.allSpaceUids();
             List<String> dead = new ArrayList<String>();
             for (ShortcutInfo si : sm.getPinnedShortcuts()) {
                 String id = si.getId();

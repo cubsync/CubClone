@@ -257,6 +257,35 @@ public final class CloneStore {
         sp.edit().putStringSet("space_pkgs_" + uid, s).apply();
     }
 
+    /**
+     * 只有我们建的空间才登记「这个空间该有它」。
+     * ⚠非自建空间一旦被登记，loadMarks 的老空间迁移会把它认成我们建的 ——
+     * 之后就会被精简、被算进名额、还能被删空间。所以非自建空间一律不登记。
+     */
+    static void markKeptIfOurs(Context c, int uid, String pkg) {
+        ensureMarks();
+        if (isOurs(null, uid)) markKept(c, uid, pkg);
+    }
+
+    /** 这个空间里是否已经有这个包：我们的空间看登记表，非自建空间没有登记表，直接问系统 */
+    static boolean spaceHas(Context c, int uid, String pkg) {
+        Set<String> kept = keptPkgs(c, uid);
+        if (kept != null) return kept.contains(pkg);
+        ensureMarks();
+        if (isOurs(null, uid)) return false;   // 老的自己空间没登记表：沿用旧口径（当未装，装了也算幂等）
+        return installedIn(uid, pkg);
+    }
+
+    /** 系统里这个用户下是否装了这个包（只查启用的；被 disable 的按「未装」处理，装一次会顺手 enable） */
+    static boolean installedIn(int uid, String pkg) {
+        String out = Shell.exec("pm list packages -e --user " + uid + " " + pkg);
+        // pm 的过滤参数是子串匹配（查 via 会带回 via.pro），必须逐行全等
+        for (String line : out.split("\n")) {
+            if (line.trim().equals("package:" + pkg)) return true;
+        }
+        return false;
+    }
+
     static void unmarkKept(Context c, int uid, String pkg) {
         SharedPreferences sp = c.getSharedPreferences("clone", Context.MODE_PRIVATE);
         Set<String> old = sp.getStringSet("space_pkgs_" + uid, null);
@@ -1246,12 +1275,40 @@ public final class CloneStore {
         return p.length() == 0 ? null : p;
     }
 
+    /** 我们建的分身空间；建号计数、自动复用、空间序号都只认这一份 */
+    static java.util.List<Integer> listSpaceUids() {
+        return listSpaceUids(false);
+    }
+
+    /**
+     * 「可选目标空间」：我们建的空间；开了「管理非自建空间」时把 ROM 自带的分身空间也带上。
+     * 只给「装到哪个空间 / 备份哪个空间 / 恢复到哪个空间」这类目标选择用 ——
+     * 名额计算、自动复用、空间序号不能跟着走，否则会把别人的空间算成自己的。
+     */
+    static java.util.List<Integer> pickableSpaceUids(Context c) {
+        if (!manageForeign(c)) return listSpaceUids();
+        ensureMarks();
+        return listSpaceUids(true);
+    }
+
+    /** 「管理非自建空间」开关（默认关：非自建空间只读） */
+    static boolean manageForeign(Context c) {
+        Context cc = c != null ? c : appCtx;
+        if (cc == null) return false;
+        return cc.getSharedPreferences("clone", Context.MODE_PRIVATE)
+                .getBoolean("manage_foreign", false);
+    }
+
     /**
      * 分身空间 uid 列表。
      * `cmd user list --all -v` 约 0.2s；以前用 app_process 起 JVM 要 2.1s，每次刷新都白等。
+     *
+     * @param includeForeign 是否带上非自建空间（ROM 自带 MultiApp 等）；普通用户
+     *                       （full.SECONDARY）只有带我们的归属标记才算，任何模式都不放进来
      */
-    static java.util.List<Integer> listSpaceUids() {
+    private static java.util.List<Integer> listSpaceUids(boolean includeForeign) {
         java.util.List<Integer> ids = new ArrayList<Integer>();
+        java.util.List<Integer> ours = new ArrayList<Integer>();
         Map<Integer, String> names = new HashMap<Integer, String>();
         Set<Integer> ghosts = new HashSet<Integer>();
         // 顺带取一次「卡在 <removing> 的幽灵空间」：这类档案 pm remove-user 早返回 Success 了，
@@ -1290,16 +1347,28 @@ public final class CloneStore {
                 // 名字无条件记下来：isOurs(null, uid) 的调用方（删分身、回收空间）
                 // 要靠它认出「名字带前缀」的空间，不然会把我们自己的空间判成只读
                 if (nm.length() > 0) names.put(Integer.valueOf(uid), nm);
-                if (isOurs(nm, uid)) {
+                final boolean mine = isOurs(nm, uid);
+                if (mine) {
+                    ours.add(Integer.valueOf(uid));
+                    ids.add(Integer.valueOf(uid));
+                } else if (includeForeign && t.contains("type=profile.CLONE")) {
+                    // 非自建分身：只有显式要「可选目标空间」时才列；
+                    // 名字已记进 SPACE_NAMES，界面直接显示系统名，不用再起一次 shell 查
                     ids.add(Integer.valueOf(uid));
                 }
             } catch (Throwable ignored) {
             }
         }
         ids.removeAll(ghosts);
-        SPACE_ORDER = new ArrayList<Integer>(ids);
+        SPACE_ORDER = new ArrayList<Integer>(ours);
         SPACE_NAMES = names;
         return ids;
+    }
+
+    /** 所有分身空间（含非自建）：只给「空间还活着吗」这类判断用，不能拿来算名额 */
+    static java.util.List<Integer> allSpaceUids() {
+        ensureMarks();
+        return listSpaceUids(true);
     }
 
     /**

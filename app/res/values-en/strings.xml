@@ -140,7 +140,8 @@ Owner data is not touched.</string>
     <string name="in_disable_list">In disable list</string>
     <string name="save">Save</string>
     <string name="label_manage_foreign">Manage other clone spaces</string>
-    <string name="hint_manage_foreign">When on, apps inside clone spaces not created by this app can be removed/disabled; off by default</string>
+    <string name="hint_manage_foreign">When on, clone spaces not created by this app can be used as targets: create clones in them, back up/restore their data, and remove/disable apps inside; off by default</string>
+    <string name="space_foreign_tag">external</string>
     <string name="space_renamed_synced">Renamed; system name synced</string>
     <string name="space_renamed_label_only">Root required to rename space</string>
     <string name="rename_space">Rename</string>

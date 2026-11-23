@@ -140,7 +140,8 @@
     <string name="in_disable_list">已在禁用清单</string>
     <string name="save">保存</string>
     <string name="label_manage_foreign">管理非自建空间</string>
-    <string name="hint_manage_foreign">开启后，非本应用创建的克隆空间里的应用也可移除/禁用；默认关闭</string>
+    <string name="hint_manage_foreign">开启后，非本应用创建的克隆空间也能当目标：往里创建分身、备份/恢复数据，也可移除/禁用里面的应用；默认关闭</string>
+    <string name="space_foreign_tag">非自建</string>
     <string name="rename_space">重命名</string>
     <string name="renaming_space">正在重命名…</string>
     <string name="space_renamed">已重命名</string>

@@ -136,7 +136,7 @@ public class BatchBackupActivity extends Activity {
             public void run() {
                 final List<Integer> r = new ArrayList<Integer>();
                 r.add(Integer.valueOf(0));
-                for (Integer u : CloneStore.listSpaceUids()) r.add(u);
+                for (Integer u : CloneStore.pickableSpaceUids(BatchBackupActivity.this)) r.add(u);
                 runOnUiThread(new Runnable() {
                     public void run() {
                         spaces.clear();
@@ -261,7 +261,10 @@ public class BatchBackupActivity extends Activity {
 
     private String spaceLabel(int u) {
         String n = u == 0 ? getString(R.string.space_main) : CloneStore.nameOf(this, u);
-        return n + " (" + u + ")";
+        String s = n + " (" + u + ")";
+        // 非自建空间（ROM 自带 MultiApp）加标记：备份能选它，但用户得知道这是谁的空间
+        return u == 0 || CloneStore.isOurs(null, u)
+                ? s : s + " · " + getString(R.string.space_foreign_tag);
     }
 
     private void renderSpace() {

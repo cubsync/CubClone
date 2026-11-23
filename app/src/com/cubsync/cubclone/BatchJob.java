@@ -70,6 +70,8 @@ public final class BatchJob {
     private PowerManager.WakeLock wake;
     private String algo;
     private int level;
+    private int bkParts;
+    private boolean bkApkAll;
 
     private BatchJob(Context c, boolean restore, int targetUser, int parts) {
         // Zstd / CloneStore 都靠 appCtx 找 Context；过程页可能先于任何页面被拉起
@@ -88,6 +90,7 @@ public final class BatchJob {
         for (String p : pkgs) j.rows.add(new Row(p, user, ""));
         j.algo = sp(c).getString("backup_algo", "zst");
         j.level = sp(c).getInt("backup_level_" + j.algo, AppData.defaultLevel(j.algo));
+        j.selfLast();
         return j.launch();
     }
 
@@ -107,6 +110,7 @@ public final class BatchJob {
         }
         j.algo = sp(c).getString("backup_algo", "zst");
         j.level = sp(c).getInt("backup_level_" + j.algo, AppData.defaultLevel(j.algo));
+        j.selfLast();
         return j.launch();
     }
 
@@ -137,7 +141,17 @@ public final class BatchJob {
         }
         j.rows.addAll(newest.values());
         j.rows.addAll(skipped);
+        j.selfLast();
         return j.launch();
+    }
+
+    /** 自己放最后：备份自己不停自己、恢复自己会换掉自己，排前面后面的条目就全断了 */
+    private void selfLast() {
+        List<Row> me = new ArrayList<Row>();
+        for (int i = rows.size() - 1; i >= 0; i--) {
+            if (AppData.isSelf(rows.get(i).user, rows.get(i).pkg)) me.add(0, rows.remove(i));
+        }
+        rows.addAll(me);
     }
 
     @SuppressWarnings("deprecation")
@@ -165,6 +179,11 @@ public final class BatchJob {
 
     private void work() {
         int ok = 0, bad = 0;
+        bkParts = AppData.parts(ctx);
+        bkApkAll = AppData.apkAll(ctx);
+        // 备份前会被停掉的应用，全部备份完再按原样依次拉起来
+        final List<Row> relaunch = new ArrayList<Row>();
+        final boolean relOn = !restore && sp(ctx).getBoolean("backup_relaunch", true);
         try {
             Notify.progress(ctx, restore, 0, rows.size(), "", "");
             for (int i = 0; i < rows.size(); i++) {
@@ -182,21 +201,35 @@ public final class BatchJob {
                         + labelOf(r.pkg) + "  " + spaceLabel(r.user));
                 Notify.progress(ctx, restore, done, rows.size(), head, labelOf(r.pkg));
 
+                final boolean self = AppData.isSelf(r.user, r.pkg);
+                if (relOn && !self && AppData.isRunning(r.user, r.pkg)) relaunch.add(r);
                 Meter m = new Meter(restore ? null : AppData.backupBase(r.user, r.pkg));
                 m.begin();
                 AppData.Backup bk = restore ? AppData.fromPath(r.path) : null;
-                String res = restore
-                        ? (bk == null ? "ERR_PATH"
-                        : AppData.restore(bk, appIdOf(r.pkg), targetUser, parts))
-                        : AppData.backupNow(r.user, r.pkg, algo, level, m.base);
+                final int tgt = targetUser < 0 ? r.user : targetUser;
+                String res;
+                if (restore && bk != null && AppData.isSelf(tgt, r.pkg)) {
+                    // 恢复自己：脚本里的 force-stop 会杀掉本进程，交给后台跑，跑完自己回来
+                    line(r.time + "  " + ctx.getString(R.string.self_restore_hand_off));
+                    saveLog();          // 进程马上就没，先把日志落盘
+                    res = AppData.restoreSelfDetached(bk, appIdOf(r.pkg), targetUser, parts);
+                } else if (restore) {
+                    res = bk == null ? "ERR_PATH"
+                            : AppData.restore(bk, appIdOf(r.pkg), targetUser, parts);
+                } else {
+                    res = AppData.backupNow(r.user, r.pkg, algo, level, m.base,
+                            bkParts, bkApkAll, !self);
+                }
                 m.stop();
                 r.time = now();
                 if (res.startsWith("OK")) {
                     r.state = ST_OK;
                     r.detail = restore
-                            ? spaceLabel(targetUser < 0 ? r.user : targetUser) + " · " + mmss(m.ms())
+                            ? (self ? ctx.getString(R.string.self_restore_after)
+                               : spaceLabel(tgt) + " · " + mmss(m.ms()))
                             // 体积/速度放前面：文件名一长，单行里先被吃掉的就是它
-                            : m.summary() + " · " + fileName(res);
+                            : m.summary() + " · " + fileName(res)
+                              + (self ? " · " + ctx.getString(R.string.self_backup_live) : "");
                     ok++;
                 } else {
                     r.state = ST_BAD;
@@ -207,6 +240,16 @@ public final class BatchJob {
                 line(r.time + "  " + stateName(r.state) + "  " + labelOf(r.pkg) + "  " + r.detail);
             }
         } finally {
+            if (!relaunch.isEmpty()) {
+                line(ctx.getString(R.string.batch_relaunch_n, relaunch.size()));
+                for (Row r : relaunch) {
+                    Launcher.relaunch(r.user, r.pkg);   // 依次：一次拉起一堆会互相抢前台
+                    try {
+                        Thread.sleep(800);
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
             int skip = 0;
             for (Row r : rows) if (r.state == ST_SKIP) skip++;
             summary = ctx.getString(R.string.batch_done_summary, ok, bad)
@@ -339,7 +382,31 @@ public final class BatchJob {
             th.start();
         }
 
-        void stop() { stop = true; }
+        void stop() {
+            stop = true;
+            // 一秒一次轮询，碰上秒完成的小备份（如自己那 500 KB）还没轮到就被停了，
+            // 顺手补量一次，不然界面显示「0 B · 0 B/s」
+            if (base != null && bytes == 0) bytes = statOnce();
+        }
+
+        private String statCmd() {
+            return "B='" + base + "'; "
+                    + "for e in .tar.zst .tar.gz .tar.bz2 .tar; do "
+                    + "S=$(nsenter -t 1 -m -- stat -c %s \"$B$e\" 2>/dev/null"
+                    + " || stat -c %s \"$B$e\" 2>/dev/null); "
+                    + "[ -n \"$S\" ] && { echo \"$S|$e\"; exit 0; }; done; echo 0";
+        }
+
+        private long statOnce() {
+            String out = Shell.execQuick(statCmd()).trim();
+            int bar = out.indexOf('|');
+            if (bar <= 0) return 0;
+            try {
+                return Long.parseLong(out.substring(0, bar));
+            } catch (Throwable t) {
+                return 0;
+            }
+        }
 
         long ms() { return System.currentTimeMillis() - t0; }
 
@@ -349,11 +416,6 @@ public final class BatchJob {
         }
 
         private void loop() {
-            final String cmd = "B='" + base + "'; "
-                    + "for e in .tar.zst .tar.gz .tar.bz2 .tar; do "
-                    + "S=$(nsenter -t 1 -m -- stat -c %s \"$B$e\" 2>/dev/null"
-                    + " || stat -c %s \"$B$e\" 2>/dev/null); "
-                    + "[ -n \"$S\" ] && { echo \"$S|$e\"; exit 0; }; done; echo 0";
             long lastB = 0, lastT = System.currentTimeMillis();
             double ema = 0;
             while (!stop) {
@@ -368,7 +430,7 @@ public final class BatchJob {
                     Notify.progress(ctx, restore, done, rows.size(), head, speed);
                     continue;
                 }
-                String out = Shell.execQuick(cmd).trim();
+                String out = Shell.execQuick(statCmd()).trim();
                 long cur = 0;
                 int bar = out.indexOf('|');
                 if (bar > 0) {

@@ -403,11 +403,22 @@ public final class AppData {
      */
     public static String backupNow(int user, String pkg, String algo, int level, String base,
                                    int parts, boolean apkAll) {
+        return backupNow(user, pkg, algo, level, base, parts, apkAll, true);
+    }
+
+    /**
+     * @param stopFirst 备份前是否先停掉应用。备份自己时必须 false：一停，跑任务的进程就没了，
+     *                  剩下的条目和日志全断。别人照旧停（数据才不会边写边打包）
+     */
+    public static String backupNow(int user, String pkg, String algo, int level, String base,
+                                   int parts, boolean apkAll, boolean stopFirst) {
         String want = (algo == null || algo.length() == 0) ? "none" : algo;
         int lv = level > 0 ? level : defaultLevel(want);
 
         StringBuilder s = new StringBuilder();
-        s.append("am force-stop --user ").append(user).append(" '").append(pkg).append("'\n");
+        if (stopFirst) {
+            s.append("am force-stop --user ").append(user).append(" '").append(pkg).append("'\n");
+        }
         s.append("[ -d '/data/user/").append(user).append('/').append(pkg)
                 .append("' ] || { echo ERR_NO_SRC; exit 1; }\n");
         // 锁屏后 CE 密钥被驱逐，边读边压会读到一半 ENOKEY
@@ -628,12 +639,6 @@ public final class AppData {
      * 但也不是直接 rm：先 mv 到 /data/local/tmp（同分区改名，零成本），
      * 换位成功才删，失败就挪回去。
      * @return "OK" 或 "ERR_xxx"
-     */
-        /**
-     * 把备份换回原位。当前数据不再另留一份：备份本来就是你要的东西，
-     * 每次恢复再复制一份只会让列表膨胀。
-     * 但也不是直接 rm：先 mv 到 /data/local/tmp（同分区改名，零成本），
-     * 换位成功才删，失败就挪回去。
      *
      * 两种包都认：新包内是 `data/user/<U>/<pkg>` + `data/user_de/<U>/<pkg>`，
      * 老包内是 `<pkg>` 或 `<pkg>.cubclone-bak-<ts>`。
@@ -652,7 +657,7 @@ public final class AppData {
      * @param parts      恢复哪些内容（PART_CE / PART_DE / PART_APK / PART_PERM）
      * @return "OK" 或 "ERR_xxx"
      */
-    public static String restore(Backup b, int appId, int targetUser, int parts) {
+    public static String restoreScript(Backup b, int appId, int targetUser, int parts) {
         int T = targetUser < 0 ? b.user : targetUser;
         String ce = "/data/user/" + T + "/" + b.pkg;
         String de = "/data/user_de/" + T + "/" + b.pkg;
@@ -721,10 +726,18 @@ public final class AppData {
             s.append("SCE='").append(b.path).append("'; SDE=''; PR='").append(b.path).append("'\n");
         }
 
+        // 解包要几百毫秒，这期间被停掉的自己可能又被系统拉起来（恢复自己时实测过），
+        // 换位前再停一次，免得新旧目录撞在一起
+        s.append("am force-stop --user ").append(T).append(" '").append(b.pkg)
+                .append("' >/dev/null 2>&1\n");
+
         // CE：先挪开当前数据，换位失败原样退回
         if (wantCe) {
             s.append("if [ -d \"$SCE\" ]; then\n");
             s.append("  [ -d \"$CE\" ] && mv \"$CE\" \"$OLD/ce\"\n");
+            // 挪不走（文件系统/占用）就清掉：不清的话下面这句会把新数据塞进旧目录里，
+            // 变成 <CE>/<包名>/… 的套娃（恢复自己时实测踩到）
+            s.append("  [ -d \"$CE\" ] && rm -rf \"$CE\"\n");
             s.append("  if ! mv \"$SCE\" \"$CE\"; then\n");
             s.append("    [ -d \"$OLD/ce\" ] && mv \"$OLD/ce\" \"$CE\"\n");
             s.append("    rm -rf \"$TMP\"; echo ERR_MV2; exit 1\n");
@@ -735,6 +748,7 @@ public final class AppData {
         if (wantDe) {
             s.append("if [ -n \"$SDE\" ] && [ -d \"$SDE\" ]; then\n");
             s.append("  [ -d \"$DE\" ] && mv \"$DE\" \"$OLD/de\"\n");
+            s.append("  [ -d \"$DE\" ] && rm -rf \"$DE\"\n");
             s.append("  mv \"$SDE\" \"$DE\" || { [ -d \"$OLD/de\" ] && mv \"$OLD/de\" \"$DE\"; }\n");
             s.append("fi\n");
         }
@@ -842,7 +856,15 @@ public final class AppData {
         s.append("rm -rf \"$OLD\"\n");
         s.append("echo CUB_OK\n");
 
-        String out = Shell.execScript(s.toString());
+        return s.toString();
+    }
+
+    /** 恢复一份备份并按输出解释结果；自身恢复（脚本里的 force-stop 会杀掉本进程）走 restoreSelfDetached */
+    public static String restore(Backup b, int appId, int targetUser, int parts) {
+        return parseRestore(Shell.execScript(restoreScript(b, appId, targetUser, parts)));
+    }
+
+    private static String parseRestore(String out) {
         // 外部目录写失败不能咽下去：那一步失败后脚本仍会照常往下跑并打印 CUB_OK
         if (out.contains("ERR_EXT")) return "ERR_EXT";
         // 属主没落对等于应用写不了（纯 FUSE 下 MediaProvider 只是 other），必须报失败
@@ -856,6 +878,57 @@ public final class AppData {
             if (t.startsWith("ERR")) return t;
         }
         return "ERR " + out.trim();
+    }
+
+    /**
+     * 恢复的是本应用自己：脚本第一句 `am force-stop` 就把跑任务的进程杀了，
+     * 在进程里同步等结果等于等死。所以扔给一个脱离会话的后台脚本去跑，跑完写结果再把自己拉起来。
+     * 结果通过启动 Intent 的 cc_self_restore 附加项带回去，MainActivity 弹一次提示。
+     * ⛔ 别用「写文件让应用自己读」：root 写的文件不带本应用的 MLS 类别，
+     *    能读但删/改名会被 SELinux 拦掉（实测 rename 失败、文件原地消失）。
+     *
+     * @return "OK" = 后台脚本已起来（真正的结果看重启后的提示）
+     */
+    public static String restoreSelfDetached(Backup b, int appId, int targetUser, int parts) {
+        android.content.Context c = CloneStore.appCtx;
+        if (c == null) return "ERR_NO_CTX";
+        String pkg = c.getPackageName();
+        StringBuilder w = new StringBuilder();
+        // 本进程的 mount namespace 里，自己的数据目录是 bind mount（mv 直接报
+        // Device or resource busy），所以换到 init 的 namespace 再跑一遍自己；CCNS 防死循环。
+        w.append("if [ -z \"$CCNS\" ] && command -v nsenter >/dev/null 2>&1"
+                + " && nsenter -t 1 -m -- true >/dev/null 2>&1; then\n");
+        w.append("  CCNS=1; export CCNS\n");
+        w.append("  exec nsenter -t 1 -m -- sh '").append(Shell.detachedPath("selfrestore")).append("'\n");
+        w.append("fi\n");
+        w.append("R=$( {\n").append(restoreScript(b, appId, targetUser, parts)).append("} 2>&1 )\n");
+        w.append("RC=$?\n");
+        w.append("S='OK'\n");
+        w.append("[ $RC -eq 0 ] || S=$(echo \"$R\" | grep -m1 '^ERR' | cut -d' ' -f1)\n");
+        w.append("[ -n \"$S\" ] || S='ERR'\n");
+        // 留一份原始输出，失败时能看出卡在哪一步（/data/local/tmp 不会被应用清掉）
+        w.append("echo \"$R\" > /data/local/tmp/.cc-selfrestore.log 2>/dev/null\n");
+        // 数据被换掉后进程已经没了，这句是从 root 侧把界面拉回来，顺带把结果带回去
+        w.append("am start -n '").append(pkg).append("/.MainActivity'")
+                .append(" --es cc_self_restore \"$S\" >/dev/null 2>&1\n");
+        return Shell.execScriptDetached(w.toString(), "selfrestore");
+    }
+
+    /** 这个包在这个空间里是不是本应用自己 */
+    static boolean isSelf(int user, String pkg) {
+        android.content.Context c = CloneStore.appCtx;
+        if (c == null || pkg == null) return false;
+        return pkg.equals(c.getPackageName())
+                && user == android.os.Process.myUid() / 100000;
+    }
+
+    /**
+     * 这个空间里这个包现在有没有进程在跑：`ps` 的 USER 列是 u&lt;空间&gt;_a&lt;n&gt;，
+     * 只认本空间前缀，别的空间里的同名进程不算。多开进程（`包名:push`）也算在跑。
+     */
+    static boolean isRunning(int user, String pkg) {
+        String out = Shell.exec("ps -A -o USER,NAME 2>/dev/null | grep -w '" + pkg + "'");
+        return out.contains("u" + user + "_");
     }
 
 

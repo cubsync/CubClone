@@ -215,6 +215,7 @@ public class MainActivity extends Activity {
         // 「显示全部」已改成顶栏漏斗图标，布局里那颗开关删掉了，这里不再绑控件
 
         initHeader();
+        checkSelfRestore();
 
         tab = sp().getInt("tab", 0);
         tabRow = (LinearLayout) LayoutInflater.from(this).inflate(R.layout.tab_row, listOuter, false);
@@ -2809,6 +2810,27 @@ public class MainActivity extends Activity {
     }
 
     /** 只在页面会被挡住（如系统加图标弹窗）时才用 toast */
+    /**
+     * 上次「恢复自己」的结果：脚本脱离会话跑（里面的 force-stop 会把本进程杀掉），
+     * 跑完用 cc_self_restore 附加项把结果带回来，这里提示一次。
+     * 老版本靠 files/self-restore.txt，顺手清掉，免得以后有人以为它还有用。
+     */
+    private void checkSelfRestore() {
+        try {
+            java.io.File legacy = new java.io.File(getFilesDir(), "self-restore.txt");
+            if (legacy.exists()) legacy.delete();
+            if (getIntent() == null) return;
+            String s = getIntent().getStringExtra("cc_self_restore");
+            getIntent().removeExtra("cc_self_restore");   // 别在重建时再弹一次
+            if (s == null) return;
+            s = s.trim();
+            android.util.Log.i("CubClone", "selfRestore result=" + s);
+            toast("OK".equals(s) ? getString(R.string.self_restore_ok)
+                    : getString(R.string.self_restore_bad, Err.text(this, s)));
+        } catch (Throwable ignored) {
+        }
+    }
+
     private void toast(String s) {
         Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
     }

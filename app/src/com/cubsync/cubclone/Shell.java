@@ -97,6 +97,35 @@ public final class Shell {
     }
 
     /**
+     * 后台跑一段脚本：脚本本体落盘（base64，不经过 su 的 eval），再用 setsid 脱离本进程的会话。
+     * 给「恢复自己」用——脚本里的 `am force-stop 自己` 会把发起者杀掉，同步执行必然收不到结果。
+     *
+     * @return "OK" = 已启动；其它 = 启动失败原因
+     */
+    public static String execScriptDetached(String script, String tag) {
+        if (!checkRoot()) return "ERR_NEED_ROOT";
+        String b64;
+        try {
+            b64 = android.util.Base64.encodeToString(
+                    script.getBytes("UTF-8"), android.util.Base64.NO_WRAP);
+        } catch (Throwable t) {
+            return "ERR " + t;
+        }
+        String f = detachedPath(tag);
+        String cmd = "echo '" + b64 + "' | base64 -d > " + f + " && chmod 700 " + f
+                + " && ( if command -v setsid >/dev/null 2>&1; then setsid sh " + f
+                + " >/dev/null 2>&1 & else nohup sh " + f + " >/dev/null 2>&1 & fi )"
+                + " && echo OK";
+        String out = raw("su", "-c", cmd).trim();
+        return out.contains("OK") ? "OK" : "ERR " + out;
+    }
+
+    /** 后台脚本落到哪：自身恢复要在脚本里 re-exec 进 init namespace，得知道自己的路径 */
+    public static String detachedPath(String tag) {
+        return "/data/local/tmp/.cc-" + tag + ".sh";
+    }
+
+    /**
      * 轻量执行：不重探 root、不落脚本文件、不进 namespace。
      * 给「每秒读一次文件大小」这种高频轮询用——execScript 每次都先 su id 再落盘，
      * 一秒一次太重。只能用于不依赖 init namespace 的命令（/sdcard 下的 stat 等）。

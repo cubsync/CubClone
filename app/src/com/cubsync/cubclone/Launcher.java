@@ -37,6 +37,23 @@ public final class Launcher {
         return !out.contains("Error") && !out.contains("Exception");
     }
 
+    /**
+     * 按原样把应用拉起来（备份完把刚才停掉的应用放回去用）。
+     * 不能走 launch()：那个有 safe(uid) 门槛（uid &lt; 10 直接拒），主空间恰好是 0。
+     */
+    public static boolean relaunch(int user, String pkg) {
+        if (!Shell.ready()) return false;
+        String comp = component(user, pkg);
+        String out;
+        if (comp != null) {
+            out = Shell.exec("am start --user " + user + " -n " + comp);
+        } else {
+            out = Shell.exec("monkey -p " + pkg
+                    + " -c android.intent.category.LAUNCHER 1 --user " + user);
+        }
+        return !out.contains("Error") && !out.contains("Exception");
+    }
+
     /** 拿到该用户在指定包下的启动组件；失败返回 null */
     private static String component(int uid, String pkg) {
         String out = Shell.exec("cmd package resolve-activity --brief --user " + uid + " " + pkg);

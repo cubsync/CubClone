@@ -134,6 +134,9 @@ public class BatchBackupActivity extends Activity {
     private void loadSpaces() {
         new Thread(new Runnable() {
             public void run() {
+                // 进程被回收后从「最近任务」直接回到本页时，MainActivity 没跑过、rootOk 还是 false，
+                // 这时所有 shell 调用都返回 ERR_NO_PERM：空间只剩主空间、应用列表空白。这里补探一次。
+                if (!Shell.ready()) Shell.probe();
                 final List<Integer> r = new ArrayList<Integer>();
                 r.add(Integer.valueOf(0));
                 for (Integer u : CloneStore.pickableSpaceUids(BatchBackupActivity.this)) r.add(u);

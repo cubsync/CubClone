@@ -372,6 +372,7 @@
     <string name="batch_done_all_ok">全部成功：%1$d 项</string>
     <string name="batch_skipped_n">跳过 %1$d 项</string>
     <string name="batch_relaunch_n">已重新打开 %1$d 个应用</string>
+    <string name="batch_relaunch_toast">备份完成，正在重新打开 %1$d 个应用</string>
     <string name="self_backup_live">自身不停</string>
     <string name="self_restore_hand_off">自身恢复交给后台，完成后自动打开</string>
     <string name="self_restore_after">完成后自动打开</string>

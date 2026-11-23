@@ -179,6 +179,9 @@ public final class BatchJob {
 
     private void work() {
         int ok = 0, bad = 0;
+        // 进程刚从最近任务/通知被拉起来时还没探过提权，isRunning 会判成「没在跑」、
+        // 备份脚本也全是 ERR_NO_PERM；先探一次再开工
+        Shell.probe();
         bkParts = AppData.parts(ctx);
         bkApkAll = AppData.apkAll(ctx);
         // 备份前会被停掉的应用，全部备份完再按原样依次拉起来
@@ -242,13 +245,7 @@ public final class BatchJob {
         } finally {
             if (!relaunch.isEmpty()) {
                 line(ctx.getString(R.string.batch_relaunch_n, relaunch.size()));
-                for (Row r : relaunch) {
-                    Launcher.relaunch(r.user, r.pkg);   // 依次：一次拉起一堆会互相抢前台
-                    try {
-                        Thread.sleep(800);
-                    } catch (Throwable ignored) {
-                    }
-                }
+                relaunchAll(relaunch);
             }
             int skip = 0;
             for (Row r : rows) if (r.state == ST_SKIP) skip++;
@@ -265,6 +262,65 @@ public final class BatchJob {
                 if (wake != null && wake.isHeld()) wake.release();
             } catch (Throwable ignored) {
             }
+        }
+    }
+
+    /**
+     * 把备份前在跑的应用依次放回去，最后回到自己。
+     *
+     * 顺序有讲究：先把自己摆回前台再弹 toast —— 应用在后台时 toast 会被限流甚至丢掉，
+     * 用户只看到一堆应用自己跳出来，不知道在干什么。
+     * 最后再回自己一次：最后一个被拉起的三方应用会一直停在前台，任务结束的界面就看不到了。
+     */
+    private void relaunchAll(List<Row> list) {
+        bringSelfToFront();
+        sleep(600);                       // 切前台也要一点时间，别让 toast 赶在切换中间
+        toastBg(ctx.getString(R.string.batch_relaunch_toast, list.size()));
+        sleep(1500);                      // 让这句话有时间被看见，再开始跳应用
+        for (Row r : list) {
+            Launcher.relaunch(r.user, r.pkg);   // 依次：一次拉起一堆会互相抢前台
+            sleep(800);
+        }
+        bringSelfToFront();
+    }
+
+    /**
+     * 回到自己：走 root 侧 am start（应用在后台时 startActivity 会被系统拦）。
+     * 目标是批量过程页 —— 已经跑完，回来正好看到结果；实例还在就只提到前台，
+     * 不在（用户退过页/进程重建）才新建，且不带 extras ⇒ 只是挂到当前任务上看，不会重跑。
+     */
+    private void bringSelfToFront() {
+        try {
+            String pkg = ctx.getPackageName();
+            int u = android.os.Process.myUid() / 100000;
+            String out = Shell.exec("am start --user " + u + " -n " + pkg
+                    + "/.BatchRunActivity --activity-reorder-to-front");
+            if (out.contains("Error") || out.contains("Exception")) {
+                Launcher.relaunch(u, pkg);      // 旧系统不认这个参数时退回主页
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 后台线程发 toast：Toast 只能在带 Looper 的线程上创建 */
+    private void toastBg(final String m) {
+        try {
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+                public void run() {
+                    try {
+                        android.widget.Toast.makeText(ctx, m, android.widget.Toast.LENGTH_LONG).show();
+                    } catch (Throwable ignored) {
+                    }
+                }
+            });
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (Throwable ignored) {
         }
     }
 

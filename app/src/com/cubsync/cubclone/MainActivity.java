@@ -1818,11 +1818,25 @@ public class MainActivity extends Activity {
 
     /** 打开主身份里那份原应用（当前进程就是主用户，直接 startActivity） */
     private void openPrimary(Group g) {
+        // Flyme 等 ROM：只要这个应用有分身，应用间的 startActivity 一律被拦成
+        // 「选择打开方式」—— 组件名钉死也没用（实测），因为应用侧没法指定目标用户。
+        // 有 root/Shizuku 时就直接走 am start --user 0（和打开分身同一条路），
+        // 这是唯一能一步进主空间的办法；两条路都没有时才退回普通 startActivity。
+        if (Shell.ready() && Launcher.relaunch(0, g.pkg)) {
+            toast(getString(R.string.opening_primary, g.label));
+            recordRecent(0, g.pkg);
+            onRecentChanged();
+            return;
+        }
         Intent it = getPackageManager().getLaunchIntentForPackage(g.pkg);
         if (it == null) {
             toast(getString(R.string.launch_failed, g.label));
             return;
         }
+        // 兜底路径也别把「主空间还是分身」交给系统解析：同上，组件名钉到主空间那一份
+        android.content.ComponentName cn = primaryComponent(g.pkg);
+        if (cn != null) it.setComponent(cn);
+        android.util.Log.i("CubClone", "openPrimary " + g.pkg + " -> " + it.getComponent());
         it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         toast(getString(R.string.opening_primary, g.label));
         try {
@@ -1832,6 +1846,32 @@ public class MainActivity extends Activity {
         } catch (Throwable t) {
             toast(getString(R.string.launch_failed, g.label));
         }
+    }
+
+    /**
+     * 主空间那份应用的启动组件。同一个包在主空间和各分身空间都有同名活动，
+     * 只认「应用 uid 与 user 0 里这个包的 uid 一致」的那一条，别挑到分身代理上。
+     */
+    private android.content.ComponentName primaryComponent(String pkg) {
+        try {
+            Intent probe = new Intent(Intent.ACTION_MAIN);
+            probe.addCategory(Intent.CATEGORY_LAUNCHER);
+            probe.setPackage(pkg);
+            java.util.List<android.content.pm.ResolveInfo> ris = getPackageManager()
+                    .queryIntentActivities(probe, 0);
+            if (ris == null) return null;
+            int uid = getPackageManager().getPackageUid(pkg, 0);
+            for (android.content.pm.ResolveInfo ri : ris) {
+                if (ri.activityInfo == null || ri.activityInfo.applicationInfo == null) continue;
+                if (ri.activityInfo.applicationInfo.uid != uid) continue;
+                if (!pkg.equals(ri.activityInfo.packageName)) continue;
+                return new android.content.ComponentName(ri.activityInfo.packageName,
+                        ri.activityInfo.name);
+            }
+            // 一个都对不上时宁可不钉：钉错了会打开分身，比弹一次选择框更糟
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 
     /** 分身行长按菜单：禁用的可一键启用、启用的可禁用/隐藏，也能直接移除 */

@@ -372,6 +372,7 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="batch_done_all_ok">All %1$d succeeded</string>
     <string name="batch_skipped_n">%1$d skipped</string>
     <string name="batch_relaunch_n">Reopened %1$d app(s)</string>
+    <string name="batch_relaunch_toast">Backup finished — reopening %1$d app(s)</string>
     <string name="self_backup_live">self not stopped</string>
     <string name="self_restore_hand_off">Self-restore handed to background; reopens when done</string>
     <string name="self_restore_after">reopens when done</string>

@@ -405,7 +405,6 @@ public final class AppData {
                                    int parts, boolean apkAll) {
         String want = (algo == null || algo.length() == 0) ? "none" : algo;
         int lv = level > 0 ? level : defaultLevel(want);
-        String stage = "/data/local/tmp/cc-pack-" + System.currentTimeMillis();
 
         StringBuilder s = new StringBuilder();
         s.append("am force-stop --user ").append(user).append(" '").append(pkg).append("'\n");
@@ -418,8 +417,17 @@ public final class AppData {
         s.append("mkdir -p '").append(rootDir).append("' || { echo ERR_DIR; exit 1; }\n");
         s.append("chown 1023:1023 '").append(rootDir).append("' 2>/dev/null;");
         s.append(" chmod 2775 '").append(rootDir).append("' 2>/dev/null\n");
+        // 包内布局：CE/DE 直接按 data/user/<U>/<包> 收进包（恢复端认这个布局）。
+        // ⛔ 不能靠 tar --xform 改路径：Android 自带 toybox tar 没有这个选项
+        //    （0.8.6 实测 "Unknown option 'xform=s'"）；0.7.0 用它导致所有备份 ERR_PACK。
+        // 外部三块与 APK/权限放在固定暂存目录 /data/local/tmp/cc-pack/<包>/，
+        // 恢复端也从这里找（restore 里的 PROOT）。CE 在 /data/user 的独立挂载点上，
+        // 硬链接会 EXDEV，所以不动它、直接收原路径。
+        s.append("P='/data/local/tmp/cc-pack'; rm -rf \"$P\"; mkdir -p \"$P/").append(pkg)
+                .append("\" || { echo ERR_TMP; exit 1; }\n");
+        s.append("trap 'rm -rf \"$P\"' EXIT\n");
         s.append("cd /\n");
-        s.append("L=''\n");
+        s.append("L=''; STAGED=''\n");
         if ((parts & PART_CE) != 0) {
             s.append("L=\"data/user/").append(user).append('/').append(pkg).append("\"\n");
         }
@@ -427,81 +435,53 @@ public final class AppData {
             s.append("[ -d 'data/user_de/").append(user).append('/').append(pkg)
                     .append("' ] && L=\"$L data/user_de/").append(user).append('/').append(pkg).append("\"\n");
         }
-        // 外部三块：走 /data/media/<U>/Android/…（root 视角），包里分别折成 <pkg>/ext|obb|media
-        if ((parts & PART_EXT) != 0) {
-            s.append("[ -d 'data/media/").append(user).append("/Android/data/").append(pkg)
-                    .append("' ] && L=\"$L data/media/").append(user).append("/Android/data/").append(pkg).append("\"\n");
-        }
-        if ((parts & PART_OBB) != 0) {
-            s.append("[ -d 'data/media/").append(user).append("/Android/obb/").append(pkg)
-                    .append("' ] && L=\"$L data/media/").append(user).append("/Android/obb/").append(pkg).append("\"\n");
-        }
-        if ((parts & PART_MEDIA) != 0) {
-            s.append("[ -d 'data/media/").append(user).append("/Android/media/").append(pkg)
-                    .append("' ] && L=\"$L data/media/").append(user).append("/Android/media/").append(pkg).append("\"\n");
-        }
-
-        // APK / 权限：先在 /data/local/tmp 摆一个和包里同构的目录，再由 xform 折成 <包名>/…
-        boolean needStage = (parts & (PART_APK | PART_PERM)) != 0;
-        if (needStage) {
-            s.append("STAGE='").append(stage).append("'; rm -rf \"$STAGE\"; mkdir -p \"$STAGE/")
-                    .append(pkg).append("\" || { echo ERR_TMP; exit 1; }\n");
-            s.append("trap 'rm -rf \"$STAGE\"' EXIT\n");
-            s.append("L=\"$L ").append(stage.substring(1)).append('/').append(pkg).append("\"\n");
+        // 外部三块：/data/media/<U>/Android/… 与 CE 不同挂载点，硬链接不行就实拷（默认不选）
+        String[][] exts = {
+                {"data", "ext"},
+                {"obb", "obb"},
+                {"media", "media"},
+        };
+        int[] extBits = {PART_EXT, PART_OBB, PART_MEDIA};
+        for (int k = 0; k < exts.length; k++) {
+            if ((parts & extBits[k]) == 0) continue;
+            String src = "/data/media/" + user + "/Android/" + exts[k][0] + "/" + pkg;
+            s.append("[ -d '").append(src).append("' ] && { cp -a '").append(src)
+                    .append("' \"$P/").append(pkg).append('/').append(exts[k][1])
+                    .append("\" || { echo ERR_STAGE; exit 1; }; STAGED=1; }\n");
         }
         if ((parts & PART_APK) != 0) {
-            s.append("mkdir -p \"$STAGE/").append(pkg).append("/apk\"\n");
+            s.append("mkdir -p \"$P/").append(pkg).append("/apk\"\n");
             // pm path 一次列全 base + split；apkAll 时按空间各存一份（同一版本时两份内容一样）
             s.append("APKS=$(pm path '").append(pkg).append("' 2>/dev/null | sed 's/^package://')\n");
             if (apkAll) {
                 s.append("for U2 in $(pm list users | sed -n 's/.*UserInfo{\\([0-9]*\\):.*/\\1/p'); do\n");
                 s.append("  pm list packages --user $U2 2>/dev/null | grep -qx 'package:").append(pkg).append("' || continue\n");
-                s.append("  mkdir -p \"$STAGE/").append(pkg).append("/apk/$U2\"\n");
-                s.append("  for f in $APKS; do cp -f \"$f\" \"$STAGE/").append(pkg).append("/apk/$U2/\" 2>/dev/null; done\n");
+                s.append("  mkdir -p \"$P/").append(pkg).append("/apk/$U2\"\n");
+                s.append("  for f in $APKS; do cp -f \"$f\" \"$P/").append(pkg).append("/apk/$U2/\" 2>/dev/null; done\n");
                 s.append("done\n");
             } else {
-                s.append("for f in $APKS; do cp -f \"$f\" \"$STAGE/").append(pkg).append("/apk/\" 2>/dev/null; done\n");
+                s.append("for f in $APKS; do cp -f \"$f\" \"$P/").append(pkg).append("/apk/\" 2>/dev/null; done\n");
             }
+            s.append("STAGED=1\n");
         }
         if ((parts & PART_PERM) != 0) {
             StringBuilder pl = new StringBuilder();
             for (String pm : grantedRuntimePerms(user, pkg)) pl.append("P ").append(pm).append('\n');
             for (String op : grantedAppOps(user, pkg)) pl.append("O ").append(op).append('\n');
             if (pl.length() > 0) {
-                s.append("cat > \"$STAGE/").append(pkg).append("/perm.txt\" <<'CCPERM'\n");
+                s.append("cat > \"$P/").append(pkg).append("/perm.txt\" <<'CCPERM'\n");
                 s.append(pl);
                 s.append("CCPERM\n");
+                s.append("STAGED=1\n");
             }
         }
-
-        // 包里不要以 data/ 打头：解出来第一眼就是应用包名，CE / DE / apk 各自一层
-        s.append("XF=\" --xform=s|^data/user/").append(user).append('/').append(pkg)
-                .append('|').append(pkg).append("/user|")
-                .append(" --xform=s|^data/user_de/").append(user).append('/').append(pkg)
-                .append('|').append(pkg).append("/user_de|");
-        if (needStage) {
-            s.append(" --xform=s|^").append(stage.substring(1)).append('/').append(pkg)
-                    .append('|').append(pkg).append('|');
-        }
-        if ((parts & PART_EXT) != 0) {
-            s.append(" --xform=s|^data/media/").append(user).append("/Android/data/").append(pkg)
-                    .append('|').append(pkg).append("/ext|");
-        }
-        if ((parts & PART_OBB) != 0) {
-            s.append(" --xform=s|^data/media/").append(user).append("/Android/obb/").append(pkg)
-                    .append('|').append(pkg).append("/obb|");
-        }
-        if ((parts & PART_MEDIA) != 0) {
-            s.append(" --xform=s|^data/media/").append(user).append("/Android/media/").append(pkg)
-                    .append('|').append(pkg).append("/media|");
-        }
-        s.append("\"\n");
+        s.append("[ -n \"$STAGED\" ] && L=\"$L data/local/tmp/cc-pack/").append(pkg).append("\"\n");
         s.append("B='").append(base).append("'\n");
         // $1=压缩器命令（空=纯打包）$2=扩展名 $3=解压命令（空=未压缩）
         s.append("pack() {\n");
         s.append("  O=\"$B$2\"; rm -f \"$O\"\n");
-        s.append("  if [ -z \"$1\" ]; then tar -cf \"$O\" $XF --exclude='*/cache' --exclude='*/code_cache' $L 2>/dev/null\n");
-        s.append("  else tar -cf - $XF --exclude='*/cache' --exclude='*/code_cache' $L 2>/dev/null | $1 > \"$O\" 2>/dev/null; fi\n");
+        s.append("  if [ -z \"$1\" ]; then tar -cf \"$O\" --exclude='*/cache' --exclude='*/code_cache' $L 2>/dev/null\n");
+        s.append("  else tar -cf - --exclude='*/cache' --exclude='*/code_cache' $L 2>/dev/null | $1 > \"$O\" 2>/dev/null; fi\n");
         // 校验：管道里 tar 的失败被压缩器吞掉了，只能反过来把包解开验一遍
         s.append("  if [ -s \"$O\" ] && { if [ -z \"$3\" ]; then tar -tf \"$O\" >/dev/null 2>&1; else $3 < \"$O\" | tar -tf - >/dev/null 2>&1; fi; }; then\n");
         s.append("    chown 1023:1023 \"$O\" 2>/dev/null; chmod 664 \"$O\" 2>/dev/null\n");
@@ -733,9 +713,12 @@ public final class AppData {
             s.append("else\n");
             s.append("  SCE=\"$TMP/").append(b.pkg).append("/user\"; SDE=''\n");
             s.append("fi\n");
+            // 扩展内容（ext/obb/media、apk、perm.txt）在固定暂存路径下；老包在 <pkg>/ 下
+            s.append("PR=\"$TMP/").append(b.pkg).append("\"\n");
+            s.append("[ -d \"$PR\" ] || PR=\"$TMP/data/local/tmp/cc-pack/").append(b.pkg).append("\"\n");
         } else {
             s.append("[ -d '").append(b.path).append("' ] || { echo ERR_NO_BAK; exit 1; }\n");
-            s.append("SCE='").append(b.path).append("'; SDE=''\n");
+            s.append("SCE='").append(b.path).append("'; SDE=''; PR='").append(b.path).append("'\n");
         }
 
         // CE：先挪开当前数据，换位失败原样退回
@@ -773,16 +756,16 @@ public final class AppData {
             String dst = viaFuse ? "/storage/emulated/" + T + "/Android/media/" + b.pkg : raw;
             // 落权与校验一律用底层路径 raw（见上）
             extDstList.append(" '").append(raw).append('\'');
-            s.append("if [ -d \"$TMP/").append(b.pkg).append('/').append(extIn[k]).append("\" ]; then\n");
+            s.append("if [ -d \"$PR/").append(extIn[k]).append("\" ]; then\n");
             s.append("  rm -rf '").append(dst).append("'\n");
             if (viaFuse) {
                 s.append("  mkdir -p '").append(dst).append("' 2>/dev/null\n");
-                s.append("  cp -a \"$TMP/").append(b.pkg).append('/').append(extIn[k])
+                s.append("  cp -a \"$PR/").append(extIn[k])
                         .append("/.\" '").append(dst).append("/' || echo ERR_EXT\n");
             } else {
                 s.append("  mkdir -p '/data/media/").append(T).append("/Android/")
                         .append(extOut[k]).append("' 2>/dev/null\n");
-                s.append("  mv \"$TMP/").append(b.pkg).append('/').append(extIn[k]).append("\" '")
+                s.append("  mv \"$PR/").append(extIn[k]).append("\" '")
                         .append(dst).append("' || echo ERR_EXT\n");
             }
             s.append("fi\n");
@@ -790,8 +773,8 @@ public final class AppData {
 
         // APK：装了就把新包按用户补上（先装再 install-existing 到目标空间）
         if ((parts & PART_APK) != 0) {
-            s.append("if [ -d \"$TMP/").append(b.pkg).append("/apk\" ]; then\n");
-            s.append("  AD=\"$TMP/").append(b.pkg).append("/apk\"\n");
+            s.append("if [ -d \"$PR/apk\" ]; then\n");
+            s.append("  AD=\"$PR/apk\"\n");
             s.append("  [ -d \"$AD/$T\" ] && AD=\"$AD/$T\"\n");
             s.append("  NA=$(ls \"$AD\"/*.apk 2>/dev/null | wc -l)\n");
             s.append("  if [ \"$NA\" -eq 1 ]; then\n");
@@ -804,12 +787,12 @@ public final class AppData {
         }
         // 权限：包里有 perm.txt 就按目标用户重新授予
         if ((parts & PART_PERM) != 0) {
-            s.append("if [ -f \"$TMP/").append(b.pkg).append("/perm.txt\" ]; then\n");
+            s.append("if [ -f \"$PR/perm.txt\" ]; then\n");
             s.append("  while read -r K P; do\n");
             s.append("    [ -z \"$K\" ] && continue\n");
             s.append("    if [ \"$K\" = \"P\" ]; then pm grant --user \"$T\" '").append(b.pkg).append("' \"$P\" >/dev/null 2>&1\n");
             s.append("    else appops set --user \"$T\" '").append(b.pkg).append("' \"$P\" allow >/dev/null 2>&1; fi\n");
-            s.append("  done < \"$TMP/").append(b.pkg).append("/perm.txt\"\n");
+            s.append("  done < \"$PR/perm.txt\"\n");
             s.append("fi\n");
         }
         s.append("rm -rf \"$TMP\"\n");

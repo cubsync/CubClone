@@ -49,6 +49,7 @@
     <string name="btn_new_space">New space</string>
     <string name="delete_space">Delete</string>
     <string name="space_used">%1$d clone space(s) in use</string>
+    <string name="space_used_of">Using %1$d of %2$d clone spaces</string>
     <string name="space_limit_one">No more spaces can be created on this device</string>
     <string name="space_global">Global limit %1$d</string>
     <string name="space_empty">No clone space yet. Tap "New space" or create a clone from the main screen.</string>

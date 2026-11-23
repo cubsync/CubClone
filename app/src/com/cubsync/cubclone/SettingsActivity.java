@@ -819,8 +819,10 @@ public class SettingsActivity extends Activity {
         for (int i = 0; i < foreign.size(); i++) if (!foreign.get(i).booleanValue()) ours++;
         // 「已用」要算上系统只读空间（一加 999）：主界面能看到它的分身，
         // 这里写「已用 0 个」就是自相矛盾；上限判断仍只看我们自己建的
-        sb.append(getString(R.string.space_used, uids.size()));
-        if (perParent > 0) sb.append(" / ").append(perParent);
+        // 有上限就一次说清「已用 N / M 个」；以前是「已用 N 个 … / M」，读起来别扭
+        sb.append(perParent > 0
+                ? getString(R.string.space_used_of, uids.size(), perParent)
+                : getString(R.string.space_used, uids.size()));
         if (perParent > 0 && ours >= perParent) {
             sb.append("\n").append(getString(R.string.space_limit_one));
         }
@@ -1413,7 +1415,7 @@ public class SettingsActivity extends Activity {
 
     /**
      * 分身存储状态提示：
-     * 内核带 sdcardfs（可能有兼容问题）＝次要色提示，点开看说明（新建空间会自动用独立存储）；
+     * 内核带 sdcardfs（可能有兼容问题）＝强调色（可点）提示，点开看说明（新建空间会自动用独立存储）；
      * 共享存储可用＝绿字；本机内核没有 sdcardfs 驱动＝不显示。
      */
     private void renderStorageWarn() {
@@ -1457,7 +1459,9 @@ public class SettingsActivity extends Activity {
             // 不是错误、更不是本机故障：很多机型（G7 实测）用着完全正常，
             // 只有相册/文件真出问题时才需要处理，所以按普通提示的次要色显示
             spaceWarn.setText(R.string.space_storage_broken);
-            spaceWarn.setTextColor(Theme.sec(this));
+            // 品牌青绿：红/橙/绿已经都被状态占用了（坏、可升级、已修好），
+            // 这条只是「可能不兼容，可点处理」，用品牌色区分，同时不至于像出错
+            spaceWarn.setTextColor(isNight() ? 0xFF35C1B8 : 0xFF0F8F88);
             spaceWarn.setVisibility(View.VISIBLE);
             return;
         }

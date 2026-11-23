@@ -49,6 +49,7 @@
     <string name="btn_new_space">新建空间</string>
     <string name="delete_space">删除</string>
     <string name="space_used">已用 %1$d 个分身空间</string>
+    <string name="space_used_of">已用 %1$d / %2$d 个分身空间</string>
     <string name="space_limit_one">空间已满，再建不出来了</string>
     <string name="space_global">全局上限 %1$d 个</string>
     <string name="space_empty">还没有分身空间，点「新建空间」，或在主界面给应用创建分身</string>

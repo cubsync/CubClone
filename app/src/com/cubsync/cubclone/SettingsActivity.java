@@ -1413,7 +1413,7 @@ public class SettingsActivity extends Activity {
 
     /**
      * 分身存储状态提示：
-     * 共享存储不可用（内核 sdcardfs 与分身不兼容）＝红字，点开看说明（新建空间会自动用独立存储）；
+     * 内核带 sdcardfs（可能有兼容问题）＝次要色提示，点开看说明（新建空间会自动用独立存储）；
      * 共享存储可用＝绿字；本机内核没有 sdcardfs 驱动＝不显示。
      */
     private void renderStorageWarn() {
@@ -1453,9 +1453,11 @@ public class SettingsActivity extends Activity {
             spaceWarn.setVisibility(View.GONE);
             return;
         }
-        if (st != 2) {                       // 1 = 共享存储坏了，还没修
+        if (st != 2) {                       // 1 = 内核对 sdcardfs 有驱动，可能有兼容问题
+            // 不是错误、更不是本机故障：很多机型（G7 实测）用着完全正常，
+            // 只有相册/文件真出问题时才需要处理，所以按普通提示的次要色显示
             spaceWarn.setText(R.string.space_storage_broken);
-            spaceWarn.setTextColor(0xFFE53935);
+            spaceWarn.setTextColor(Theme.sec(this));
             spaceWarn.setVisibility(View.VISIBLE);
             return;
         }

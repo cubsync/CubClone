@@ -455,7 +455,7 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="ime_pick_some">%1$d of %2$d</string>
     <string name="ime_pick_empty">No input method in main space</string>
     <string name="ime_pick_saved">Saved, applies to new spaces</string>
-    <string name="space_storage_broken">Shared space storage unavailable: this kernel\u0027s sdcardfs is incompatible with clone spaces, so the gallery stays empty. Tap to generate the fix module</string>
+    <string name="space_storage_broken">Photos or files empty inside a clone? Some kernels ship an sdcardfs that does not work with clone profiles. Tap to build the fix module (most devices need nothing)</string>
     <string name="space_storage_fixed">Shared space storage available · Tap to regenerate the fix module</string>
     <string name="space_storage_updatable">Fix module update available (%1$s installed, %2$s latest) · Tap to generate and flash</string>
     <string name="space_storage_outdated">Fix module is not the latest (no version marker, 2.3 or older) · Tap to generate %1$s and flash</string>

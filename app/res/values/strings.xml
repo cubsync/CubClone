@@ -455,7 +455,7 @@
     <string name="ime_pick_some">%1$d/%2$d 个</string>
     <string name="ime_pick_empty">主空间没有输入法</string>
     <string name="ime_pick_saved">已保存，新建空间时生效</string>
-    <string name="space_storage_broken">分身共享存储不可用：本机内核的 sdcardfs 与分身不兼容，相册会空白。点这里生成修复模块</string>
+    <string name="space_storage_broken">分身里相册或文件为空？部分机型的 sdcardfs 与分身不兼容，点这里生成修复模块（大多数机型无需处理）</string>
     <string name="space_storage_fixed">分身共享存储可用 · 点这里可重新生成修复模块</string>
     <string name="space_storage_updatable">修复模块有更新（已装 %1$s，最新 %2$s）· 点这里生成后刷入</string>
     <string name="space_storage_outdated">修复模块不是最新（读不到版本标记，即 2.3 或更早）· 点这里生成 %1$s 后刷入</string>

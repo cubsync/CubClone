@@ -70,7 +70,7 @@ public class SettingsActivity extends Activity {
     /** 分身存储是否已知不可用（只测一次，结果缓存） */
     private Integer storageState;
     private View divider, dividerKeep, lineLook;
-    private Switch swAll, swIcon, swAmoled, swKeepSys, swManageForeign, swSpaceBadge, swShowDisabled, swRelaunch;
+    private Switch swAll, swIcon, swAmoled, swKeepSys, swManageForeign, swSpaceBadge, swShowDisabled;
     /** 程序里刷开关状态时别再触发监听，否则会把用户的选择写没 */
     private boolean updatingAmoled;
     private TextView amoledLabel;
@@ -277,14 +277,6 @@ public class SettingsActivity extends Activity {
             }
         });
 
-        swRelaunch = findViewById(R.id.sw_relaunch);
-        swRelaunch.setChecked(sp().getBoolean("backup_relaunch", true));
-        swRelaunch.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
-            public void onCheckedChanged(android.widget.CompoundButton v, boolean checked) {
-                sp().edit().putBoolean("backup_relaunch", checked).apply();
-            }
-        });
-
         swManageForeign.setChecked(sp().getBoolean("manage_foreign", false));
         swManageForeign.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(android.widget.CompoundButton v, boolean checked) {
@@ -360,7 +352,7 @@ public class SettingsActivity extends Activity {
         for (TextView t : mains) if (t != null) t.setTextColor(fgColor);
         // 开关旁边的文字（recent/keep_sys/manage_foreign/space_badge/show_disabled）也要跟主题色，否则默认灰色
         for (int id : new int[]{R.id.recent_show_label, R.id.sys_keep_label,
-                R.id.manage_foreign_label, R.id.relaunch_label,
+                R.id.manage_foreign_label,
                 R.id.space_badge_label, R.id.show_disabled_label,
                 R.id.keep_extra_label, R.id.uninstall_extra_label, R.id.hidden_sys_label,
                 R.id.hidden_entry_label, R.id.backup_entry_label, R.id.root_entry_label}) {
@@ -368,8 +360,6 @@ public class SettingsActivity extends Activity {
             if (t != null) t.setTextColor(fgColor);
         }
         if (rootEntryState != null) rootEntryState.setTextColor(secColor);
-        TextView rlh = findViewById(R.id.relaunch_hint);
-        if (rlh != null) rlh.setTextColor(secColor);
         TextView mfh = findViewById(R.id.manage_foreign_hint);
         if (mfh != null) mfh.setTextColor(secColor);
         TextView sbh = findViewById(R.id.space_badge_hint);

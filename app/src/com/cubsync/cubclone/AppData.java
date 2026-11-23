@@ -923,12 +923,50 @@ public final class AppData {
     }
 
     /**
-     * 这个空间里这个包现在有没有进程在跑：`ps` 的 USER 列是 u&lt;空间&gt;_a&lt;n&gt;，
-     * 只认本空间前缀，别的空间里的同名进程不算。多开进程（`包名:push`）也算在跑。
+     * 备份前「正在用」的快照，元素是 `user/pkg`。
+     *
+     * 判据是**进程活着 且 有 ActivityRecord**，两条都占才算。只判进程会把推送/自启
+     * 常驻的后台应用也圈进来（微信、支付宝这类带一堆 `:push` 子进程），备份完一开就是
+     * 十几个界面乱跳；加上界面记录这一层，才对得上用户眼里「我刚才打开过它」。
+     *
+     * @return 空集表示一个都不用重开（含提权不可用）
      */
-    static boolean isRunning(int user, String pkg) {
-        String out = Shell.exec("ps -A -o USER,NAME 2>/dev/null | grep -w '" + pkg + "'");
-        return out.contains("u" + user + "_");
+    static java.util.Set<String> liveApps() {
+        java.util.Set<String> live = new java.util.HashSet<String>();
+        java.util.Set<String> proc = new java.util.HashSet<String>();
+        for (String ln : Shell.exec("ps -A -o USER,NAME 2>/dev/null").split("\n")) {
+            String[] c = ln.trim().split("\\s+");
+            if (c.length < 2) continue;
+            int u = spaceOf(c[0]);                    // u999_a212 → 999
+            if (u < 0) continue;
+            String n = c[1];
+            int i = n.indexOf(':');                   // 多开进程 com.x.y:push 归一
+            proc.add(u + "/" + (i > 0 ? n.substring(0, i) : n));
+        }
+        if (proc.isEmpty()) return live;
+        for (String ln : Shell.exec("dumpsys activity activities 2>/dev/null"
+                + " | grep -oE 'ActivityRecord\\{[0-9a-f]+ u[0-9]+ [^/ ]+/'").split("\n")) {
+            int i = ln.indexOf(" u");
+            if (i < 0) continue;
+            String tail = ln.substring(i + 2);        // 999 com.x.y/
+            int sp = tail.indexOf(' ');
+            if (sp <= 0 || !tail.endsWith("/")) continue;
+            String key = tail.substring(0, sp) + "/" + tail.substring(sp + 1, tail.length() - 1);
+            if (proc.contains(key)) live.add(key);
+        }
+        return live;
+    }
+
+    /** `u999_a212` / `u0_i12` / `u10_system` → 999 / 0 / 10；认不出返回 -1 */
+    private static int spaceOf(String user) {
+        if (user == null || user.length() < 3 || user.charAt(0) != 'u') return -1;
+        int i = user.indexOf('_');
+        if (i < 2) return -1;
+        try {
+            return Integer.parseInt(user.substring(1, i));
+        } catch (Throwable t) {
+            return -1;
+        }
     }
 
 

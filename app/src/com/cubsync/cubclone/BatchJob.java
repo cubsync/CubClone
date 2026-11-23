@@ -187,6 +187,9 @@ public final class BatchJob {
         // 备份前会被停掉的应用，全部备份完再按原样依次拉起来
         final List<Row> relaunch = new ArrayList<Row>();
         final boolean relOn = !restore && sp(ctx).getBoolean("backup_relaunch", true);
+        // 快照只抓一次：进循环后应用会被 force-stop，边跑边判会把已经杀掉的全判成「没在跑」
+        final java.util.Set<String> live = relOn
+                ? AppData.liveApps() : java.util.Collections.<String>emptySet();
         try {
             Notify.progress(ctx, restore, 0, rows.size(), "", "");
             for (int i = 0; i < rows.size(); i++) {
@@ -205,7 +208,7 @@ public final class BatchJob {
                 Notify.progress(ctx, restore, done, rows.size(), head, labelOf(r.pkg));
 
                 final boolean self = AppData.isSelf(r.user, r.pkg);
-                if (relOn && !self && AppData.isRunning(r.user, r.pkg)) relaunch.add(r);
+                if (relOn && !self && live.contains(r.user + "/" + r.pkg)) relaunch.add(r);
                 Meter m = new Meter(restore ? null : AppData.backupBase(r.user, r.pkg));
                 m.begin();
                 AppData.Backup bk = restore ? AppData.fromPath(r.path) : null;

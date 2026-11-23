@@ -4,6 +4,7 @@
     <string name="clone_app_hint_title">Create clones to sign in with different accounts. Follow each app\'s terms of use to avoid account issues.</string>
     <string name="no_clone_app_title">No cloned apps yet</string>
     <string name="no_clone_app_hint">Turn on "Show all clonable apps" above, then tap "Create clone" on an app.</string>
+    <string name="no_clone_in_tab">No clones in this tab</string>
     <string name="button_create_clone">Create clone</string>
     <string name="edit_clone_name">Rename clone</string>
     <string name="delete_clone">Delete clone</string>
@@ -142,7 +143,7 @@ Owner data is not touched.</string>
     <string name="save">Save</string>
     <string name="label_manage_foreign">Manage other clone spaces</string>
     <string name="label_backup_relaunch">Reopen apps after backup</string>
-    <string name="hint_backup_relaunch">Backing up stops the app first; when on, apps that were running are reopened one by one after all backups finish. On by default</string>
+    <string name="hint_backup_relaunch">Backup stops apps first; when on, apps that were in use before the backup are reopened one by one after all backups finish. On by default</string>
     <string name="hint_manage_foreign">When on, clone spaces not created by this app can be used as targets: create clones in them, back up/restore their data, and remove/disable apps inside; off by default</string>
     <string name="space_foreign_tag">external</string>
     <string name="space_renamed_synced">Renamed; system name synced</string>

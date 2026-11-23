@@ -4,6 +4,7 @@
     <string name="clone_app_hint_title">应用创建分身以登录不同账号。为避免账号异常，使用分身时请遵循各应用使用规范。</string>
     <string name="no_clone_app_title">还没有分身应用</string>
     <string name="no_clone_app_hint">打开上面「显示全部可分身应用」，再给应用点「创建分身」。</string>
+    <string name="no_clone_in_tab">这个分类下还没有分身</string>
     <string name="button_create_clone">创建分身</string>
     <string name="edit_clone_name">重命名分身</string>
     <string name="delete_clone">删除分身</string>
@@ -142,7 +143,7 @@
     <string name="save">保存</string>
     <string name="label_manage_foreign">管理非自建空间</string>
     <string name="label_backup_relaunch">备份后恢复运行的应用</string>
-    <string name="hint_backup_relaunch">备份会先停止应用；开启后，全部备份做完再把刚才在运行的应用依次打开。默认开启</string>
+    <string name="hint_backup_relaunch">备份会先停止应用；开启后，全部备份做完再把备份前正在使用、被停掉的应用依次打开。默认开启</string>
     <string name="hint_manage_foreign">开启后，非本应用创建的克隆空间也能当目标：往里创建分身、备份/恢复数据，也可移除/禁用里面的应用；默认关闭</string>
     <string name="space_foreign_tag">非自建</string>
     <string name="rename_space">重命名</string>

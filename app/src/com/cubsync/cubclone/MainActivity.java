@@ -1004,14 +1004,38 @@ public class MainActivity extends Activity {
         }
 
         if (flatItems.isEmpty()) {
-            gridWrap.setVisibility(View.GONE);
-            emptyView.setVisibility(View.VISIBLE);
+            gridEmpty();
             return;
         }
         // 可视高度要等本帧布局完成才有，post 到下一帧铺格子
         gridWrap.post(new Runnable() {
             public void run() { buildGrid(); }
         });
+    }
+
+    /**
+     * 网格区没有格子可铺时的落法：最近打开和 tab 行都挂在这块滚动区里，
+     * 整块 GONE 会把它们一起带走（系统应用这类页签本来就常常是空的，看着就像最近打开丢了），
+     * 所以只要最近打开有内容就保留滚动区，只在格子位置放提示。
+     */
+    private void gridEmpty() {
+        if (recentShow() && refreshRecentHeader()) {
+            mountRecentHeader(recentHostGrid);
+            mountTabRow(gridOuter);
+            gridBox.removeAllViews();
+            TextView tv = new TextView(this);
+            tv.setText(R.string.no_clone_in_tab);
+            tv.setTextSize(14);
+            tv.setTextColor(Theme.sec(this));
+            tv.setGravity(android.view.Gravity.CENTER);
+            tv.setPadding(dp(24), dp(48), dp(24), dp(48));
+            gridBox.addView(tv);
+            gridWrap.setVisibility(View.VISIBLE);
+            emptyView.setVisibility(View.GONE);
+        } else {
+            gridWrap.setVisibility(View.GONE);
+            emptyView.setVisibility(View.VISIBLE);
+        }
     }
 
     /** 铺自绘网格：每行 effCols() 个格子，固定宽度左对齐（最后一行不满也靠左，跟启动器一致） */

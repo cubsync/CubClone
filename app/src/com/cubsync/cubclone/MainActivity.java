@@ -124,25 +124,15 @@ public class MainActivity extends Activity {
     private TextView multiCount;
     private android.widget.Button btnSelectAll, btnInvert, btnAdd, btnRemove;
 
-    /** 图标缓存：LruCache 按像素内存上限 24MB，防几百个图标无上限撑爆内存（启动器同款做法） */
+    /**
+     * 图标缓存：只存「系统给的 Drawable」，按个数限量（150 个）。
+     * 不再生成 44dp 位图 —— 同一应用的图标在 N 个空间里共用同一个 Drawable 实例，
+     * 上千应用 × 十几个空间也只占这一份，内存不随分身数增长。
+     */
     private final android.util.LruCache<String, Drawable> iconCache =
-            new android.util.LruCache<String, Drawable>(24 * 1024 * 1024) {
-                @Override
-                protected int sizeOf(String key, Drawable value) {
-                    int w = value.getIntrinsicWidth(), h = value.getIntrinsicHeight();
-                    return (w > 0 && h > 0) ? w * h * 4 : 44 * 44 * 4;   // ARGB_8888 每像素 4 字节
-                }
-            };
+            new android.util.LruCache<String, Drawable>(150);
     private final Map<String, String> labelCache = new HashMap<String, String>();
-    /** 最终 44dp 位图缓存（含角标合成结果）：render 全量重建时直接 setImageBitmap，不再每帧 Canvas 重画 */
-    private final android.util.LruCache<String, Bitmap> iconBitmapCache =
-            new android.util.LruCache<String, Bitmap>(16 * 1024 * 1024) {
-                @Override
-                protected int sizeOf(String key, Bitmap value) {
-                    return value.getByteCount();
-                }
-            };
-    /** 图标异步懒加载：单线程加载器，任务内部先查缓存（启动器式：首屏不阻塞，图标后台渐显） */
+    /** 图标异步加载：只做 Binder 取图标（毫秒级），绘制交给系统 RenderThread，后台线程不碰 Canvas */
     private final java.util.concurrent.ExecutorService iconLoader =
             java.util.concurrent.Executors.newSingleThreadExecutor();
     /** 只认第三方应用：分身用户里天然带着一堆系统应用 */
@@ -228,6 +218,9 @@ public class MainActivity extends Activity {
             public void onClick(View v) { switchTab(1); }
         });
         listOuter.addView(tabRow, 1);   // 挂滚动内容顶部（recent_host 之后、列表之前），随滑动滚走/回顶
+
+        // 先按上次结果铺出来（不碰 shell、不查 PackageManager），真实数据后台扫完再替换
+        loadSnapshot();
 
         Shizuku.addRequestPermissionResultListener(onShizukuResult);
 
@@ -738,21 +731,142 @@ public class MainActivity extends Activity {
             String pkg = ri.activityInfo.packageName;
             if (pkg.equals(getPackageName())) continue;
             labelCache.put(pkg, String.valueOf(ri.loadLabel(pm)));   // 真名，别用包名占位（否则首屏闪包名）
-            try {
-                ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
-                if ((ai.flags & (ApplicationInfo.FLAG_SYSTEM
-                        | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) == 0) {
-                    userApps.add(pkg);
-                    CloneStore.THIRD.add(pkg);
-                } else {
-                    sysApps.add(pkg);
-                }
-            } catch (Throwable ignored) {
+            // flags 直接从 ResolveInfo 里取：以前每个包再发一次 getApplicationInfo 的 Binder 调用，
+            // 几百个包就是几百次跨进程往返（实测 400ms+），这里一次都不用
+            int flags = ri.activityInfo.applicationInfo != null
+                    ? ri.activityInfo.applicationInfo.flags : 0;
+            if ((flags & (ApplicationInfo.FLAG_SYSTEM
+                    | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) == 0) {
+                userApps.add(pkg);
+                CloneStore.THIRD.add(pkg);
+            } else {
+                sysApps.add(pkg);
             }
         }
     }
 
     // ---------------- 数据 ----------------
+
+    /**
+     * 上次刷新结果的快照（应用名 / 空间 / 哪个应用在哪个空间）。
+     *
+     * 秒开的关键不是把扫描做快，而是**进页面根本不等扫描**：进程一起来就按快照铺列表，
+     * 真实数据在后台扫（实测扫描 0.7s、应用名 0.4s，加起来 1 秒多），扫完再替换。
+     * 几百上千个应用也只是几万行文本，读一遍几十毫秒。
+     */
+    private static final String SNAP = "app-snapshot.txt";
+
+    private void saveSnapshot(List<Group> got) {
+        StringBuilder sb = new StringBuilder(32 * 1024);
+        for (Map.Entry<String, String> e : labelCache.entrySet()) {
+            String lb = e.getValue();
+            if (lb == null) continue;
+            sb.append("A ").append(sysApps.contains(e.getKey()) ? 1 : 0).append(' ')
+                    .append(e.getKey()).append(' ').append(escapeln(lb)).append('\n');
+        }
+        for (Group g : got) {
+            for (Clone c : g.clones) {
+                sb.append("C ").append(c.uid).append(' ').append(c.off ? 1 : 0).append(' ')
+                        .append(c.foreign ? 1 : 0).append(' ').append(g.pkg).append('\n');
+            }
+        }
+        if (sb.length() == 0) return;
+        try {
+            java.io.File f = new java.io.File(getFilesDir(), SNAP);
+            java.io.File tmp = new java.io.File(getFilesDir(), SNAP + ".tmp");
+            java.io.FileOutputStream fo = new java.io.FileOutputStream(tmp);
+            fo.write(sb.toString().getBytes("UTF-8"));
+            fo.close();
+            tmp.renameTo(f);      // 先写临时文件再改名：写一半被杀不会留个坏快照
+        } catch (Throwable t) {
+            android.util.Log.w("CubClone", "save snapshot: " + t);
+        }
+    }
+
+    private static String escapeln(String s) {
+        return s.indexOf('\n') < 0 && s.indexOf('\r') < 0 ? s
+                : s.replace('\n', ' ').replace('\r', ' ');
+    }
+
+    /** 按快照铺一遍列表；没有快照（首次安装）返回 false，走原来的「等扫描」路径 */
+    private boolean loadSnapshot() {
+        long t0 = android.os.SystemClock.uptimeMillis();
+        java.io.File f = new java.io.File(getFilesDir(), SNAP);
+        if (!f.exists() || f.length() == 0) return false;
+        List<Group> got = new ArrayList<Group>();
+        Map<String, Group> byPkg = new HashMap<String, Group>();
+        userApps.clear();
+        sysApps.clear();
+        labelCache.clear();
+        allClones.clear();
+        try {
+            java.io.BufferedReader r = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(new java.io.FileInputStream(f), "UTF-8"));
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.startsWith("A ")) {
+                    // A <sys> <pkg> <label...>   （sys 只有一位，pkg 从第 4 个字符开始）
+                    int a = line.indexOf(' ', 4);
+                    if (a < 0) continue;
+                    String pkg = line.substring(4, a);
+                    String lb = line.substring(a + 1);
+                    labelCache.put(pkg, lb);
+                    if (line.charAt(2) == '1') sysApps.add(pkg);
+                    else { userApps.add(pkg); CloneStore.THIRD.add(pkg); }
+                } else if (line.startsWith("C ")) {
+                    // C <uid> <off> <foreign> <pkg>
+                    String[] p = line.split(" ", 5);
+                    if (p.length < 5) continue;
+                    int uid = Integer.parseInt(p[1]);
+                    Clone c = new Clone();
+                    c.uid = uid;
+                    c.profile = "space";
+                    c.off = "1".equals(p[2]);
+                    c.foreign = "1".equals(p[3]);
+                    String pkg = p[4];
+                    allClones.put(uid + ":" + pkg, c);
+                    Group g = byPkg.get(pkg);
+                    if (g == null) {
+                        g = new Group();
+                        g.pkg = pkg;
+                        g.label = labelCache.get(pkg);
+                        if (g.label == null) g.label = pkg;
+                        byPkg.put(pkg, g);
+                        got.add(g);
+                    }
+                    g.clones.add(c);
+                }
+            }
+            r.close();
+        } catch (Throwable t) {
+            android.util.Log.w("CubClone", "load snapshot: " + t);
+            return false;
+        }
+        if (got.isEmpty() && labelCache.isEmpty()) return false;
+        // 快照只是缓存：真实的应用清单必须重新读一遍，否则下一次保存会把快照越写越少
+        CloneStore.metaDirty = true;
+        // 快照里只有「有分身的应用」；没有分身的应用靠 labelCache + userApps 在 render 时补齐
+        for (Map.Entry<String, String> e : labelCache.entrySet()) {
+            if (byPkg.containsKey(e.getKey())) continue;
+            Group g = new Group();
+            g.pkg = e.getKey();
+            g.label = e.getValue();
+            got.add(g);
+        }
+        Collections.sort(got, new Comparator<Group>() {
+            public int compare(Group a, Group b) {
+                boolean ca = !a.clones.isEmpty(), cb = !b.clones.isEmpty();
+                if (ca != cb) return ca ? -1 : 1;
+                return a.label.compareToIgnoreCase(b.label);
+            }
+        });
+        groups.clear();
+        groups.addAll(got);
+        render();
+        android.util.Log.i("CubClone", "snapshot rows=" + groups.size() + " take="
+                + (android.os.SystemClock.uptimeMillis() - t0) + "ms");
+        return true;
+    }
 
     /** 顶栏刷新按钮：重扫空间状态；主身份应用清单靠包变更广播增量更新，不在这里暴力重载 */
     private void refreshNow() {
@@ -782,6 +896,7 @@ public class MainActivity extends Activity {
         CloneStore.dirty = false;
         new Thread(new Runnable() {
             public void run() {
+                long t0 = android.os.SystemClock.uptimeMillis();
                 // 先读一遍空间归属标记（空间归属标记）：不读就等于把所有空间当外人
                 CloneStore.ensureMarks();
                 // onResume 可能比 onCreate 的后台加载跑得还早，没元信息就什么都匹配不上
@@ -789,10 +904,13 @@ public class MainActivity extends Activity {
                     CloneStore.metaDirty = false;
                     loadAppMetaQuick();   // 只分类+真实名字，图标走异步懒加载
                 }
+                long t1 = android.os.SystemClock.uptimeMillis();
                 // 全量扫描（用户+系统两个页签都含），切 tab 只 render 不重扫；tab 过滤放 render 层
                 final Set<String> scope = new HashSet<String>(userApps);
                 scope.addAll(sysApps);
                 String out = Shell.exec(CloneStore.listBatch(MainActivity.this));
+                long t2 = android.os.SystemClock.uptimeMillis();
+                android.util.Log.i("CubClone", "refresh meta=" + (t1 - t0) + "ms scan=" + (t2 - t1) + "ms");
                 Set<Integer> alive = new LinkedHashSet<Integer>();
                 for (String line : out.split("\\n")) {
                     String t = line.trim();
@@ -870,6 +988,7 @@ public class MainActivity extends Activity {
                         return a.label.compareToIgnoreCase(b.label);
                     }
                 });
+                saveSnapshot(got);   // 存一份，下次进页面先按它铺（秒开）
 
                 runOnUiThread(new Runnable() {
                     public void run() {
@@ -1074,18 +1193,17 @@ public class MainActivity extends Activity {
     /** 一个格子的内容与交互（点开 / 长按出菜单） */
     private void bindCell(View v, final FlatItem it) {
         final Group g = it.g;
-        ImageView icon = v.findViewById(R.id.grid_icon);
+        View icon = v.findViewById(R.id.grid_icon);
         TextView name = v.findViewById(R.id.grid_name);
-        boolean dark = isNight();
         int nameColor = Theme.fg(this);
         if (it.c == null) {
-            setIconAsync(icon, g.pkg, 0);
+            setIcon(icon, g.pkg, 0);
             name.setText(g.label);
             name.setTextColor(nameColor);
             icon.setAlpha(1f);
         } else {
             final Clone c = it.c;
-            setIconAsync(icon, g.pkg, c.uid);
+            setIcon(icon, g.pkg, c.uid);
             String nm = g.label + suffixOf(c.uid, g.pkg, it.idx);
             if (c.off) {
                 nm = nm + " · " + getString(R.string.clone_hidden);
@@ -1125,6 +1243,7 @@ public class MainActivity extends Activity {
     }
 
     private void render() {
+        long renderT0 = android.os.SystemClock.uptimeMillis();
         if (gridMode()) {
             renderGrid();
             return;
@@ -1184,8 +1303,8 @@ public class MainActivity extends Activity {
             // 第一行：主身份那份 + 「创建分身」
             View base = inf.inflate(R.layout.item_clone_base, card, false);
             ripple(base);
-            ImageView bi = base.findViewById(R.id.base_icon);
-            setIconAsync(bi, g.pkg, 0);
+            View bi = base.findViewById(R.id.base_icon);
+            setIcon(bi, g.pkg, 0);
             ((TextView) base.findViewById(R.id.base_name)).setText(g.label);
             ((TextView) base.findViewById(R.id.base_name)).setTextColor(nameColor);
             final android.widget.CheckBox baseCheck = base.findViewById(R.id.base_check);
@@ -1233,8 +1352,8 @@ public class MainActivity extends Activity {
                 if (CloneStore.isHidden(c.uid, g.pkg)) continue;   // 隐藏的分身不显示（主应用仍在）
                 View row = inf.inflate(R.layout.item_clone_child, card, false);
                 ripple(row);
-                ImageView ci = row.findViewById(R.id.clone_icon);
-                setIconAsync(ci, g.pkg, c.uid);
+                View ci = row.findViewById(R.id.clone_icon);
+                setIcon(ci, g.pkg, c.uid);
                 TextView cn = row.findViewById(R.id.clone_name);
                 String nm = g.label + suffixOf(c.uid, g.pkg, i);
                 if (c.off) {
@@ -1321,6 +1440,8 @@ public class MainActivity extends Activity {
             listBox.addView(tv);
         }
         if (multi) updateCount();
+        android.util.Log.i("CubClone", "render rows=" + shown + " take="
+                + (android.os.SystemClock.uptimeMillis() - renderT0) + "ms");
     }
 
     /** 多选计数 */
@@ -1467,64 +1588,37 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    /** 在应用图标右下角画一个彩色小方块，里面写空间序号（对应「空间 N」）当分身标记 */
-    private Bitmap badge(Drawable base, int uid) {
-        int size = dp(44);
-        Bitmap bm = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
-        Canvas c = new Canvas(bm);
-        base.setBounds(0, 0, size, size);
-        base.draw(c);
-        int bw = size / 3;
-        int no = CloneStore.spaceIndex(uid);        // 空间序号（只用于取色，同空间同色）；foreign 为 0
-        String txt = String.valueOf(uid);           // 显示系统 uid，和其他应用（LSP/数据备份）对得上
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setColor(BADGE[(no > 0 ? no - 1 : uid) % BADGE.length]);
-        float r = bw / 5f;
-        c.drawRoundRect(size - bw, size - bw, size, size, r, r, p);
-        // 序号居中画在方块里；字号按位数自适应，两位数也不会溢出
-        p.setColor(Theme.ON_BADGE);
-        p.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
-        p.setTextAlign(Paint.Align.CENTER);
-        p.setTextSize(txt.length() > 1 ? bw * 0.52f : bw * 0.66f);
-        Paint.FontMetrics fm = p.getFontMetrics();
-        float cy = size - bw / 2f - (fm.ascent + fm.descent) / 2f;
-        c.drawText(txt, size - bw / 2f, cy, p);
-        return bm;
-    }
-
     /**
-     * 主身份图标：和 badge() 同一画法（画满 44dp 位图）但**不画角标**。
-     * 直接 setImageDrawable 的话走 fitCenter 按原始 intrinsic 缩放，和 badge 的
-     * 强制画满不是一条路径 —— 同一个图标主身份显示的会比分身小一圈（esp 实测：
-     * AnyDesk 主 63px vs 分身 99px，用户看到的「图标缩小」就是这个）。
+     * 图标：系统 Drawable 直接交给 ImageView，我们一行都不画。
+     *
+     * 以前为了把空间编号烙进图标，把整张图标在后台画成 44dp 位图；一旦某个矢量图标在
+     * 软件 Canvas 上死循环（实锤：8A 上 VectorDrawable.draw 卡住 352s CPU），单线程队列
+     * 被堵死，后面所有图标永远不出现、还占满一个核。改成「图标归系统画、编号用独立 View 叠」：
+     * 不绘制、不死循环、不随分身数生成位图。
      */
-    private Bitmap plainIcon(Drawable base) {
-        int size = dp(44);
-        Bitmap bm = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
-        Canvas c = new Canvas(bm);
-        base.setBounds(0, 0, size, size);
-        base.draw(c);
-        return bm;
-    }
-
-    /** 统一画图标：uid==0 主应用 / 关角标的分身 → plainIcon（画满 44dp，不缩小）；分身开角标 → badge */
-
-    /** 异步懒加载图标（启动器式）：先查「最终位图」缓存直接画，没才后台 loadIcon + 合成，首屏不阻塞 */
-    private void setIconAsync(final ImageView iv, final String pkg, final int uid) {
-        final boolean badge = uid > 0 && sp().getBoolean("space_badge", true);
-        final String key = pkg + "|" + (badge ? uid : 0);
-        Bitmap bm = iconBitmapCache.get(key);
-        if (bm != null) { iv.setImageBitmap(bm); return; }
-        Drawable d = iconCache.get(pkg);
-        if (d != null) {
-            bm = badge ? badge(d, uid) : plainIcon(d);
-            iconBitmapCache.put(key, bm);
-            iv.setImageBitmap(bm);
-            return;
+    private void setIcon(final View host, final String pkg, final int uid) {
+        final ImageView iv = (ImageView) host.findViewById(R.id.icon_img);
+        final TextView bd = (TextView) host.findViewById(R.id.icon_badge);
+        if (uid > 0 && sp().getBoolean("space_badge", true)) {
+            int no = CloneStore.spaceIndex(uid);        // 空间序号（只用于取色，同空间同色）；foreign 为 0
+            String txt = String.valueOf(uid);           // 显示系统 uid，和其他应用（LSP/数据备份）对得上
+            android.graphics.drawable.GradientDrawable gd =
+                    new android.graphics.drawable.GradientDrawable();
+            gd.setColor(BADGE[(no > 0 ? no - 1 : uid) % BADGE.length]);
+            gd.setCornerRadius(dp(13) / 5f);
+            bd.setBackground(gd);
+            bd.setText(txt);
+            bd.setTextColor(Theme.ON_BADGE);
+            bd.setTextSize(txt.length() > 2 ? 7f : 9f);   // 三位数（如 999）也塞得下
+            bd.setVisibility(View.VISIBLE);
+        } else {
+            bd.setVisibility(View.GONE);
         }
+        Drawable d = iconCache.get(pkg);
+        if (d != null) { iv.setImageDrawable(d); return; }
         iv.setImageDrawable(null);
-        // 不去重：每个 ImageView 都提交任务，任务内部先查缓存——否则刷新重建后，
-        // 新 ImageView 会被「正在加载」去重挡掉，回调又更新的是旧 ImageView，图标就丢了
+        // 不去重：每个图标位都提交任务，任务内部先查缓存——否则刷新重建后，
+        // 新图标位会被「正在加载」去重挡掉，回调又更新的是旧控件，图标就丢了
         iconLoader.execute(new Runnable() {
             public void run() {
                 Drawable dd = iconCache.get(pkg);   // 可能已被前面的任务填了
@@ -1533,19 +1627,22 @@ public class MainActivity extends Activity {
                     if (dd != null) iconCache.put(pkg, dd);
                 }
                 if (dd == null) return;
-                Bitmap bb = iconBitmapCache.get(key);
-                if (bb == null) {
-                    bb = badge ? badge(dd, uid) : plainIcon(dd);
-                    iconBitmapCache.put(key, bb);
-                }
-                final Bitmap fb = bb;
+                final Drawable fd = dd;
                 runOnUiThread(new Runnable() {
-                    public void run() { iv.setImageBitmap(fb); }
+                    public void run() { iv.setImageDrawable(fd); }
                 });
             }
         });
     }
 
+    /**
+     * 图标原样返回：系统给什么就显示什么。
+     *
+     * 这里试过「放大 1.5 倍去掉自适应图标的透明出血 + 按系统蒙版裁形状」，
+     * 结果是圆形/方形/椭圆混在一起、有的还被裁掉一截 —— 各家图标本身形态就不同，
+     * 统一套一个蒙版只会更乱。原版就是原尺寸显示（44dp 位图里画满 108dp 画布），
+     * 等价于这里把 Drawable 直接交给 ImageView：同一应用的图标在多少个空间里都长一样。
+     */
     private int dp(int v) {
         return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v,
                 getResources().getDisplayMetrics());
@@ -2425,11 +2522,13 @@ public class MainActivity extends Activity {
             item.setLayoutParams(new LinearLayout.LayoutParams(itemW,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
             item.setPadding(itemPadX, dp(4), itemPadX, 0);
-            ImageView iv = new ImageView(this);
-            setIconAsync(iv, pkg, uid);
-            iv.setLayoutParams(new LinearLayout.LayoutParams(iconSz, iconSz));
-            if (off) iv.setAlpha(0.4f);
-            item.addView(iv);
+            View iconHost = android.view.LayoutInflater.from(this)
+                    .inflate(R.layout.view_app_icon, item, false);
+            setIcon(iconHost, pkg, uid);
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(iconSz, iconSz);
+            iconHost.setLayoutParams(ilp);
+            if (off) iconHost.setAlpha(0.4f);
+            item.addView(iconHost);
             TextView tv = new TextView(this);
             tv.setText(label);
             tv.setTextSize(11);

@@ -195,21 +195,26 @@ public final class CloneStore {
     private static final String SCAN =
             "RM=\" $(dumpsys user 2>/dev/null"
             + " | sed -n 's/.*UserInfo{\\([0-9]*\\):.*<removing>.*/\\1/p' | tr '\\n' ' ') \"; "
+            // 每个空间的三条 pm 查询并行跑（各写各的临时文件，最后 cat）。
+            // 以前串行：六个空间 = 18 次跨进程查询首尾相接，实测 1.6s；并起来只花最慢那个的时间。
+            + "SD=/data/local/tmp/cubclone-scan.$$; rm -rf $SD; mkdir -p $SD; "
             + "cmd user list --all -v 2>/dev/null"
-            + " | grep -E 'type=(profile[.]CLONE|full[.]SECONDARY)' | while read -r ln; do "
+            + " | grep -E 'type=(profile[.]CLONE|full[.]SECONDARY)' | { while read -r ln; do "
             + "u=$(echo \"$ln\" | sed -n 's/^[0-9]*: id=\\([0-9]*\\),.*/\\1/p'); "
             + "case \"$RM\" in *\" $u \"*) continue;; esac; "
             // 普通用户（full.SECONDARY）只有带我们归属标记的才算空间：
             // 系统里自己建的「访客/第二用户」不能被当成分身显示
             + "case \"$ln\" in *type=profile[.]CLONE*) ;; "
             + "*) case \" $OURS \" in *\" $u \"*) ;; *) continue;; esac;; esac; "
-            + "case \" $OURS \" in *\" $u \"*) echo \"SPACE $u\"; t=ICO;; "
+            + "( case \" $OURS \" in *\" $u \"*) echo \"SPACE $u\"; t=ICO;; "
             + "*) echo \"FSPACE $u\"; t=EXT;; esac; "
             + "pm list packages -e --user $u | sed \"s/^package:/PKG $u /\"; "
             + "pm list packages -d --user $u | sed \"s/^package:/OFF $u /\"; "
             + "cmd package query-activities --user $u"
             + " -a android.intent.action.MAIN -c android.intent.category.LAUNCHER"
-            + " | sed -n \"s/.*packageName=\\([^ ]*\\).*/$t $u \\1/p\" | sort -u; done; ";
+            + " | sed -n \"s/.*packageName=\\([^ ]*\\).*/$t $u \\1/p\" | sort -u"
+            + " ) > $SD/$u.txt & done; wait; }; "
+            + "cat $SD/*.txt 2>/dev/null; rm -rf $SD; ";
 
     /** 拼上「我们建的空间」清单再跑 SCAN */
     static String listBatch(Context c) {

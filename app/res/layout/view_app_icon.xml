@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 一个图标位：系统图标 + 右下角空间编号。
+     图标本体由系统 Drawable 直接绘制（不自己画位图）；编号是独立的小 TextView，
+     这样同一应用在 N 个空间里共用同一个 Drawable，上千应用也不会多出位图。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="40dp"
+    android:layout_height="40dp">
+
+    <ImageView
+        android:id="@+id/icon_img"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerInside"
+        android:contentDescription="@null" />
+
+    <TextView
+        android:id="@+id/icon_badge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:gravity="center"
+        android:minWidth="13dp"
+        android:minHeight="13dp"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp"
+        android:includeFontPadding="false"
+        android:textSize="9sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+</FrameLayout>

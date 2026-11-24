@@ -17,12 +17,11 @@
         android:clickable="false"
         android:focusable="false" />
 
-    <ImageView
+    <include
         android:id="@+id/base_icon"
+        layout="@layout/view_app_icon"
         android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:scaleType="centerInside"
-        android:contentDescription="@null" />
+        android:layout_height="40dp" />
 
     <TextView
         android:id="@+id/base_name"

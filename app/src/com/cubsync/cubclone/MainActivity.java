@@ -61,10 +61,8 @@ public class MainActivity extends Activity {
     private static final Pattern ROW =
             Pattern.compile("CLONE\\s+UserInfo\\{(\\d+):([^:]*):");
 
-    /** 分身角标配色，按序号轮换 */
-    private static final int[] BADGE = {
-            0xFF34A853, 0xFFEA8600, 0xFF9334E6, 0xFF1A73E8, 0xFFE52592
-    };
+    /** 分身角标配色在 Theme.BADGE，按序号轮换 */
+    private static final int[] BADGE = Theme.BADGE;
 
     static final class Clone {
         int uid;
@@ -418,9 +416,9 @@ public class MainActivity extends Activity {
     private void applyChrome() {
         boolean dark = isNight();
         boolean black = isBlack();
-        int bg = black ? 0xFF000000 : (dark ? 0xFF121317 : 0xFFFDFDFE);
-        int fg = dark ? 0xFFEDEDED : 0xFF1B1B1F;
-        int sec = black ? 0xFF8A8F96 : (dark ? 0xFF9AA0A6 : 0xFF5F6368);
+        int bg = Theme.bg(this);
+        int fg = Theme.fg(this);
+        int sec = Theme.sec(this);
 
         findViewById(R.id.root).setBackgroundColor(bg);
         findViewById(R.id.header).setBackgroundColor(bg);
@@ -434,7 +432,7 @@ public class MainActivity extends Activity {
         if (btnScope != null) {
             // 漏斗高亮＝正在过滤（只看开过分身的）；显示全部时不亮
             boolean filtering = !sp().getBoolean("show_all", false);
-            btnScope.setColorFilter(filtering ? (dark ? 0xFFA8C7FA : 0xFF0B57D0) : fg);
+            btnScope.setColorFilter(filtering ? Theme.accent(this) : fg);
         }
         if (btnRefresh != null) btnRefresh.setColorFilter(fg);
         if (btnSettings != null) btnSettings.setColorFilter(fg);
@@ -635,8 +633,8 @@ public class MainActivity extends Activity {
 
     private void applyTabs() {
         if (tabUserText == null) return;
-        int accent = isNight() ? 0xFFA8C7FA : 0xFF0B57D0;
-        int idle = isNight() ? 0xFF9AA0A6 : 0xFF5F6368;
+        int accent = Theme.accent(this);
+        int idle = Theme.sec(this);
         boolean u = tab == 0;
         tabUserText.setTextColor(u ? accent : idle);
         tabSysText.setTextColor(u ? idle : accent);
@@ -891,18 +889,14 @@ public class MainActivity extends Activity {
     // ---------------- 渲染 ----------------
 
     /** 当前是否深色。以用户选的模式为准，系统夜间模式兜底；黑色也算深色 */
+    /** 主题判断只走 Theme（1=深、2=浅） */
     private boolean isNight() {
-        int t = sp().getInt("theme", THEME_AUTO);
-        if (t == THEME_DARK) return true;
-        if (t == THEME_LIGHT) return false;
-        return (getResources().getConfiguration().uiMode
-                & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        return Theme.isNight(this);
     }
 
     /** 纯黑（AMOLED）：只在深色模式下生效 */
     private boolean isBlack() {
-        return isNight() && sp().getBoolean("amoled", false);
+        return Theme.isBlack(this);
     }
 
     // ---------------- 网格（启动器式） ----------------
@@ -1083,7 +1077,7 @@ public class MainActivity extends Activity {
         ImageView icon = v.findViewById(R.id.grid_icon);
         TextView name = v.findViewById(R.id.grid_name);
         boolean dark = isNight();
-        int nameColor = dark ? 0xFFEDEDED : 0xFF1B1B1F;
+        int nameColor = Theme.fg(this);
         if (it.c == null) {
             setIconAsync(icon, g.pkg, 0);
             name.setText(g.label);
@@ -1095,7 +1089,7 @@ public class MainActivity extends Activity {
             String nm = g.label + suffixOf(c.uid, g.pkg, it.idx);
             if (c.off) {
                 nm = nm + " · " + getString(R.string.clone_hidden);
-                name.setTextColor(dark ? 0xFF7A7A7A : 0xFFA0A0A0);
+                name.setTextColor(Theme.dim(this));
                 icon.setAlpha(0.4f);
             } else {
                 name.setTextColor(nameColor);
@@ -1158,10 +1152,10 @@ public class MainActivity extends Activity {
         boolean showAll = sp().getBoolean("show_all", false);
         final boolean dark = isNight();
         final boolean black = isBlack();
-        final int cardColor = black ? 0xFF0C0C0C : (dark ? 0xFF1E1F22 : 0xFFF3F3F6);
-        final int btnBg = black ? 0xFF16283D : (dark ? 0xFF1F3A5F : 0xFFD3E3FD);
-        final int btnText = dark ? 0xFFA8C7FA : 0xFF0B57D0;
-        final int nameColor = dark ? 0xFFEDEDED : 0xFF1B1B1F;
+        final int cardColor = Theme.card(this);
+        final int btnBg = Theme.chipBg(this);
+        final int btnText = Theme.chipFg(this);
+        final int nameColor = Theme.fg(this);
         int shown = 0;
         for (final Group g : groups) {
             // 页签过滤：用户页签显示 userApps 或「主身份认不出」的包，系统页签显示 sysApps
@@ -1247,7 +1241,7 @@ public class MainActivity extends Activity {
                     // 被隐藏的分身仍在列表里，只是灰掉 —— 免得用户以为它消失了，
                     // 也留一条「长按启用」的路（万一那个系统应用其实还需要）
                     nm = nm + " · " + getString(R.string.clone_hidden);
-                    cn.setTextColor(dark ? 0xFF7A7A7A : 0xFFA0A0A0);
+                    cn.setTextColor(Theme.dim(this));
                     ci.setAlpha(0.4f);
                 } else {
                     cn.setTextColor(nameColor);
@@ -1284,7 +1278,7 @@ public class MainActivity extends Activity {
                     row.findViewById(R.id.clone_rename).setVisibility(View.GONE);
                     row.findViewById(R.id.clone_delete).setVisibility(View.GONE);
                 }
-                int iconTint = dark ? 0xFF9AA0A6 : 0xFF5F6368;
+                int iconTint = Theme.sec(this);
                 for (int rid : new int[]{R.id.clone_pin, R.id.clone_open,
                         R.id.clone_rename, R.id.clone_delete}) {
                     ImageView iv = row.findViewById(rid);
@@ -1321,7 +1315,7 @@ public class MainActivity extends Activity {
             else t = getString(R.string.empty_no_app);
             tv.setText(t);
             tv.setTextSize(14);
-            tv.setTextColor(0xFF888888);
+            tv.setTextColor(Theme.dim(this));
             tv.setGravity(android.view.Gravity.CENTER);
             tv.setPadding(0, dp(60), 0, 0);
             listBox.addView(tv);
@@ -1488,7 +1482,7 @@ public class MainActivity extends Activity {
         float r = bw / 5f;
         c.drawRoundRect(size - bw, size - bw, size, size, r, r, p);
         // 序号居中画在方块里；字号按位数自适应，两位数也不会溢出
-        p.setColor(0xFFFFFFFF);
+        p.setColor(Theme.ON_BADGE);
         p.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(txt.length() > 1 ? bw * 0.52f : bw * 0.66f);
@@ -2367,8 +2361,8 @@ public class MainActivity extends Activity {
         if (recentHeader == null) return false;
         recentRow.removeAllViews();
         boolean dark = isNight();
-        int nameColor = dark ? 0xFFEDEDED : 0xFF1B1B1F;
-        recentTitle.setTextColor(dark ? 0xFF9AA0A6 : 0xFF5F6368);
+        int nameColor = Theme.fg(this);
+        recentTitle.setTextColor(Theme.sec(this));
 
         // 收集仍存在的条目：uid=0 是打开过的主应用，>0 反查 allClones 的分身
         List<Integer> uids = new ArrayList<Integer>();
@@ -2439,7 +2433,7 @@ public class MainActivity extends Activity {
             TextView tv = new TextView(this);
             tv.setText(label);
             tv.setTextSize(11);
-            tv.setTextColor(off ? (dark ? 0xFF7A7A7A : 0xFFA0A0A0) : nameColor);
+            tv.setTextColor(off ? Theme.dim(this) : nameColor);
             tv.setSingleLine(true);
             tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
             tv.setGravity(android.view.Gravity.CENTER);
@@ -2771,7 +2765,7 @@ public class MainActivity extends Activity {
             Bitmap bm = Bitmap.createBitmap(Math.round((1 + 2 * inset) * w),
                     Math.round((1 + 2 * inset) * h), Bitmap.Config.ARGB_8888);
             Canvas c = new Canvas(bm);
-            c.drawColor(0xFFFFFFFF);
+            c.drawColor(Theme.CANVAS_WHITE);
             d.setBounds(Math.round(w * inset), Math.round(h * inset),
                     Math.round(w * (1 + inset)), Math.round(h * (1 + inset)));
             d.draw(c);

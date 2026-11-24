@@ -56,7 +56,7 @@ public class SettingsActivity extends Activity {
     private Switch swGridPrimary, swRecent;
     private TextView permRoot, permShizuku, allLabel, allHint, iconLabel, iconHint;
     private TextView spaceTitle, spaceLimit, aboutVer, aboutNote;
-    private TextView btnRecheck, btnShizuku, btnNewSpace, btnRefreshSpace;
+    private TextView btnRecheck, btnShizuku, btnNewSpace, btnRefreshSpace, btnManageSpaces;
     private LinearLayout spaceList;
     private TextView hiddenCount;
     private TextView imePickCount;
@@ -140,6 +140,12 @@ public class SettingsActivity extends Activity {
         btnShizuku = findViewById(R.id.btn_shizuku);
         btnNewSpace = findViewById(R.id.btn_new_space);
         btnRefreshSpace = findViewById(R.id.btn_refresh_space);
+        btnManageSpaces = findViewById(R.id.btn_manage_spaces);
+        btnManageSpaces.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                startActivity(new android.content.Intent(SettingsActivity.this, SpacesActivity.class));
+            }
+        });
         spaceList = findViewById(R.id.space_list);
         hiddenCount = findViewById(R.id.hidden_entry_count);
         imePickCount = findViewById(R.id.ime_pick_count);
@@ -330,28 +336,23 @@ public class SettingsActivity extends Activity {
         return getSharedPreferences("clone", MODE_PRIVATE);
     }
 
-    /** 纯黑（AMOLED）：只在深色模式下生效 */
+    /** 主题判断只走 Theme（1=深、2=浅），本页不再自己判一次 */
     private boolean isBlack() {
-        return isNight() && sp().getBoolean("amoled", false);
+        return Theme.isBlack(this);
     }
 
     private boolean isNight() {
-        int t = sp().getInt("theme", THEME_AUTO);
-        if (t == THEME_DARK) return true;
-        if (t == THEME_LIGHT) return false;
-        return (getResources().getConfiguration().uiMode
-                & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        return Theme.isNight(this);
     }
 
     private void applyChrome() {
         dark = isNight();
         boolean black = isBlack();
-        int bg = black ? 0xFF000000 : (dark ? 0xFF121317 : 0xFFFDFDFE);
-        fgColor = dark ? 0xFFEDEDED : 0xFF1B1B1F;
-        secColor = black ? 0xFF8A8F96 : (dark ? 0xFF9AA0A6 : 0xFF5F6368);
-        int card = black ? 0xFF0C0C0C : (dark ? 0xFF1E1F22 : 0xFFF3F3F6);
-        int line = black ? 0xFF1C1C1C : (dark ? 0xFF2C2D31 : 0xFFE3E3E8);
+        int bg = Theme.bg(this);
+        fgColor = Theme.fg(this);
+        secColor = Theme.sec(this);
+        int card = Theme.card(this);
+        int line = Theme.line(this);
 
         findViewById(R.id.root).setBackgroundColor(bg);
         findViewById(R.id.header).setBackgroundColor(bg);
@@ -362,7 +363,11 @@ public class SettingsActivity extends Activity {
                 allHint, spaceLimit, aboutNote, themeValue, langValue, iconHint,
                 gridColsValue, gridRowsValue, recentRowsValue, recentColsValue};
         for (TextView t : secs) if (t != null) t.setTextColor(secColor);
-        TextView[] mains = {themeLabel, langLabel, permRoot, permShizuku,
+        // 权限框：左边标签走正文色，右边的状态值由 showPermState 上色（绿/红），
+        // 所以状态 TextView 不进这个数组，否则换主题时会被刷回普通文字色。
+        TextView[] mains = {themeLabel, langLabel,
+                (TextView) findViewById(R.id.perm_root_label),
+                (TextView) findViewById(R.id.perm_shizuku_label),
                 allLabel, spaceTitle, aboutVer, iconLabel, amoledLabel,
                 gridColsLabel, gridRowsLabel, gridPrimaryLabel,
                 recentRowsLabel, recentColsLabel};
@@ -407,6 +412,7 @@ public class SettingsActivity extends Activity {
         }
         renderButtons();
         renderValues();
+        showPermState();
         try {
             getWindow().setStatusBarColor(bg);
         } catch (Throwable ignored) {
@@ -414,9 +420,9 @@ public class SettingsActivity extends Activity {
     }
 
     private void renderButtons() {
-        int bg = isBlack() ? 0xFF16283D : (dark ? 0xFF1F3A5F : 0xFFD3E3FD);
-        int fg = dark ? 0xFFA8C7FA : 0xFF0B57D0;
-        for (TextView t : new TextView[]{btnRecheck, btnShizuku, btnNewSpace, btnRefreshSpace}) {
+        int bg = Theme.chipBg(this);
+        int fg = Theme.chipFg(this);
+        for (TextView t : new TextView[]{btnRecheck, btnShizuku, btnNewSpace, btnRefreshSpace, btnManageSpaces}) {
             if (t.getBackground() != null) t.getBackground().setTint(bg);
             t.setTextColor(fg);
         }
@@ -701,11 +707,6 @@ public class SettingsActivity extends Activity {
      * 原写法是一个空间起一次 pm list、每个包再查一次 getApplicationInfo、两次 dumpsys user。
      */
     /** 空间列表命令：MainActivity 的 SCAN（带 $OURS 归属）+ 该用户类型的上限配置 */
-    private static String batch(Context c) {
-        return CloneStore.listBatch(c)
-                + "dumpsys user | sed -n '/android.os.usertype.profile.CLONE:/,/^$/p'";
-    }
-
     private int perParentCached = Integer.MIN_VALUE;
     private int maxAllCached = Integer.MIN_VALUE;
 
@@ -716,7 +717,6 @@ public class SettingsActivity extends Activity {
     private void loadSpaces() {
         if (loading) { pendingReload = true; return; }
         loading = true;
-        spaceList.removeAllViews();
         spaceLimit.setText(R.string.loading);
         if (!Shell.ready()) {
             spaceLimit.setText(R.string.need_perm);
@@ -726,63 +726,14 @@ public class SettingsActivity extends Activity {
 
         new Thread(new Runnable() {
             public void run() {
-                // 归属标记（空间归属标记）必须先读：listBatch 要用它分 SPACE/FSPACE
-                CloneStore.ensureMarks();
-                // 刷新系统名缓存：改名后（系统名变了）不刷这里，界面就还是旧名
-                CloneStore.listSpaceUids();
-                // 自愈：对我们建的分身，从未 start 过（没 INITIALIZED）就补一次。
-                // 只在打开/刷新时跑，不是后台常驻/定时任务。
-                for (Integer u : CloneStore.markedUids()) {
-                    CloneStore.startSpace(u.intValue());
-                }
-                String out = Shell.exec(batch(SettingsActivity.this));
-                android.util.Log.i("CubClone", "BATCH len=" + out.length() + " head="
-                        + (out.length() > 400 ? out.substring(0, 400) : out));
-                final List<Integer> uids = new ArrayList<Integer>();
-                // 计数一律用「包名集合」而不是累加：同一个包会从 PKG/OFF/EXT 好几行冒出来，
-                // 累加就翻倍（一加 999 的 4 变 8 就是这么来的）。按名字去重，跟空间归属无关。
-                final List<java.util.Set<String>> counts = new ArrayList<java.util.Set<String>>();
-                final List<Boolean> foreign = new ArrayList<Boolean>();
-                final List<java.util.Set<String>> live = new ArrayList<java.util.Set<String>>();
-                int perParent = -1, maxAll = -1;
-                for (String line : out.split("\\n")) {
-                    String ln = line.trim();
-                    if (ln.isEmpty()) continue;
-                    if (ln.startsWith("SPACE ") || ln.startsWith("FSPACE ")) {
-                        try {
-                            uids.add(Integer.parseInt(ln.substring(6).trim()));
-                            counts.add(new java.util.HashSet<String>());
-                            live.add(new java.util.HashSet<String>());
-                            foreign.add(Boolean.valueOf(ln.startsWith("FSPACE ")));
-                        } catch (Throwable ignored) {
-                        }
-                    } else if (ln.startsWith("PKG ")) {
-                        String[] pp = ln.split("\\s+");
-                        if (pp.length < 3) continue;
-                        if (pp[2].equals(getPackageName())) continue;
-                        int idx = uids.indexOf(Integer.valueOf(pp[1]));
-                        if (idx < 0) continue;
-                        live.get(idx).add(pp[2]);
-                        // 计数＝enabled 的三方；系统复制的包建号时已被 disable，落在 OFF，不计
-                        if (CloneStore.THIRD.contains(pp[2])) counts.get(idx).add(pp[2]);
-                    } else if (ln.startsWith("OFF ") || ln.startsWith("EXT ")) {
-                        String[] pp = ln.split("\\s+");
-                        if (pp.length < 3) continue;
-                        int idx = uids.indexOf(Integer.valueOf(pp[1]));
-                        if (idx < 0) continue;
-                        live.get(idx).add(pp[2]);
-                    } else if (ln.startsWith("mMaxAllowedPerParent:")) {
-                        perParent = num(ln);
-                    } else if (ln.startsWith("mMaxAllowed:")) {
-                        maxAll = num(ln);
-                    }
-                }
-                perParentCached = perParent;
-                maxAllCached = maxAll;
-                final int fp = perParent, fm = maxAll;
+                // 扫描逻辑在 CloneStore.scanSpaces（和空间管理页共用一份）
+                final CloneStore.SpaceScan sc = CloneStore.scanSpaces(SettingsActivity.this);
+                perParentCached = sc.perParent;
+                maxAllCached = sc.maxAll;
                 runOnUiThread(new Runnable() {
                     public void run() {
-                        renderSpaces(uids, counts, foreign, live, fp, fm);
+                        renderSpaces(sc.uids, sc.counts, sc.foreign, sc.live,
+                                sc.perParent, sc.maxAll);
                         renderHiddenCard();
                         loading = false;
                         if (pendingReload) {
@@ -857,7 +808,10 @@ public class SettingsActivity extends Activity {
             return;
         }
 
-        for (int i = 0; i < uids.size(); i++) {
+        // 设置页只预览前 3 个：空间多了以后这一块会顶掉整个页面，
+        // 完整的浏览和批量操作在 SpacesActivity
+        final int shown = Math.min(uids.size(), 3);
+        for (int i = 0; i < shown; i++) {
             final int uid = uids.get(i);
             int n = counts.get(i).size();
 
@@ -896,7 +850,7 @@ public class SettingsActivity extends Activity {
                     del.setText(R.string.delete_space);
                     del.setTextSize(14);
                     del.setPadding(dp(12), dp(6), dp(4), dp(6));
-                    del.setTextColor(dark ? 0xFFF28B82 : 0xFFC5221F);
+                    del.setTextColor(Theme.red(this));
                     del.setOnClickListener(new View.OnClickListener() {
                         public void onClick(View v) { confirmRemoveSpace(uid); }
                     });
@@ -910,7 +864,7 @@ public class SettingsActivity extends Activity {
             rn.setText(R.string.rename_space);
             rn.setTextSize(14);
             rn.setPadding(dp(12), dp(6), dp(4), dp(6));
-            rn.setTextColor(dark ? 0xFFA8C7FA : 0xFF0B57D0);
+            rn.setTextColor(Theme.accent(this));
             rn.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) { askRenameSpace(uid); }
             });
@@ -922,7 +876,7 @@ public class SettingsActivity extends Activity {
             ime.setText(R.string.ime_action);
             ime.setTextSize(14);
             ime.setPadding(dp(12), dp(6), dp(4), dp(6));
-            ime.setTextColor(dark ? 0xFFA8C7FA : 0xFF0B57D0);
+            ime.setTextColor(Theme.accent(this));
             ime.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) { repairIme(uid); }
             });
@@ -932,12 +886,26 @@ public class SettingsActivity extends Activity {
             del.setText(R.string.delete_space);
             del.setTextSize(14);
             del.setPadding(dp(12), dp(6), dp(4), dp(6));
-            del.setTextColor(dark ? 0xFFF28B82 : 0xFFC5221F);
+            del.setTextColor(Theme.red(this));
             del.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) { confirmRemoveSpace(uid); }
             });
             row.addView(del);
             spaceList.addView(row);
+        }
+
+        if (uids.size() > shown) {
+            TextView all = new TextView(this);
+            all.setText(getString(R.string.sp_view_all, uids.size()));
+            all.setTextSize(13);
+            all.setPadding(0, dp(10), 0, 0);
+            all.setTextColor(Theme.accent(this));
+            all.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    startActivity(new android.content.Intent(SettingsActivity.this, SpacesActivity.class));
+                }
+            });
+            spaceList.addView(all);
         }
     }
 
@@ -952,7 +920,7 @@ public class SettingsActivity extends Activity {
         // 圆角搜索框（Material search bar）：有清晰边界，hint 不会和下方文字挤在一起
         android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
         gd.setCornerRadius(dp(10));
-        gd.setColor(dark ? 0xFF2A2B2E : 0xFFEFEFF1);
+        gd.setColor(Theme.row(this));
         et.setBackground(gd);
         et.setGravity(android.view.Gravity.CENTER_VERTICAL);
         et.setPadding(dp(12), 0, dp(12), 0);
@@ -1478,7 +1446,7 @@ public class SettingsActivity extends Activity {
             spaceWarn.setText(R.string.space_storage_broken);
             // 品牌青绿：红/橙/绿已经都被状态占用了（坏、可升级、已修好），
             // 这条只是「可能不兼容，可点处理」，用品牌色区分，同时不至于像出错
-            spaceWarn.setTextColor(isNight() ? 0xFF35C1B8 : 0xFF0F8F88);
+            spaceWarn.setTextColor(Theme.teal(this));
             spaceWarn.setVisibility(View.VISIBLE);
             return;
         }
@@ -1487,15 +1455,15 @@ public class SettingsActivity extends Activity {
         if (moduleCode >= 0 && moduleCode < CloneStore.MODULE_CODE) {
             spaceWarn.setText(getString(R.string.space_storage_updatable,
                     moduleVer, CloneStore.MODULE_VERSION));
-            spaceWarn.setTextColor(0xFFEF6C00);
+            spaceWarn.setTextColor(Theme.warn(this));
         } else if (moduleCode < 0) {
             // 读不到版本标记 = 2.3 及更早（那两版还不写这个标记）
             spaceWarn.setText(getString(R.string.space_storage_outdated,
                     CloneStore.MODULE_VERSION));
-            spaceWarn.setTextColor(0xFFEF6C00);
+            spaceWarn.setTextColor(Theme.warn(this));
         } else {
             spaceWarn.setText(R.string.space_storage_fixed);
-            spaceWarn.setTextColor(0xFF2E7D32);
+            spaceWarn.setTextColor(Theme.green(this));
         }
         spaceWarn.setVisibility(View.VISIBLE);
     }
@@ -1517,7 +1485,7 @@ public class SettingsActivity extends Activity {
         imePickCount.setText(keep == total
                 ? getString(R.string.ime_pick_all, total)
                 : getString(R.string.ime_pick_some, keep, total));
-        imePickCount.setTextColor(keep == 0 ? 0xFFE53935 : secColor);
+        imePickCount.setTextColor(keep == 0 ? Theme.red(this) : secColor);
     }
 
     /** 新空间输入法清单：列出主空间所有输入法，默认全选；取消勾选的建新空间时不带进去 */
@@ -1571,8 +1539,8 @@ public class SettingsActivity extends Activity {
         }
         final int total = hiddenClones.size() + hiddenSys.size();
         final PackageManager pm = getPackageManager();
-        final int accent = dark ? 0xFFA8C7FA : 0xFF0B57D0;
-        final int sysRed = 0xFFE53935;
+        final int accent = Theme.accent(this);
+        final int sysRed = Theme.red(this);
         final AlertDialog[] holder = new AlertDialog[1];
 
         final List<CheckBox> userChecks = new ArrayList<CheckBox>();

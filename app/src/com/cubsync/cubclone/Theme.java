@@ -46,6 +46,40 @@ final class Theme {
     static final int RED_LIGHT = 0xFFC62828;
     static final int RED_NIGHT = 0xFFFF8A80;
 
+    /** 卡片 / 列表行底色：比页面背景亮一档，深色下才有层次 */
+    static final int CARD_LIGHT = 0xFFF3F3F6;
+    static final int CARD_NIGHT = 0xFF1E1F22;
+    static final int CARD_AMOLED = 0xFF0C0C0C;
+
+    /** 次要按钮（浅蓝底 + 蓝字），用于「新建 / 刷新 / 安装」这类非主操作 */
+    static final int CHIP_BG_LIGHT = 0xFFD3E3FD;
+    static final int CHIP_BG_NIGHT = 0xFF1F3A5F;
+    static final int CHIP_BG_AMOLED = 0xFF16283D;
+
+    /** 警告橙与「正常」青绿，存储检测那类状态行用 */
+    static final int WARN = 0xFFEF6C00;
+    static final int TEAL_LIGHT = 0xFF0F8F88;
+    static final int TEAL_NIGHT = 0xFF35C1B8;
+
+    /** 列表行里的强调底色（比卡片再浅一档），把开关行和背景分开 */
+    static final int ROW_LIGHT = 0xFFEFEFF1;
+    static final int ROW_NIGHT = 0xFF2A2B2E;
+    static final int ROW_AMOLED = 0xFF141414;
+
+    /** 被隐藏 / 不可用的条目文字，比次要色再淡一档 */
+    static final int DIM_LIGHT = 0xFFA0A0A0;
+    static final int DIM_NIGHT = 0xFF7A7A7A;
+
+    /** 分身角标配色，按序号轮换 */
+    static final int[] BADGE = {
+            0xFF34A853, 0xFFEA8600, 0xFF9334E6, 0xFF1A73E8, 0xFFE52592
+    };
+
+    /** 角标上的文字：不管深浅都画白 */
+    static final int ON_BADGE = 0xFFFFFFFF;
+    /** 离屏位图画布的底：先铺白再缩放，深色下图标不变黑 */
+    static final int CANVAS_WHITE = 0xFFFFFFFF;
+
     private Theme() { }
 
     /**
@@ -92,6 +126,30 @@ final class Theme {
     static int green(Context c) { return isNight(c) ? GREEN_NIGHT : GREEN_LIGHT; }
 
     static int red(Context c) { return isNight(c) ? RED_NIGHT : RED_LIGHT; }
+
+    static int card(Context c) {
+        if (isBlack(c)) return CARD_AMOLED;
+        return isNight(c) ? CARD_NIGHT : CARD_LIGHT;
+    }
+
+    static int chipBg(Context c) {
+        if (isBlack(c)) return CHIP_BG_AMOLED;
+        return isNight(c) ? CHIP_BG_NIGHT : CHIP_BG_LIGHT;
+    }
+
+    /** 次要按钮的文字色：就是强调色，单独留个名字让调用点读起来对得上 */
+    static int chipFg(Context c) { return accent(c); }
+
+    static int warn(Context c) { return WARN; }
+
+    static int teal(Context c) { return isNight(c) ? TEAL_NIGHT : TEAL_LIGHT; }
+
+    static int row(Context c) {
+        if (isBlack(c)) return ROW_AMOLED;
+        return isNight(c) ? ROW_NIGHT : ROW_LIGHT;
+    }
+
+    static int dim(Context c) { return isNight(c) ? DIM_NIGHT : DIM_LIGHT; }
 
     /**
      * 对话框统一入口。

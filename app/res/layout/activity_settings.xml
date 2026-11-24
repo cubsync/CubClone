@@ -309,6 +309,7 @@
                     android:paddingBottom="10dp">
 
                     <TextView
+                        android:id="@+id/perm_root_label"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
@@ -330,6 +331,7 @@
                     android:paddingBottom="4dp">
 
                     <TextView
+                        android:id="@+id/perm_shizuku_label"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
@@ -719,6 +721,18 @@
                         android:layout_weight="1"
                         android:text="@string/space_title"
                         android:textSize="15sp" />
+
+                    <TextView
+                        android:id="@+id/btn_manage_spaces"
+                        android:layout_width="wrap_content"
+                        android:layout_height="34dp"
+                        android:paddingStart="14dp"
+                        android:paddingEnd="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:gravity="center"
+                        android:background="@drawable/bg_clone_button"
+                        android:text="@string/sp_manage"
+                        android:textSize="13sp" />
 
                     <TextView
                         android:id="@+id/btn_refresh_space"

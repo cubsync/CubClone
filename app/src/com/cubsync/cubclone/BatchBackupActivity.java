@@ -69,9 +69,9 @@ public class BatchBackupActivity extends Activity {
     private boolean running = false;
 
     private Adapter adapter;
-    private int fg = 0xFF1B1B1F;
-    private int sec = 0xFF5F6368;
-    private int accent = 0xFF0B57D0;
+    private int fg = Theme.FG_LIGHT;
+    private int sec = Theme.SEC_LIGHT;
+    private int accent = Theme.ACCENT_LIGHT;
 
     public void onCreate(Bundle b) {
         super.onCreate(b);

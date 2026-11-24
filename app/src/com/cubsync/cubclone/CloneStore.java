@@ -1303,6 +1303,119 @@ public final class CloneStore {
         return s == null || s.length() == 0 || s.equals("null");
     }
 
+    /**
+     * 一次空间扫描的结果。设置页和独立的空间管理页共用同一份，
+     * 免得两边各解析一遍批处理输出、字段口径漂移。
+     */
+    static final class SpaceScan {
+        final List<Integer> uids = new ArrayList<Integer>();
+        final List<Set<String>> counts = new ArrayList<Set<String>>();
+        final List<Set<String>> live = new ArrayList<Set<String>>();
+        final List<Boolean> foreign = new ArrayList<Boolean>();
+        int perParent = -1;
+        int maxAll = -1;
+
+        /** 我们自己建的空间数（不含系统自带） */
+        int oursCount() {
+            int n = 0;
+            for (Boolean b : foreign) if (!b.booleanValue()) n++;
+            return n;
+        }
+
+        /** 建号链上的实际有效上限；<=0 表示这机器两道闸都不限 */
+        int cap() {
+            return effectiveCap(perParent, maxAll);
+        }
+    }
+
+    /**
+     * 扫全机空间。会 start 我们自己建但从未启动过的分身（自愈），
+     * 所以要跑在后台线程，别在 UI 线程调。
+     */
+    static SpaceScan scanSpaces(Context c) {
+        SpaceScan r = new SpaceScan();
+        // 归属标记必须先读：listBatch 要用它分 SPACE/FSPACE
+        ensureMarks();
+        // 刷新系统名缓存：改名后（系统名变了）不刷这里，界面就还是旧名
+        listSpaceUids();
+        for (Integer u : markedUids()) startSpace(u.intValue());
+
+        String out = Shell.exec(listBatch(c)
+                + "dumpsys user | sed -n '/android.os.usertype.profile.CLONE:/,/^$/p'");
+        for (String line : out.split("\n")) {
+            String ln = line.trim();
+            if (ln.length() == 0) continue;
+            if (ln.startsWith("SPACE ") || ln.startsWith("FSPACE ")) {
+                try {
+                    r.uids.add(Integer.valueOf(Integer.parseInt(ln.substring(6).trim())));
+                    r.counts.add(new HashSet<String>());
+                    r.live.add(new HashSet<String>());
+                    r.foreign.add(Boolean.valueOf(ln.startsWith("FSPACE ")));
+                } catch (Throwable ignored) {
+                }
+            } else if (ln.startsWith("PKG ")) {
+                String[] pp = ln.split("\\s+");
+                if (pp.length < 3) continue;
+                if (pp[2].equals(c.getPackageName())) continue;
+                int idx = indexOfUid(r.uids, pp[1]);
+                if (idx < 0) continue;
+                r.live.get(idx).add(pp[2]);
+                // 计数＝enabled 的三方；系统复制的包建号时已被 disable，落在 OFF，不计
+                if (THIRD.contains(pp[2])) r.counts.get(idx).add(pp[2]);
+            } else if (ln.startsWith("OFF ") || ln.startsWith("EXT ")) {
+                String[] pp = ln.split("\\s+");
+                if (pp.length < 3) continue;
+                int idx = indexOfUid(r.uids, pp[1]);
+                if (idx >= 0) r.live.get(idx).add(pp[2]);
+            } else if (ln.startsWith("mMaxAllowedPerParent:")) {
+                r.perParent = num(ln);
+            } else if (ln.startsWith("mMaxAllowed:")) {
+                r.maxAll = num(ln);
+            }
+        }
+        return r;
+    }
+
+    private static int indexOfUid(List<Integer> uids, String uid) {
+        try {
+            return uids.indexOf(Integer.valueOf(Integer.parseInt(uid)));
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
+    /** CLI 调用前缀：jar 由主应用释放到 /data/local/tmp/cubclone.jar */
+    static final String CLI =
+            "CLASSPATH=/data/local/tmp/cubclone.jar app_process /system/bin CubClone";
+
+    /**
+     * 某空间里所有带桌面图标的<b>三方</b>应用包名。
+     * 批量备份用它拼 EXTRA_ITEMS —— 系统应用（设置/计算器/收音机）不备，
+     * 它们每个空间都自带一份，备了只是白占体积。
+     */
+    static List<String> launchablePkgs(Context c, int uid) {
+        String sys = Shell.exec("pm list packages -s --user " + uid
+                + " | sed 's/^package://' | sort -u");
+        Set<String> system = new HashSet<String>();
+        for (String p : sys.split("\n")) {
+            String t = p.trim();
+            if (t.length() > 0) system.add(t);
+        }
+        String out = Shell.exec("cmd package query-activities --user " + uid
+                + " -a android.intent.action.MAIN -c android.intent.category.LAUNCHER"
+                + " | sed -n 's/.*packageName=\\([^ ]*\\).*/\\1/p' | sort -u");
+        List<String> r = new ArrayList<String>();
+        for (String p : out.split("\n")) {
+            String t = p.trim();
+            if (t.length() == 0) continue;
+            if (c != null && t.equals(c.getPackageName())) continue;
+            if (system.contains(t)) continue;
+            if (isEssentialPkg(t)) continue;
+            r.add(t);
+        }
+        return r;
+    }
+
     /** 只收 "包/类" 形状的输入法组件，别把 settings 回显的杂项当组件 */
     private static void addComp(List<String> out, String comp) {
         if (comp == null) return;

@@ -518,4 +518,19 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="backup_sort_time">Time</string>
     <string name="sort_by">By</string>
     <string name="sort_order">Order</string>
+    <string name="sp_title">Clone spaces</string>
+    <string name="sp_select">Select</string>
+    <string name="sp_cancel">Cancel</string>
+    <string name="sp_all">All</string>
+    <string name="sp_backup">Back up</string>
+    <string name="sp_more">⋯</string>
+    <string name="sp_row">%1$s · uid %2$d · %3$d apps</string>
+    <string name="sp_row_title">%1$s (uid %2$d)</string>
+    <string name="sp_none_selected">Select a space first</string>
+    <string name="sp_del_title">Delete spaces</string>
+    <string name="sp_del_msg">Delete the %1$d selected spaces? App data inside will be removed too.</string>
+    <string name="sp_deleting">Deleting %1$d / %2$d …</string>
+    <string name="sp_deleted_n">Deleted %1$d / %2$d spaces</string>
+    <string name="sp_manage">Manage</string>
+    <string name="sp_view_all">View all %1$d spaces</string>
 </resources>

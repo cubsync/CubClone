@@ -518,4 +518,19 @@
     <string name="backup_sort_time">时间</string>
     <string name="sort_by">排序方式</string>
     <string name="sort_order">顺序</string>
+    <string name="sp_title">分身空间</string>
+    <string name="sp_select">批量</string>
+    <string name="sp_cancel">取消</string>
+    <string name="sp_all">全选</string>
+    <string name="sp_backup">备份</string>
+    <string name="sp_more">⋯</string>
+    <string name="sp_row">%1$s · uid %2$d · %3$d 个应用</string>
+    <string name="sp_row_title">%1$s（uid %2$d）</string>
+    <string name="sp_none_selected">先勾选空间</string>
+    <string name="sp_del_title">删除空间</string>
+    <string name="sp_del_msg">要删除选中的 %1$d 个空间吗？里面的应用数据会一起删掉。</string>
+    <string name="sp_deleting">正在删除 %1$d / %2$d …</string>
+    <string name="sp_deleted_n">已删除 %1$d / %2$d 个空间</string>
+    <string name="sp_manage">管理</string>
+    <string name="sp_view_all">查看全部 %1$d 个空间</string>
 </resources>

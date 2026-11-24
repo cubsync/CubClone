@@ -78,11 +78,11 @@ public class BatchRunActivity extends Activity {
     private final Handler tick = new Handler();
 
     private Adapter adapter;
-    private int fg = 0xFF1B1B1F;
-    private int sec = 0xFF5F6368;
-    private int accent = 0xFF0B57D0;
-    private int green = 0xFF2E7D32;
-    private int red = 0xFFC62828;
+    private int fg = Theme.FG_LIGHT;
+    private int sec = Theme.SEC_LIGHT;
+    private int accent = Theme.ACCENT_LIGHT;
+    private int green = Theme.GREEN_LIGHT;
+    private int red = Theme.RED_LIGHT;
 
     private final Runnable poll = new Runnable() {
         public void run() {

@@ -42,8 +42,8 @@ public class RootActivity extends Activity {
     private TextView rtLimitSec, rtLimitState, rtLimitHint, rtLimitInstall, rtLimitTune;
     private LinearLayout rtLimitCard;
 
-    private int fg = 0xFF1B1B1F;
-    private int sec = 0xFF5F6368;
+    private int fg = Theme.FG_LIGHT;
+    private int sec = Theme.SEC_LIGHT;
 
     public void onCreate(Bundle b) {
         super.onCreate(b);
@@ -285,20 +285,17 @@ public class RootActivity extends Activity {
         return getSharedPreferences("clone", MODE_PRIVATE);
     }
 
+    /** 主题判断只走 Theme，本页自己再判一次就是 11-24 颜色配错的根源（1=深、2=浅，别写反） */
     private boolean isNight() {
-        int t = sp().getInt("theme", 0);
-        if (t == 2) return true;
-        if (t == 1) return false;
-        return (getResources().getConfiguration().uiMode
-                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        return Theme.isNight(this);
     }
 
     private void applyChrome() {
         boolean night = isNight();
         boolean black = night && sp().getBoolean("amoled", false);
-        int bg = black ? 0xFF000000 : (night ? 0xFF121317 : 0xFFFDFDFE);
-        fg = night ? 0xFFEDEDED : 0xFF1B1B1F;
-        sec = black ? 0xFF8A8F96 : (night ? 0xFF9AA0A6 : 0xFF5F6368);
+        int bg = Theme.bg(this);
+        fg = Theme.fg(this);
+        sec = Theme.sec(this);
 
         root.setBackgroundColor(bg);
         header.setBackgroundColor(bg);
@@ -317,8 +314,8 @@ public class RootActivity extends Activity {
 
         if (rtLimitSec != null) rtLimitSec.setTextColor(sec);
         if (rtLimitHint != null) rtLimitHint.setTextColor(sec);
-        int btnBg = black ? 0xFF16283D : (night ? 0xFF1F3A5F : 0xFFD3E3FD);
-        int btnFg = night ? 0xFFA8C7FA : 0xFF0B57D0;
+        int btnBg = Theme.chipBg(this);
+        int btnFg = Theme.chipFg(this);
         for (TextView t : new TextView[]{rtLimitInstall, rtLimitTune}) {
             if (t == null) continue;
             if (t.getBackground() != null) t.getBackground().setTint(btnBg);

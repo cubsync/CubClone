@@ -63,6 +63,12 @@
             android:exported="false"
             android:label="@string/sec_root" />
 
+        <!-- 分身空间管理：独立页，可滚动 + 批量删除/备份 -->
+        <activity
+            android:name=".SpacesActivity"
+            android:exported="false"
+            android:label="@string/sp_title" />
+
         <!-- 桌面快捷方式落地页：收到 uid/pkg 后直接启动分身里的应用 -->
         <activity
             android:name=".LaunchProxyActivity"

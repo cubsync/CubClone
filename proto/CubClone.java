@@ -96,13 +96,23 @@ public final class CubClone {
      * 建完立刻验存储，挂不上就删号重建为独立存储用户（见 {@link #PRIVATE}）。
      * 输出末行形如 `MODE=shared` / `MODE=private`，调用方据此提示用户。
      */
+    /**
+     * BFU（开机未解锁）时 /data 还没解密：emulated 卷一个都挂不上，
+     * settings 也写不进去。这时建号只会白等 waitStorage 再降级成独立存储，
+     * 所以直接拒绝并说清楚。应用内建号不会走到这里（应用只能在 AFU 运行）。
+     */
+    private static boolean bfu() {
+        String v = sh("getprop", "sys.user.0.ce_available").trim();
+        if ("true".equals(v)) return false;
+        say("ERR 设备处于 BFU（开机未解锁），存储未解密 —— 先解锁屏幕再建空间");
+        return true;
+    }
+
     private static void create(String name) throws Exception {
-        // 已有 clone 空间但一个都没挂上 ⇒ 这台机器的共享存储本来就走不通，别浪费一次建删
-        if (cloneStorageBroken()) {
-            say("NOTE 已有 clone 空间存储均未挂载，直接建独立存储空间");
-            createPrivate(name);
-            return;
-        }
+        if (bfu()) return;
+        // 不再预判「已有 clone 空间没挂」：卷是异步挂载的，刚重启时全都没挂，
+        // 预判会把好机器误判成存储损坏、直接降级成独立存储（2026-11-24 连踩两次）。
+        // 正确顺序是先建 CLONE，建不成或建完存不上再降级 —— 降级路径本来就在下面。
         Method m = pick("createProfileForUser");
         if (m == null) { say("ERR no createProfileForUser"); return; }
         Object r = (m.getParameterTypes().length == 4)
@@ -113,7 +123,7 @@ public final class CubClone {
         if (uid <= 0) { say("ERR 建号返回的 uid 解析失败: " + r); return; }
         say("CREATED " + r);
         sh("am", "start-user", String.valueOf(uid));
-        if (waitStorage(uid, 15000)) {
+        if (waitStorage(uid, 25000)) {
             markOwned(uid);
             say("MODE=shared");
             return;
@@ -130,6 +140,7 @@ public final class CubClone {
 
     /** 建独立存储用户：功能与分身一致（独立应用数据、可 pm uninstall --user），只是不共享主空间文件 */
     private static void createPrivate(String name) throws Exception {
+        if (bfu()) return;
         String out = sh("pm", "create-user", "--profileOf", "0", "--user-type", PRIVATE, name);
         say("CREATE " + out.trim());
         Matcher mm = Pattern.compile("id (\\d+)").matcher(out);
@@ -156,58 +167,6 @@ public final class CubClone {
         if (!back.trim().startsWith("1")) {
             say("WARN 归属标记写入失败 uid=" + uid + " out=" + out.trim());
         }
-    }
-
-    /** 已存在的 clone 空间是否全部没挂上存储（有 running 的 clone 空间且一个 mounted 都没有） */
-    private static boolean cloneStorageBroken() throws Exception {
-        List<String> clones = new ArrayList<String>();
-        for (String line : sh("cmd", "user", "list", "--all", "-v").split("\n")) {
-            if (!line.contains("type=profile.CLONE")) continue;
-            if (!line.contains("running")) continue;
-            Matcher m = Pattern.compile("id=(\\d+)").matcher(line);
-            if (!m.find()) continue;
-            // ⛔ 只算我们自己建的（带 cubclone_owned 标记）：ROM 自带的分身是本机自己的实现，
-            //    本来就不走 emulated;<uid> 卷。把它算进来 = 整机被误判成「共享存储不可用」，
-            //    于是一个 CLONE 都不尝试建、全走独立存储（2026-11-24 G7 实测）。
-            //    ⚠ 查不到归属就跳过，不许让一次 settings 读失败把整个 create 打断。
-            int uid;
-            boolean mine;
-            try {
-                uid = Integer.parseInt(m.group(1));
-                mine = isOurs(uid);
-            } catch (Throwable t) {
-                say("NOTE 归属无法确认，跳过 " + m.group(1) + ": " + t);
-                continue;
-            }
-            if (!mine) continue;
-            clones.add(String.valueOf(uid));
-        }
-        if (clones.isEmpty()) return false;
-        if (anyMounted(clones)) return false;
-        // 刚开机时 clone 卷还没挂好：8A 实测 reboot 后立刻建号会读到「一个都没挂」，
-        // 手动 am start-user 之后几秒内全部挂上。所以先补一次触发再等，等不到才算真坏。
-        // 少了这一步，每次重启后的第一个空间都会白白退化成独立存储。
-        for (String c : clones) {
-            sh("am", "start-user", c);
-        }
-        long end = System.currentTimeMillis() + 8000;
-        while (System.currentTimeMillis() < end) {
-            if (anyMounted(clones)) return false;
-            try {
-                Thread.sleep(400);
-            } catch (InterruptedException e) {
-                return true;
-            }
-        }
-        return true;
-    }
-
-    private static boolean anyMounted(List<String> clones) {
-        String vols = sh("sm", "list-volumes");
-        for (String c : clones) {
-            if (vols.contains("emulated;" + c + " mounted")) return true;
-        }
-        return false;
     }
 
     /** 等某个用户的 emulated 卷变成 mounted；超时返回 false */

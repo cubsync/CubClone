@@ -335,6 +335,7 @@ public class MainActivity extends Activity {
                     multiBar.setVisibility(View.GONE);
                 }
                 render();
+                appList.setSelection(0);
             }
         });
         searchRow = findViewById(R.id.search_row);
@@ -647,7 +648,10 @@ public class MainActivity extends Activity {
         sp().edit().putInt("tab", which).apply();
         applyTabs();
         if (groups.isEmpty()) refresh();   // 还没扫过就重扫一次
-        else render();                      // 已扫过，直接切显示
+        else {
+            render();                      // 已扫过，直接切显示
+            appList.setSelection(0);       // 换页签从顶部开始（以前重建列表天然在顶部）
+        }
     }
 
     /** 点一下换模式：跟随系统 → 深色 → 浅色 → 黑色，图标直接反映当前模式 */

@@ -32,6 +32,8 @@
     <string name="perm_checking">Checking…</string>
     <string name="perm_root">root: %1$s</string>
     <string name="perm_shizuku">Shizuku: %1$s</string>
+    <string name="perm_root_label">Root access</string>
+    <string name="perm_shizuku_label">Shizuku</string>
     <string name="perm_granted">granted</string>
     <string name="perm_unavailable">not available</string>
     <string name="perm_not_granted">service running, not granted</string>
@@ -57,6 +59,31 @@
     <string name="space_created">Space created: uid %1$d</string>
     <string name="space_created_private">Space created: uid %1$d (shared storage unavailable on this device; using separate storage, gallery/files not shared with owner)</string>
     <string name="space_limit_reached">Clone space limit reached (%1$s), delete one first</string>
+    <string name="limit_title">Clone space limit</string>
+    <string name="limit_sys">System default %1$d</string>
+    <string name="limit_on">Unlocked %1$d</string>
+    <string name="limit_tag_lock">Unlock</string>
+    <string name="limit_tag_tune">Adjust</string>
+    <string name="limit_dialog_title">Clone space limit</string>
+    <string name="limit_dialog_msg">Allow %1$d clone spaces (1-%2$d).
+
+How many you can actually create depends on free storage.
+
+Requires root + LSPosed: enable the module in LSPosed, then reboot once.</string>
+    <string name="limit_saved">Set to %1$d, takes effect after reboot</string>
+    <string name="limit_no_module">Unlock module not detected</string>
+    <string name="limit_module_ver">Unlock module %1$s active · device limit %2$d</string>
+    <string name="limit_need_perm">Root permission required</string>
+    <string name="limit_bad_value">Enter a number between 1 and %1$d</string>
+    <string name="limit_install">Install unlock module</string>
+    <string name="limit_reinstall">Reinstall module</string>
+    <string name="limit_install_tip">Enable this module in LSPosed, then reboot once. The module has no UI and no launcher icon.</string>
+    <string name="limit_install_ok">Module installed. Enable CubClone in LSPosed, then reboot</string>
+    <string name="limit_install_fail">Install failed: %1$s</string>
+    <string name="limit_no_asset">No bundled module in this build</string>
+    <string name="limit_installing">Installing module…</string>
+    <string name="limit_manage">Manage</string>
+    <string name="limit_active_tip">Module active. Changing the value takes effect after reboot; uninstalling the module and rebooting restores the system default.</string>
     <string name="space_deleted">Deleted space uid %1$d</string>
     <string name="delete_space_msg">Deleting space uid %1$d removes all cloned apps and their data inside it. The copy in the primary space is not affected.\n\nOwner data is never touched.</string>
     <string name="delete_space_msg_foreign">⚠️ This is a system clone space, not created by this app. Deleting it removes all apps and their data inside, and cannot be undone.\n\nDelete space uid %1$d?</string>

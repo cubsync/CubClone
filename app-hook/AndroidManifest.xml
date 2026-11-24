@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CubClone Hook —— LSPosed 模块（libxposed API 102）
+  只在 system_server 里做一件事：放开 profile.CLONE 的每父用户数量上限。
+
+  API 102 的模块声明不在 manifest 里：
+    · 入口     resources/META-INF/xposed/java_init.list
+    · 作用域   resources/META-INF/xposed/scope.list（写 system = system_server）
+    · 元信息   resources/META-INF/xposed/module.prop
+  模块名用 android:label，说明用 android:description。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.cubsync.cubclone.hook">
+
+    <application
+        android:allowBackup="false"
+        android:description="@string/hook_desc"
+        android:label="@string/hook_name" />
+</manifest>

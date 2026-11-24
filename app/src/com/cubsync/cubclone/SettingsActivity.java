@@ -86,8 +86,25 @@ public class SettingsActivity extends Activity {
         super.onResume();
         // 从主界面建完/删完空间回来要重读：原来只在 onCreate 拉一次，
         // Activity 还在栈里就一直显示旧数据（川：创建了新空间设置里不刷新）
-        if (Shell.ready()) loadSpaces();
         applyRootGates();
+        if (Shell.ready()) {
+            loadSpaces();
+            return;
+        }
+        // 进程被回收后从「最近任务」直接回到本页：rootOk/shizukuOk 都还是 false，
+        // 所有 shell 调用返回 ERR_NO_PERM —— 空间列表空白、点「新建空间」连输入框都不弹。
+        // 补探一次（su 要几百毫秒，不能放主线程）。BatchBackupActivity 同一个坑。
+        new Thread(new Runnable() {
+            public void run() {
+                Shell.probe();
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        applyRootGates();
+                        loadSpaces();
+                    }
+                });
+            }
+        }).start();
     }
 
     @Override
@@ -612,6 +629,8 @@ public class SettingsActivity extends Activity {
     private void checkPerm() {
         permRoot.setText(R.string.perm_checking);
         permShizuku.setText(R.string.perm_checking);
+        permRoot.setTextColor(secColor);
+        permShizuku.setTextColor(secColor);
         new Thread(new Runnable() {
             public void run() {
                 Shell.checkRoot();
@@ -630,16 +649,20 @@ public class SettingsActivity extends Activity {
     }
 
     private void showPermState() {
-        permRoot.setText(getString(R.string.perm_root,
-                getString(Shell.rootOk ? R.string.perm_granted : R.string.perm_unavailable)));
+        // 左侧已经有「Root 权限」「Shizuku」标签，这里只写状态，别再拼一遍前缀。
+        // 状态用颜色区分：可用的绿，不可用/未授权的红。
+        final boolean rootOk = Shell.rootOk;
+        permRoot.setText(rootOk ? R.string.perm_granted : R.string.perm_unavailable);
+        permRoot.setTextColor(rootOk ? Theme.green(this) : Theme.red(this));
         boolean alive = false;
         try {
             alive = Shizuku.pingBinder();
         } catch (Throwable ignored) {
         }
-        String sz = !alive ? getString(R.string.perm_not_running)
+        final String sz = !alive ? getString(R.string.perm_not_running)
                 : getString(Shell.shizukuOk ? R.string.perm_granted : R.string.perm_not_granted);
-        permShizuku.setText(getString(R.string.perm_shizuku, sz));
+        permShizuku.setText(sz);
+        permShizuku.setTextColor(Shell.shizukuOk ? Theme.green(this) : Theme.red(this));
         if (!spacesLoaded && Shell.ready()) {
             spacesLoaded = true;
             loadSpaces();
@@ -807,13 +830,17 @@ public class SettingsActivity extends Activity {
         StringBuilder sb = new StringBuilder();
         int ours = 0;
         for (int i = 0; i < foreign.size(); i++) if (!foreign.get(i).booleanValue()) ours++;
+        // 建号链上有两道闸，谁小谁说了算：按类型总数（mMaxAllowed）× 每父用户（mMaxAllowedPerParent）。
+        // 只显示 perParent 会误导 —— 8A 实测 perParent 放到 100、mMaxAllowed 还是 3，界面写「已用 3 / 100」
+        // 但第 4 个必然被拒，用户只会觉得「点了没反应」。
+        final int cap = CloneStore.effectiveCap(perParent, maxAll);
         // 「已用」要算上系统只读空间（一加 999）：主界面能看到它的分身，
         // 这里写「已用 0 个」就是自相矛盾；上限判断仍只看我们自己建的
         // 有上限就一次说清「已用 N / M 个」；以前是「已用 N 个 … / M」，读起来别扭
-        sb.append(perParent > 0
-                ? getString(R.string.space_used_of, uids.size(), perParent)
+        sb.append(cap > 0
+                ? getString(R.string.space_used_of, uids.size(), cap)
                 : getString(R.string.space_used, uids.size()));
-        if (perParent > 0 && ours >= perParent) {
+        if (cap > 0 && ours >= cap) {
             sb.append("\n").append(getString(R.string.space_limit_one));
         }
         // 「N 个空间已删除但没清干净」这条不再显示：<removing> 是系统自己的收尾过程，
@@ -1872,10 +1899,15 @@ public class SettingsActivity extends Activity {
 
                 final String msg;
                 if (uid <= 0) {
-                    msg = out.contains("Cannot add more") || out.contains("returned null")
-                            ? getString(R.string.space_limit_reached,
-                            String.valueOf(readTypeInt("mMaxAllowedPerParent")))
-                            : getString(R.string.create_failed, out.trim());
+                    if (out.contains("Cannot add more") || out.contains("returned null")) {
+                        // 提示里必须给真实生效的那道闸：perParent 被 hook 放到 100、
+                        // mMaxAllowed 还是 3 时，写 100 只会让人更懵
+                        int cap = CloneStore.readCap();
+                        msg = getString(R.string.space_limit_reached,
+                                cap > 0 ? String.valueOf(cap) : "?");
+                    } else {
+                        msg = getString(R.string.create_failed, out.trim());
+                    }
                 } else {
                     msg = out.contains("MODE=private")
                             ? getString(R.string.space_created_private, uid)

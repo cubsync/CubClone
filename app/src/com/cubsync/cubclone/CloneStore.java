@@ -695,6 +695,115 @@ public final class CloneStore {
         return new String[]{code, v.length() == 0 ? code : v};
     }
 
+    // ---------------- 「解锁数量上限」模块（LSPosed） ----------------
+
+    /** 目标上限的硬边界，与 hook 里的 MAX_LIMIT 保持一致 */
+    public static final int HOOK_MAX = 21474;
+    public static final int HOOK_DEFAULT = 10;
+
+    /** persist 属性重启后还在；hook 启动时优先读它，读不到才用默认值 */
+    static final String HOOK_LIMIT_PERSIST = "persist.sys.cubclone.hook.limit";
+
+    /**
+     * 解锁模块生效时返回实际目标值（&gt;0）；没装、没在 LSPosed 里启用、或 hook 没跑起来返回 null。
+     * 只看 {@code sys.cubclone.hook}：这个属性只有 system_server 里的 hook 会写，普通进程 getprop 就能读。
+     */
+    public static Integer hookLimit() {
+        if (!"1".equals(Shell.raw("getprop", "sys.cubclone.hook").trim())) return null;
+        String v = Shell.raw("getprop", HOOK_LIMIT_PERSIST).trim();
+        if (v.length() == 0) v = Shell.raw("getprop", "sys.cubclone.hook.limit").trim();
+        try {
+            int n = Integer.parseInt(v);
+            if (n >= 1 && n <= HOOK_MAX) return Integer.valueOf(n);
+        } catch (Throwable ignored) {
+        }
+        return Integer.valueOf(HOOK_DEFAULT);
+    }
+
+    /**
+     * 写目标上限。persist 属性重启后不丢，hook 下次开机直接读到；
+     * 同时写一份运行时属性，让已生效的 system_server 状态在界面上能读回一致的值。
+     * @return 失败原因，null = 成功
+     */
+    public static String writeHookLimit(int n) {
+        if (n < 1 || n > HOOK_MAX) return "range";
+        String out = Shell.exec("setprop " + HOOK_LIMIT_PERSIST + " " + n);
+        String back = Shell.raw("getprop", HOOK_LIMIT_PERSIST).trim();
+        if (!String.valueOf(n).equals(back)) {
+            return out.length() == 0 ? "readback=" + back : out.trim();
+        }
+        return null;
+    }
+
+    /** assets 里内置的解锁模块（app/build.sh 从 dist/ 拷进来） */
+    static final String HOOK_ASSET = "CubCloneHook.apk";
+
+    /**
+     * 建号链上的实际有效上限：两道闸取小的那个。一次 dumpsys 同时读两个字段，
+     * 各自读一次要跑两遍 shell（dumpsys user 几百毫秒）。
+     * @return <=0 表示这台机器两道闸都不限
+     */
+    public static int readCap() {
+        int per = -1, all = -1;
+        try {
+            String out = Shell.exec("dumpsys user");
+            int i = out.indexOf("android.os.usertype.profile.CLONE:");
+            if (i >= 0) {
+                String sub = out.substring(i, Math.min(out.length(), i + 600));
+                for (String line : sub.split("\n")) {
+                    String ln = line.trim();
+                    if (ln.startsWith("mMaxAllowedPerParent:")) per = num(ln);
+                    else if (ln.startsWith("mMaxAllowed:")) all = num(ln);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return effectiveCap(per, all);
+    }
+
+    /** 两道闸谁小谁说了算；任意一个 <= 0 视为「不限」，只取另一个 */
+    public static int effectiveCap(int perParent, int maxAll) {
+        if (perParent <= 0) return maxAll <= 0 ? 0 : maxAll;
+        if (maxAll <= 0) return perParent;
+        return Math.min(perParent, maxAll);
+    }
+
+    private static int num(String line) {
+        try {
+            return Integer.parseInt(line.substring(line.indexOf(':') + 1).trim());
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
+    /**
+     * 把内置的解锁模块装进系统。
+     * 只负责「装」：LSPosed 里的启用和重启必须用户自己来 —— 改 LSPosed 的配置库属于侵入，
+     * 它自己的守护进程会覆盖，不能当产品功能。
+     * @return null = 成功；否则是失败原因
+     */
+    public static String installUnlockModule(Context c) {
+        byte[] data;
+        try {
+            java.io.InputStream in = c.getAssets().open(HOOK_ASSET);
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            in.close();
+            data = bos.toByteArray();
+        } catch (Throwable t) {
+            return "no-asset(" + t.getClass().getSimpleName() + ")";
+        }
+        String path = "/data/local/tmp/CubCloneHook.apk";
+        String err = Shell.write(path, data);
+        if (err != null && err.length() > 0) return "write: " + err;
+        // ⛔ 必须带 --user 0：不加这个，pm install 会把模块装进每一个分身空间，
+        //    在分身里多出一份没用的 APK，LSPosed 也会对着非 0 用户报「模块未激活」。
+        String out = Shell.exec("pm install -r --user 0 " + path);
+        return out.contains("Success") ? null : out.trim();
+    }
+
     static Integer storageState() {
         if (!Shell.ready()) return null;
         String out = Shell.exec(

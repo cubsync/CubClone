@@ -32,6 +32,8 @@
     <string name="perm_checking">检测中…</string>
     <string name="perm_root">root：%1$s</string>
     <string name="perm_shizuku">Shizuku：%1$s</string>
+    <string name="perm_root_label">Root 权限</string>
+    <string name="perm_shizuku_label">Shizuku</string>
     <string name="perm_granted">已授权</string>
     <string name="perm_unavailable">不可用</string>
     <string name="perm_not_granted">服务在运行，未授权</string>
@@ -57,6 +59,31 @@
     <string name="space_created">空间已创建：uid %1$d</string>
     <string name="space_created_private">空间已创建：uid %1$d（本机不支持共享存储，已用独立存储，相册/文件不与主空间共用）</string>
     <string name="space_limit_reached">分身空间已到上限（%1$s 个），先删一个再建</string>
+    <string name="limit_title">分身空间上限</string>
+    <string name="limit_sys">系统默认 %1$d</string>
+    <string name="limit_on">已解锁 %1$d</string>
+    <string name="limit_tag_lock">解锁</string>
+    <string name="limit_tag_tune">调整</string>
+    <string name="limit_dialog_title">分身空间上限</string>
+    <string name="limit_dialog_msg">可建 %1$d 个分身空间（1–%2$d）。
+
+实际能建多少个还取决于存储空间。
+
+需要 root + LSPosed：装完模块后要在 LSPosed 里启用，再重启一次才生效。</string>
+    <string name="limit_saved">已写入 %1$d，重启后生效</string>
+    <string name="limit_no_module">未检测到解锁模块</string>
+    <string name="limit_module_ver">解锁模块 %1$s 已生效 · 本机上限 %2$d</string>
+    <string name="limit_need_perm">需要先授权 root</string>
+    <string name="limit_bad_value">请输入 1–%1$d 之间的数字</string>
+    <string name="limit_install">安装解锁模块</string>
+    <string name="limit_reinstall">重装解锁模块</string>
+    <string name="limit_install_tip">装完要去 LSPosed 里启用本模块，再重启一次才生效。模块本身没有界面，也不会出现在桌面。</string>
+    <string name="limit_install_ok">模块已安装。请打开 LSPosed 启用 CubClone，然后重启手机</string>
+    <string name="limit_install_fail">安装失败：%1$s</string>
+    <string name="limit_no_asset">安装包里没有内置模块</string>
+    <string name="limit_installing">正在安装模块…</string>
+    <string name="limit_manage">管理</string>
+    <string name="limit_active_tip">模块已生效。改数值后要重启才生效；卸载模块并重启即恢复系统原值。</string>
     <string name="space_deleted">已删除空间 uid %1$d</string>
     <string name="delete_space_msg">删除空间 uid %1$d 会把里面所有分身应用的数据一起清掉，主空间那份不受影响。\n\n机主数据不会被触碰。</string>
     <string name="delete_space_msg_foreign">⚠️ 这是系统自带的克隆空间，不是本应用创建的。删除会清掉里面所有应用及其数据，无法恢复。\n\n确认删除空间 uid %1$d？</string>

@@ -113,7 +113,11 @@ public final class CubClone {
         if (uid <= 0) { say("ERR 建号返回的 uid 解析失败: " + r); return; }
         say("CREATED " + r);
         sh("am", "start-user", String.valueOf(uid));
-        if (waitStorage(uid, 15000)) { say("MODE=shared"); return; }
+        if (waitStorage(uid, 15000)) {
+            markOwned(uid);
+            say("MODE=shared");
+            return;
+        }
         // 共享存储挂不上：vold 在 Android/data 的 lookup 被 MediaProvider 的 FUSE 拒掉（EACCES）
         say("FALLBACK clone 共享存储不可用，改用独立存储（不与主空间共享相册/文件）");
         // stop-user 对刚启动的 clone 用户常回 -4（related users can't be stopped），
@@ -133,6 +137,7 @@ public final class CubClone {
         int uid = Integer.parseInt(mm.group(1));
         sh("am", "start-user", String.valueOf(uid));
         if (waitStorage(uid, 12000)) {
+            markOwned(uid);
             say("CREATED {" + uid + ":" + name + ":0}");
             say("MODE=private");
         } else {
@@ -140,21 +145,69 @@ public final class CubClone {
         }
     }
 
+    /**
+     * 写归属标记。主应用只认这个标记：没有它的 full.SECONDARY 会被当成系统的访客/第二用户
+     * 直接隐藏，profile.CLONE 会被显示成「非自建」只读。
+     * 标记存在该用户自己的 settings 里，随空间一起删。
+     */
+    private static void markOwned(int uid) {
+        String out = sh("settings", "put", "--user", String.valueOf(uid), "secure", "cubclone_owned", "1");
+        String back = sh("settings", "get", "--user", String.valueOf(uid), "secure", "cubclone_owned");
+        if (!back.trim().startsWith("1")) {
+            say("WARN 归属标记写入失败 uid=" + uid + " out=" + out.trim());
+        }
+    }
+
     /** 已存在的 clone 空间是否全部没挂上存储（有 running 的 clone 空间且一个 mounted 都没有） */
-    private static boolean cloneStorageBroken() {
+    private static boolean cloneStorageBroken() throws Exception {
         List<String> clones = new ArrayList<String>();
         for (String line : sh("cmd", "user", "list", "--all", "-v").split("\n")) {
             if (!line.contains("type=profile.CLONE")) continue;
             if (!line.contains("running")) continue;
             Matcher m = Pattern.compile("id=(\\d+)").matcher(line);
-            if (m.find()) clones.add(m.group(1));
+            if (!m.find()) continue;
+            // ⛔ 只算我们自己建的（带 cubclone_owned 标记）：ROM 自带的分身是本机自己的实现，
+            //    本来就不走 emulated;<uid> 卷。把它算进来 = 整机被误判成「共享存储不可用」，
+            //    于是一个 CLONE 都不尝试建、全走独立存储（2026-11-24 G7 实测）。
+            //    ⚠ 查不到归属就跳过，不许让一次 settings 读失败把整个 create 打断。
+            int uid;
+            boolean mine;
+            try {
+                uid = Integer.parseInt(m.group(1));
+                mine = isOurs(uid);
+            } catch (Throwable t) {
+                say("NOTE 归属无法确认，跳过 " + m.group(1) + ": " + t);
+                continue;
+            }
+            if (!mine) continue;
+            clones.add(String.valueOf(uid));
         }
         if (clones.isEmpty()) return false;
-        String vols = sh("sm", "list-volumes");
+        if (anyMounted(clones)) return false;
+        // 刚开机时 clone 卷还没挂好：8A 实测 reboot 后立刻建号会读到「一个都没挂」，
+        // 手动 am start-user 之后几秒内全部挂上。所以先补一次触发再等，等不到才算真坏。
+        // 少了这一步，每次重启后的第一个空间都会白白退化成独立存储。
         for (String c : clones) {
-            if (vols.contains("emulated;" + c + " mounted")) return false;
+            sh("am", "start-user", c);
+        }
+        long end = System.currentTimeMillis() + 8000;
+        while (System.currentTimeMillis() < end) {
+            if (anyMounted(clones)) return false;
+            try {
+                Thread.sleep(400);
+            } catch (InterruptedException e) {
+                return true;
+            }
         }
         return true;
+    }
+
+    private static boolean anyMounted(List<String> clones) {
+        String vols = sh("sm", "list-volumes");
+        for (String c : clones) {
+            if (vols.contains("emulated;" + c + " mounted")) return true;
+        }
+        return false;
     }
 
     /** 等某个用户的 emulated 卷变成 mounted；超时返回 false */

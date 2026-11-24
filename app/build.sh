@@ -29,6 +29,16 @@ mkdir -p "$OUT/assets" "$OUT/classes" "$OUT/dex" "$OUT/gen"
 cp -r assets/. "$OUT/assets/"
 cp -f "$JAR" "$OUT/assets/cubclone.jar"
 
+# 解锁模块（LSPosed APK）内嵌进主包，Root 功能页点「安装解锁模块」时直接 pm install。
+# 模块与主应用版本解耦：dist/ 下取最新的那个，模块没更新时主应用发版不用重出它。
+HOOK_APK=$(ls -t ../dist/CubCloneHook-*.apk 2>/dev/null | head -1)
+if [ -n "$HOOK_APK" ]; then
+  cp -f "$HOOK_APK" "$OUT/assets/CubCloneHook.apk"
+  echo "    内嵌模块：$(basename "$HOOK_APK")"
+else
+  echo "    ⚠ 没有 dist/CubCloneHook-*.apk，解锁数量上限功能在本包里不可用"
+fi
+
 if [ "$ABI" != universal ]; then
   for f in "$OUT/assets/zstd-"*; do
     [ "$(basename "$f")" = "zstd-$ABI" ] || rm -f "$f"

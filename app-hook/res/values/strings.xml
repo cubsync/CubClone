@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hook_name">CubClone Hook</string>
+    <string name="hook_desc">放开应用分身的数量上限。仅配合 CubClone 使用，只作用于系统进程。</string>
+</resources>

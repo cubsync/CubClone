@@ -88,20 +88,25 @@ public class MainActivity extends Activity {
         FlatItem(Group g, Clone c, int idx) { this.g = g; this.c = c; this.idx = idx; }
     }
 
-    private LinearLayout listBox;
     private View emptyView;
     private TextView status;
     private final android.os.Handler ui =
             new android.os.Handler(android.os.Looper.getMainLooper());
     private TextView title, hint;
     private android.widget.ImageButton btnTheme, btnSettings, btnRefresh, btnScope, btnSearch, btnGrid;
-    /** 列表容器，用来判断是否已经滚到顶（下拉才出搜索） */
-    private android.widget.ScrollView listWrap;
-    /** 启动器式网格（自绘：ScrollView + 行布局） */
-    private android.widget.ScrollView gridWrap;
-    private LinearLayout gridBox;
-    private LinearLayout recentHostList, recentHostGrid;
-    private LinearLayout listOuter, gridOuter;
+    /**
+     * 主列表：列表模式和网格模式共用同一个 ListView。
+     *
+     * 以前是 ScrollView + 一次性 addView 所有行：几百个应用就是几百张卡片、
+     * 上千个分身就是上万行 View，内存和布局时间都随行数线性涨（上千上万必卡死）。
+     * 换 ListView 后只有屏幕上那几行存在，行数再多也只 inflate 一屏。
+     */
+    private android.widget.ListView appList;
+    private android.widget.BaseAdapter appAdapter;
+    /** 当前页签 + 搜索 + 显示范围过滤后要显示的应用（顺序＝列表顺序） */
+    private final List<Group> shownGroups = new ArrayList<Group>();
+    /** 网格模式的平铺项（主应用 + 每个分身一格） */
+    private final List<FlatItem> flatItems = new ArrayList<FlatItem>();
     private LinearLayout tabRow;
     /** 网格格子高度：布局就绪后统一算 */
     private int gridItemH;
@@ -186,9 +191,10 @@ public class MainActivity extends Activity {
         langAtCreate = Locales.tag(this);
         setContentView(R.layout.activity_main);
 
-        listBox = findViewById(R.id.clone_app_list);
+        appList = findViewById(R.id.app_list);
         emptyView = findViewById(R.id.not_find_app);
         status = findViewById(R.id.status);
+        appList.setEmptyView(emptyView);   // 没有行时自动显示空态（不必再手动切可见性）
 
         search = findViewById(R.id.search);
         search.addTextChangedListener(new android.text.TextWatcher() {
@@ -206,7 +212,7 @@ public class MainActivity extends Activity {
         checkSelfRestore();
 
         tab = sp().getInt("tab", 0);
-        tabRow = (LinearLayout) LayoutInflater.from(this).inflate(R.layout.tab_row, listOuter, false);
+        tabRow = (LinearLayout) LayoutInflater.from(this).inflate(R.layout.tab_row, null, false);
         tabUserText = tabRow.findViewById(R.id.tab_user_text);
         tabSysText = tabRow.findViewById(R.id.tab_sys_text);
         tabUserLine = tabRow.findViewById(R.id.tab_user_line);
@@ -217,7 +223,18 @@ public class MainActivity extends Activity {
         tabRow.findViewById(R.id.tab_sys).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { switchTab(1); }
         });
-        listOuter.addView(tabRow, 1);   // 挂滚动内容顶部（recent_host 之后、列表之前），随滑动滚走/回顶
+        // 「最近打开」和页签行走 ListView 表头：跟着列表一起滚走，跟以前一样
+        appList.addHeaderView(recentHeader, null, false);
+        appList.addHeaderView(tabRow, null, false);
+        appAdapter = new AppAdapter();
+        appList.setAdapter(appAdapter);
+        appList.setSelector(new android.graphics.drawable.ColorDrawable(0));   // 行自己带背景，别叠系统选中色
+        appList.setOnScrollListener(new android.widget.AbsListView.OnScrollListener() {
+            public void onScrollStateChanged(android.widget.AbsListView v, int s) { }
+            public void onScroll(android.widget.AbsListView v, int first, int visible, int total) {
+                if (first > 0) collapseSearchIfIdle();   // 往上滚才收起搜索（和以前一致）
+            }
+        });
 
         // 先按上次结果铺出来（不碰 shell、不查 PackageManager），真实数据后台扫完再替换
         loadSnapshot();
@@ -301,30 +318,11 @@ public class MainActivity extends Activity {
         btnScope = findViewById(R.id.btn_scope);
         btnSearch = findViewById(R.id.btn_search);
         btnGrid = findViewById(R.id.btn_grid);
-        listWrap = findViewById(R.id.list_wrap);
-        gridWrap = findViewById(R.id.grid_wrap);
-        gridBox = findViewById(R.id.grid_box);
-        listOuter = findViewById(R.id.list_outer);
-        gridOuter = findViewById(R.id.grid_outer);
-        recentHostList = findViewById(R.id.recent_host_list);
-        recentHostGrid = findViewById(R.id.recent_host_grid);
-        // 「最近打开」区：动态创建，挂到各视图的 recent_host（无 padding），缩进自己管，和列表/网格解耦
+        // 「最近打开」区：动态创建，作为 ListView 表头挂在顶部（无 padding，缩进自己管）
         createRecentHeader();
         // 惯例做法（Material 的 AppBarLayout / iOS 的 hidesSearchBarWhenScrolling）：搜索栏
         // 跟着列表滚出去，不是靠手势猜起手位置。之前要求「起手在列表上 40%」，列表滚过一段
         // 或手落在下半屏就收不起来，所以时灵时不灵。
-        listWrap.getViewTreeObserver().addOnScrollChangedListener(
-                new android.view.ViewTreeObserver.OnScrollChangedListener() {
-                    private int last = 0;
-
-                    public void onScrollChanged() {
-                        int y = listWrap.getScrollY();
-                        int dy = y - last;
-                        last = y;
-                        if (dy <= 0) return;            // 只认向上滚
-                        collapseSearchIfIdle();
-                    }
-                });
         btnSearch.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { toggleSearch(); }
         });
@@ -488,7 +486,9 @@ public class MainActivity extends Activity {
     }
 
     private boolean canScrollUp() {
-        return listWrap != null && listWrap.getScrollY() > 0;
+        if (appList == null) return false;
+        return appList.getFirstVisiblePosition() > 0
+                || (appList.getChildCount() > 0 && appList.getChildAt(0).getTop() < 0);
     }
 
     /**
@@ -570,7 +570,7 @@ public class MainActivity extends Activity {
             swipeLastX = ev.getX();
             swipeT0 = swipeLastMoveT = System.currentTimeMillis();
             swipingH = false;
-            swipeTarget = gridMode() ? gridBox : listBox;   // 只平移列表/网格内容，最近打开+tab 行不动
+            swipeTarget = appList;
         } else if (a == android.view.MotionEvent.ACTION_MOVE && swipingH) {
             if (swipeTarget != null) swipeTarget.setTranslationX(ev.getX() - swipeX0);   // 跟手
             swipeLastX = ev.getX();
@@ -583,7 +583,7 @@ public class MainActivity extends Activity {
             if (Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy)
                     && ((dx > 0 && tab == 1) || (dx < 0 && tab == 0))) {
                 swipingH = true;
-                swipeTarget = gridMode() ? gridBox : listBox;
+                swipeTarget = appList;
                 if (swipeTarget != null) swipeTarget.setTranslationX(dx);
                 return true;
             }
@@ -1060,12 +1060,9 @@ public class MainActivity extends Activity {
     /** 最近打开最多几行：默认 1 行，超出的不显示 */
     private int recentRows() { return clamp(sp().getInt("recent_rows", 1), 1, 4); }
 
-    /** 格子高度 =（网格可视高 - 最近区高）/ 行数；下限要装得下图标+名字（44+3+文字） */
+    /** 格子高度 = 网格可视高 / 行数；下限要装得下图标+名字（44+3+文字） */
     private int computeItemH() {
-        int h = gridWrap.getHeight();
-        if (recentHeader != null && recentHeader.getParent() == gridBox) {
-            h -= recentHeader.getHeight();
-        }
+        int h = appList != null ? appList.getHeight() : 0;
         if (h <= 0) return dp(84);
         return Math.max(dp(66), h / effRows() - dp(4));
     }
@@ -1075,119 +1072,6 @@ public class MainActivity extends Activity {
         boolean on = gridMode();
         btnGrid.setImageResource(on ? R.drawable.ic_list : R.drawable.ic_grid);
         btnGrid.setContentDescription(getString(on ? R.string.list_view : R.string.grid_view));
-    }
-
-    /** 网格平铺项列表：renderGrid 构建，buildGrid 铺格子 */
-    private final List<FlatItem> flatItems = new ArrayList<FlatItem>();
-
-    /** 网格模式只渲染网格；列表走 render() 下面原逻辑 */
-    private void renderGrid() {
-        listWrap.setVisibility(View.GONE);
-        emptyView.setVisibility(View.GONE);
-        gridWrap.setVisibility(View.VISIBLE);
-
-        Collections.sort(groups, new Comparator<Group>() {
-            public int compare(Group a, Group b) {
-                boolean ca = !a.clones.isEmpty(), cb = !b.clones.isEmpty();
-                if (ca != cb) return ca ? -1 : 1;
-                return a.label.compareToIgnoreCase(b.label);
-            }
-        });
-
-        boolean showAll = sp().getBoolean("show_all", false);
-        boolean showPrimary = sp().getBoolean("grid_show_primary", false);
-        flatItems.clear();
-        for (Group g : groups) {
-            // 页签过滤：用户页签显示 userApps 或「主身份认不出」的包，系统页签显示 sysApps
-            boolean isUser = userApps.contains(g.pkg) || !sysApps.contains(g.pkg);
-            if ((tab == 0) != isUser) continue;
-            if (!showAll && g.clones.isEmpty()) continue;
-            if (kw.length() > 0
-                    && !g.label.toLowerCase().contains(kw)
-                    && !g.pkg.toLowerCase().contains(kw)) {
-                continue;
-            }
-            if (CloneStore.isSysHidden(g.pkg)) continue;   // 隐藏的主空间系统应用不显示
-            if (showPrimary) flatItems.add(new FlatItem(g, null, -1));
-            for (int i = 0; i < g.clones.size(); i++) {
-                Clone cc = g.clones.get(i);
-                if (CloneStore.isHidden(cc.uid, g.pkg)) continue;   // 隐藏的分身不显示（主应用仍在）
-                flatItems.add(new FlatItem(g, cc, i));
-            }
-        }
-
-        if (flatItems.isEmpty()) {
-            gridEmpty();
-            return;
-        }
-        // 可视高度要等本帧布局完成才有，post 到下一帧铺格子
-        gridWrap.post(new Runnable() {
-            public void run() { buildGrid(); }
-        });
-    }
-
-    /**
-     * 网格区没有格子可铺时的落法：最近打开和 tab 行都挂在这块滚动区里，
-     * 整块 GONE 会把它们一起带走（系统应用这类页签本来就常常是空的，看着就像最近打开丢了），
-     * 所以只要最近打开有内容就保留滚动区，只在格子位置放提示。
-     */
-    private void gridEmpty() {
-        if (recentShow() && refreshRecentHeader()) {
-            mountRecentHeader(recentHostGrid);
-            mountTabRow(gridOuter);
-            gridBox.removeAllViews();
-            TextView tv = new TextView(this);
-            tv.setText(R.string.no_clone_in_tab);
-            tv.setTextSize(14);
-            tv.setTextColor(Theme.sec(this));
-            tv.setGravity(android.view.Gravity.CENTER);
-            tv.setPadding(dp(24), dp(48), dp(24), dp(48));
-            gridBox.addView(tv);
-            gridWrap.setVisibility(View.VISIBLE);
-            emptyView.setVisibility(View.GONE);
-        } else {
-            gridWrap.setVisibility(View.GONE);
-            emptyView.setVisibility(View.VISIBLE);
-        }
-    }
-
-    /** 铺自绘网格：每行 effCols() 个格子，固定宽度左对齐（最后一行不满也靠左，跟启动器一致） */
-    private void buildGrid() {
-        if (!gridMode()) return;   // 过期回调：已切回列表，别再动网格容器
-        gridBox.removeAllViews();
-        if (recentShow() && refreshRecentHeader()) {
-            mountRecentHeader(recentHostGrid);   // 挂进滚动内容：上滑跟着滚走
-        }
-        mountTabRow(gridOuter);   // tab 行也挂进滚动内容顶部，随滑动滚走/回顶
-        // 最近区刚挂上还没 measure，等一帧再算格子高度（computeItemH 要减它的高度）
-        gridWrap.post(new Runnable() {
-            public void run() {
-                if (!gridMode()) return;
-                buildCells();
-            }
-        });
-    }
-
-    private void buildCells() {
-        if (!gridMode()) return;
-        gridItemH = computeItemH();
-        LayoutInflater inf = LayoutInflater.from(this);
-        int cols = effCols();
-        int avail = gridBox.getWidth() - gridBox.getPaddingLeft() - gridBox.getPaddingRight();
-        int cellW = avail > 0 ? avail / cols : dp(80);
-        if (cellW < 1) cellW = 1;
-        for (int start = 0; start < flatItems.size(); start += cols) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            int end = Math.min(start + cols, flatItems.size());
-            for (int p = start; p < end; p++) {
-                View cell = inf.inflate(R.layout.item_grid, row, false);
-                bindCell(cell, flatItems.get(p));
-                cell.setLayoutParams(new LinearLayout.LayoutParams(cellW, gridItemH));
-                row.addView(cell);
-            }
-            gridBox.addView(row);
-        }
     }
 
     /** 一个格子的内容与交互（点开 / 长按出菜单） */
@@ -1244,17 +1128,6 @@ public class MainActivity extends Activity {
 
     private void render() {
         long renderT0 = android.os.SystemClock.uptimeMillis();
-        if (gridMode()) {
-            renderGrid();
-            return;
-        }
-        gridWrap.setVisibility(View.GONE);
-        listWrap.setVisibility(View.VISIBLE);
-        listBox.removeAllViews();
-        if (recentShow() && refreshRecentHeader()) {
-            mountRecentHeader(recentHostList);   // 挂进滚动内容：上滑跟着滚走
-        }
-        mountTabRow(listOuter);   // tab 行也挂进滚动内容顶部，随滑动滚走/回顶
         // 已经开过分身的应用排最前，其余按名字排
         Collections.sort(groups, new Comparator<Group>() {
             public int compare(Group a, Group b) {
@@ -1263,25 +1136,16 @@ public class MainActivity extends Activity {
                 return a.label.compareToIgnoreCase(b.label);
             }
         });
-        boolean empty = groups.isEmpty();
-        emptyView.setVisibility(empty ? View.VISIBLE : View.GONE);
-        listBox.setVisibility(empty ? View.GONE : View.VISIBLE);
-
-        LayoutInflater inf = LayoutInflater.from(this);
         boolean showAll = sp().getBoolean("show_all", false);
-        final boolean dark = isNight();
-        final boolean black = isBlack();
-        final int cardColor = Theme.card(this);
-        final int btnBg = Theme.chipBg(this);
-        final int btnText = Theme.chipFg(this);
-        final int nameColor = Theme.fg(this);
-        int shown = 0;
-        for (final Group g : groups) {
+        final boolean grid = gridMode();
+        boolean showPrimary = sp().getBoolean("grid_show_primary", false);
+        shownGroups.clear();
+        flatItems.clear();
+        for (Group g : groups) {
             // 页签过滤：用户页签显示 userApps 或「主身份认不出」的包，系统页签显示 sysApps
             boolean isUser = userApps.contains(g.pkg) || !sysApps.contains(g.pkg);
             if ((tab == 0) != isUser) continue;
-            // 默认只列已经开过分身的应用，避免一屏全是没动过的 App
-            // 多选批量创建时列全部可分身应用（不只已开分身的），否则勾不到还没开过的应用
+            // 默认只列已经开过分身的应用；多选批量创建时列全部，否则勾不到还没开过的
             if (!multi && !showAll && g.clones.isEmpty()) continue;
             if (kw.length() > 0
                     && !g.label.toLowerCase().contains(kw)
@@ -1289,159 +1153,232 @@ public class MainActivity extends Activity {
                 continue;
             }
             if (CloneStore.isSysHidden(g.pkg)) continue;   // 隐藏的主空间系统应用不显示
-            shown++;
-            LinearLayout card = new LinearLayout(this);
-            card.setOrientation(LinearLayout.VERTICAL);
-            card.setBackgroundResource(R.drawable.bg_card);
-            if (card.getBackground() != null) card.getBackground().setTint(cardColor);
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            clp.bottomMargin = dp(8);
-            card.setLayoutParams(clp);
-            card.setPadding(0, dp(2), 0, dp(2));
-
-            // 第一行：主身份那份 + 「创建分身」
-            View base = inf.inflate(R.layout.item_clone_base, card, false);
-            ripple(base);
-            View bi = base.findViewById(R.id.base_icon);
-            setIcon(bi, g.pkg, 0);
-            ((TextView) base.findViewById(R.id.base_name)).setText(g.label);
-            ((TextView) base.findViewById(R.id.base_name)).setTextColor(nameColor);
-            final android.widget.CheckBox baseCheck = base.findViewById(R.id.base_check);
-            android.widget.Button act = base.findViewById(R.id.action_add);
-            act.setBackgroundTintList(android.content.res.ColorStateList.valueOf(btnBg));
-            act.setTextColor(btnText);
-            if (multi) {
-                // 多选模式：显示勾选框，点行切换选中，隐藏「创建分身」按钮
-                baseCheck.setVisibility(View.VISIBLE);
-                act.setVisibility(View.GONE);
-                baseCheck.setChecked(selected.contains(g.pkg));
-                base.setOnClickListener(new View.OnClickListener() {
-                    public void onClick(View v) {
-                        boolean on = !selected.contains(g.pkg);
-                        if (on) selected.add(g.pkg);
-                        else selected.remove(g.pkg);
-                        baseCheck.setChecked(on);
-                        updateCount();
-                    }
-                });
-                base.setOnLongClickListener(null);
-            } else {
-                // 普通模式：整行点开原应用，长按进入多选
-                baseCheck.setVisibility(View.GONE);
-                act.setVisibility(View.VISIBLE);
-                act.setOnClickListener(new View.OnClickListener() {
-                    public void onClick(View v) { createClone(g); }
-                });
-                // 长按：自己挑装到哪个空间（点＝自动挑最老的空闲空间）
-                act.setOnLongClickListener(new View.OnLongClickListener() {
-                    public boolean onLongClick(View v) { pickSpaceFor(g); return true; }
-                });
-                base.setOnClickListener(new View.OnClickListener() {
-                    public void onClick(View v) { openPrimary(g); }
-                });
-                base.setOnLongClickListener(new View.OnLongClickListener() {
-                    public boolean onLongClick(View v) { baseMenu(g); return true; }
-                });
+            shownGroups.add(g);
+            if (grid) {
+                if (showPrimary) flatItems.add(new FlatItem(g, null, -1));
+                for (int i = 0; i < g.clones.size(); i++) {
+                    Clone cc = g.clones.get(i);
+                    if (CloneStore.isHidden(cc.uid, g.pkg)) continue;   // 隐藏的分身不显示
+                    flatItems.add(new FlatItem(g, cc, i));
+                }
             }
-            card.addView(base);
-
-            // 下面：每个分身一行（多选批量创建时不显示分身行，只留主应用行）
-            for (int i = 0; i < g.clones.size() && !multi; i++) {
-                final Clone c = g.clones.get(i);
-                if (CloneStore.isHidden(c.uid, g.pkg)) continue;   // 隐藏的分身不显示（主应用仍在）
-                View row = inf.inflate(R.layout.item_clone_child, card, false);
-                ripple(row);
-                View ci = row.findViewById(R.id.clone_icon);
-                setIcon(ci, g.pkg, c.uid);
-                TextView cn = row.findViewById(R.id.clone_name);
-                String nm = g.label + suffixOf(c.uid, g.pkg, i);
-                if (c.off) {
-                    // 被隐藏的分身仍在列表里，只是灰掉 —— 免得用户以为它消失了，
-                    // 也留一条「长按启用」的路（万一那个系统应用其实还需要）
-                    nm = nm + " · " + getString(R.string.clone_hidden);
-                    cn.setTextColor(Theme.dim(this));
-                    ci.setAlpha(0.4f);
-                } else {
-                    cn.setTextColor(nameColor);
-                }
-                cn.setText(nm);
-                // 跑马灯只对 selected 的 TextView 生效；超长名字（比如改成了长串）就自己滚。
-                // 挂到窗口之后再设一次：render 时控件还没 attach，只设一次不一定会启动动画。
-                cn.setSingleLine(true);
-                cn.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
-                cn.setSelected(true);
-                cn.post(new Runnable() {
-                    public void run() { cn.setSelected(true); }
-                });
-                TextView cu = row.findViewById(R.id.clone_uid);
-                if (cu != null) cu.setText(getString(R.string.uid_tag, c.uid));
-                row.setOnClickListener(new View.OnClickListener() {
-                    public void onClick(View v) {
-                        if (c.off) {
-                            toast(getString(R.string.clone_hidden_hint));
-                            return;
-                        }
-                        launch(c, g);
-                    }
-                });
-                row.setOnLongClickListener(new View.OnLongClickListener() {
-                    public boolean onLongClick(View v) {
-                        cloneMenu(c, g);
-                        return true;
-                    }
-                });
-                final int idx = i;
-                // 非自建空间（MultiApp 等）：默认只读，不给改名/移除；开了「管理非自建空间」才放开
-                if (c.foreign && !sp().getBoolean("manage_foreign", false)) {
-                    row.findViewById(R.id.clone_rename).setVisibility(View.GONE);
-                    row.findViewById(R.id.clone_delete).setVisibility(View.GONE);
-                }
-                int iconTint = Theme.sec(this);
-                for (int rid : new int[]{R.id.clone_pin, R.id.clone_open,
-                        R.id.clone_rename, R.id.clone_delete}) {
-                    ImageView iv = row.findViewById(rid);
-                    if (iv != null) iv.setColorFilter(iconTint);
-                }
-                row.findViewById(R.id.clone_pin).setOnClickListener(new View.OnClickListener() {
-                    public void onClick(View v) {
-                        pinShortcut(MainActivity.this, c.uid, g.pkg,
-                                g.label + suffixOf(c.uid, g.pkg, idx),
-                                g.icon, CloneStore.nameOf(MainActivity.this, c.uid));
-                    }
-                });
-                ImageView open = row.findViewById(R.id.clone_open);
-                open.setOnClickListener(new View.OnClickListener() {
-                    public void onClick(View v) { launch(c, g); }
-                });
-                row.findViewById(R.id.clone_rename).setOnClickListener(new View.OnClickListener() {
-                    public void onClick(View v) { askRename(c, g, idx); }
-                });
-                row.findViewById(R.id.clone_delete).setOnClickListener(new View.OnClickListener() {
-                    public void onClick(View v) { confirmRemove(c, g); }
-                });
-                card.addView(row);
-            }
-
-            listBox.addView(card);
         }
-
-        if (shown == 0) {
-            TextView tv = new TextView(this);
-            String t;
-            if (kw.length() > 0) t = getString(R.string.empty_no_match, kw);
-            else if (!showAll) t = getString(R.string.empty_no_clone);
-            else t = getString(R.string.empty_no_app);
-            tv.setText(t);
-            tv.setTextSize(14);
-            tv.setTextColor(Theme.dim(this));
-            tv.setGravity(android.view.Gravity.CENTER);
-            tv.setPadding(0, dp(60), 0, 0);
-            listBox.addView(tv);
+        boolean hasRecent = recentShow() && refreshRecentHeader();
+        if (recentHeader != null) {
+            recentHeader.setVisibility(hasRecent ? View.VISIBLE : View.GONE);
         }
+        TextView et = findViewById(R.id.empty_title);
+        TextView eh = findViewById(R.id.empty_hint);
+        if (et != null) {
+            et.setText(kw.length() > 0 ? getString(R.string.empty_no_match, kw)
+                    : !showAll ? getString(R.string.empty_no_clone)
+                    : getString(R.string.empty_no_app));
+        }
+        if (eh != null) eh.setVisibility(kw.length() > 0 ? View.GONE : View.VISIBLE);
+        gridItemH = computeItemH();
+        int pad = grid ? dp(8) : 0;
+        appList.setPadding(pad, 0, pad, 0);
+        appAdapter.notifyDataSetChanged();
         if (multi) updateCount();
-        android.util.Log.i("CubClone", "render rows=" + shown + " take="
-                + (android.os.SystemClock.uptimeMillis() - renderT0) + "ms");
+        android.util.Log.i("CubClone", "render rows=" + shownGroups.size() + " grid=" + grid
+                + " take=" + (android.os.SystemClock.uptimeMillis() - renderT0) + "ms");
+    }
+
+    /**
+     * 列表模式的一张卡片：主应用一行 + 它的每个分身一行。
+     * 只对屏幕上可见的卡片调用（ListView 的 getView），行数再多也只建一屏。
+     */
+    private View buildCard(final Group g) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundResource(R.drawable.bg_card);
+        if (card.getBackground() != null) card.getBackground().setTint(Theme.card(this));
+        card.setPadding(0, dp(2), 0, dp(2));
+        LayoutInflater inf = LayoutInflater.from(this);
+        int btnBg = Theme.chipBg(this);
+        int btnText = Theme.chipFg(this);
+        int nameColor = Theme.fg(this);
+
+        // 第一行：主身份那份 + 「创建分身」
+        View base = inf.inflate(R.layout.item_clone_base, card, false);
+        ripple(base);
+        View bi = base.findViewById(R.id.base_icon);
+        setIcon(bi, g.pkg, 0);
+        ((TextView) base.findViewById(R.id.base_name)).setText(g.label);
+        ((TextView) base.findViewById(R.id.base_name)).setTextColor(nameColor);
+        final android.widget.CheckBox baseCheck = base.findViewById(R.id.base_check);
+        android.widget.Button act = base.findViewById(R.id.action_add);
+        act.setBackgroundTintList(android.content.res.ColorStateList.valueOf(btnBg));
+        act.setTextColor(btnText);
+        if (multi) {
+            // 多选模式：显示勾选框，点行切换选中，隐藏「创建分身」按钮
+            baseCheck.setVisibility(View.VISIBLE);
+            act.setVisibility(View.GONE);
+            baseCheck.setChecked(selected.contains(g.pkg));
+            base.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    boolean on = !selected.contains(g.pkg);
+                    if (on) selected.add(g.pkg);
+                    else selected.remove(g.pkg);
+                    baseCheck.setChecked(on);
+                    updateCount();
+                }
+            });
+            base.setOnLongClickListener(null);
+        } else {
+            // 普通模式：整行点开原应用，长按进入多选
+            baseCheck.setVisibility(View.GONE);
+            act.setVisibility(View.VISIBLE);
+            act.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { createClone(g); }
+            });
+            // 长按：自己挑装到哪个空间（点＝自动挑最老的空闲空间）
+            act.setOnLongClickListener(new View.OnLongClickListener() {
+                public boolean onLongClick(View v) { pickSpaceFor(g); return true; }
+            });
+            base.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { openPrimary(g); }
+            });
+            base.setOnLongClickListener(new View.OnLongClickListener() {
+                public boolean onLongClick(View v) { baseMenu(g); return true; }
+            });
+        }
+        card.addView(base);
+
+        // 下面：每个分身一行（多选批量创建时不显示分身行，只留主应用行）
+        for (int i = 0; i < g.clones.size() && !multi; i++) {
+            final Clone c = g.clones.get(i);
+            if (CloneStore.isHidden(c.uid, g.pkg)) continue;   // 隐藏的分身不显示（主应用仍在）
+            View row = inf.inflate(R.layout.item_clone_child, card, false);
+            ripple(row);
+            View ci = row.findViewById(R.id.clone_icon);
+            setIcon(ci, g.pkg, c.uid);
+            TextView cn = row.findViewById(R.id.clone_name);
+            String nm = g.label + suffixOf(c.uid, g.pkg, i);
+            if (c.off) {
+                // 被隐藏的分身仍在列表里，只是灰掉 —— 免得用户以为它消失了，
+                // 也留一条「长按启用」的路（万一那个系统应用其实还需要）
+                nm = nm + " · " + getString(R.string.clone_hidden);
+                cn.setTextColor(Theme.dim(this));
+                ci.setAlpha(0.4f);
+            } else {
+                cn.setTextColor(nameColor);
+            }
+            cn.setText(nm);
+            // 跑马灯只对 selected 的 TextView 生效；超长名字（比如改成了长串）就自己滚。
+            cn.setSingleLine(true);
+            cn.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
+            cn.setSelected(true);
+            cn.post(new Runnable() {
+                public void run() { cn.setSelected(true); }
+            });
+            TextView cu = row.findViewById(R.id.clone_uid);
+            if (cu != null) cu.setText(getString(R.string.uid_tag, c.uid));
+            row.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    if (c.off) {
+                        toast(getString(R.string.clone_hidden_hint));
+                        return;
+                    }
+                    launch(c, g);
+                }
+            });
+            row.setOnLongClickListener(new View.OnLongClickListener() {
+                public boolean onLongClick(View v) {
+                    cloneMenu(c, g);
+                    return true;
+                }
+            });
+            final int idx = i;
+            // 非自建空间（MultiApp 等）：默认只读，不给改名/移除；开了「管理非自建空间」才放开
+            if (c.foreign && !sp().getBoolean("manage_foreign", false)) {
+                row.findViewById(R.id.clone_rename).setVisibility(View.GONE);
+                row.findViewById(R.id.clone_delete).setVisibility(View.GONE);
+            }
+            int iconTint = Theme.sec(this);
+            for (int rid : new int[]{R.id.clone_pin, R.id.clone_open,
+                    R.id.clone_rename, R.id.clone_delete}) {
+                ImageView iv = row.findViewById(rid);
+                if (iv != null) iv.setColorFilter(iconTint);
+            }
+            row.findViewById(R.id.clone_pin).setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    pinShortcut(MainActivity.this, c.uid, g.pkg,
+                            g.label + suffixOf(c.uid, g.pkg, idx),
+                            g.icon, CloneStore.nameOf(MainActivity.this, c.uid));
+                }
+            });
+            ImageView open = row.findViewById(R.id.clone_open);
+            open.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { launch(c, g); }
+            });
+            row.findViewById(R.id.clone_rename).setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { askRename(c, g, idx); }
+            });
+            row.findViewById(R.id.clone_delete).setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { confirmRemove(c, g); }
+            });
+            card.addView(row);
+        }
+        return card;
+    }
+
+    /** 网格模式的一行：横向 cols 个格子，最后一行不满也靠左（跟启动器一致） */
+    private View buildGridRow(int first) {
+        int cols = effCols();
+        int avail = appList.getWidth() - appList.getPaddingLeft() - appList.getPaddingRight();
+        int cellW = avail > 0 ? avail / cols : dp(80);
+        if (cellW < 1) cellW = 1;
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LayoutInflater inf = LayoutInflater.from(this);
+        for (int p = first; p < Math.min(first + cols, flatItems.size()); p++) {
+            View cell = inf.inflate(R.layout.item_grid, row, false);
+            bindCell(cell, flatItems.get(p));
+            cell.setLayoutParams(new LinearLayout.LayoutParams(cellW, gridItemH));
+            row.addView(cell);
+        }
+        return row;
+    }
+
+    /**
+     * 列表/网格共用的适配器：只给屏幕上可见的位置建 View。
+     * 上万行也只是同样的一屏 view，内存不随应用数/空间数增长。
+     */
+    private final class AppAdapter extends android.widget.BaseAdapter {
+        public int getCount() {
+            if (gridMode()) {
+                int cols = effCols();
+                return (flatItems.size() + cols - 1) / cols;
+            }
+            return shownGroups.size();
+        }
+
+        public Object getItem(int pos) {
+            return gridMode() ? null : shownGroups.get(pos);
+        }
+
+        public long getItemId(int pos) { return pos; }
+
+        public View getView(int pos, View cv, ViewGroup parent) {
+            boolean grid = gridMode();
+            String type = grid ? "g" : "l";
+            android.widget.FrameLayout wrap;
+            if (cv instanceof android.widget.FrameLayout && type.equals(cv.getTag())) {
+                wrap = (android.widget.FrameLayout) cv;
+                wrap.removeAllViews();
+            } else {
+                wrap = new android.widget.FrameLayout(MainActivity.this);
+                wrap.setTag(type);
+                // 卡片左右缩进 16dp、卡片之间 8dp 间隔（原来靠 LinearLayout 的 margin 做的）
+                if (grid) wrap.setPadding(dp(8), 0, dp(8), 0);
+                else wrap.setPadding(dp(16), 0, dp(16), dp(8));
+            }
+            View content = grid ? buildGridRow(pos * effCols()) : buildCard(shownGroups.get(pos));
+            wrap.addView(content, new android.widget.FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            return wrap;
+        }
     }
 
     /** 多选计数 */
@@ -2429,28 +2366,6 @@ public class MainActivity extends Activity {
         recentHeader.addView(recentTitle);
         recentHeader.addView(recentRow);
         // 不再加分隔线：下面紧跟的卡片/网格自带视觉分隔，多一条线反而重（川提）
-    }
-
-    /** 把「最近打开」区挂到指定 recent_host（无 padding）：先摘掉旧父容器，避免切换列表/网格时崩溃 */
-    private void mountRecentHeader(LinearLayout parent) {
-        android.view.ViewParent p = recentHeader.getParent();
-        if (p instanceof ViewGroup && p != parent) {
-            ((ViewGroup) p).removeView(recentHeader);
-        }
-        if (recentHeader.getParent() == null) {
-            parent.addView(recentHeader);
-        }
-    }
-
-    /** 把 tab 行挂到当前视图的 outer 顶部（recent_host 之后、列表之前），随滑动滚走/回顶 */
-    private void mountTabRow(LinearLayout outer) {
-        android.view.ViewParent p = tabRow.getParent();
-        if (p instanceof ViewGroup && p != outer) {
-            ((ViewGroup) p).removeView(tabRow);
-        }
-        if (tabRow.getParent() == null) {
-            outer.addView(tabRow, 1);
-        }
     }
 
     /** 刷「最近打开」区内容；返回是否有可显示的项（挂到哪由 render/buildGrid 决定） */

@@ -752,6 +752,16 @@ public final class AppData {
             s.append("  mv \"$SDE\" \"$DE\" || { [ -d \"$OLD/de\" ] && mv \"$OLD/de\" \"$DE\"; }\n");
             s.append("fi\n");
         }
+        // 属主/上下文必须在 APK 安装之前改回来：包里有 apk 就会 `pm install`，而 PM 看到
+        // 数据目录属主不是本空间该应用的 uid，会当成脏数据直接清空 —— 跨空间恢复实测中招
+        // （tar 里带的是来源空间 uid，99910231 落到 /data/user/0 下，install 之后 files 全没）。
+        s.append("for D in \"$CE\" \"$DE\"; do\n");
+        s.append("  [ -d \"$D\" ] || continue\n");
+        s.append("  chown -R \"$AU:$AU\" \"$D\"\n");
+        if (ctx.length() > 0) {
+            s.append("  chcon -R '").append(ctx).append("' \"$D\"\n");
+        }
+        s.append("done\n");
         // 外部三块：包里有 <pkg>/ext|obb|media 就换到 Android/… 对应目录。
         // Android/data 与 Android/obb 是 pass-through 直挂（f2fs），直接写底层即可；
         // Android/media 在 FUSE 后面，必须走 /storage 路径让 MediaProvider 亲自建文件——
@@ -811,14 +821,6 @@ public final class AppData {
         }
         s.append("rm -rf \"$TMP\"\n");
 
-        // 换回的数据要换属主与上下文；APK 装的包由系统自己管
-        s.append("for D in \"$CE\" \"$DE\"; do\n");
-        s.append("  [ -d \"$D\" ] || continue\n");
-        s.append("  chown -R \"$AU:$AU\" \"$D\"\n");
-        if (ctx.length() > 0) {
-            s.append("  chcon -R '").append(ctx).append("' \"$D\"\n");
-        }
-        s.append("done\n");
         if (extDstList.length() > 0) {
             s.append("for D in").append(extDstList).append("; do\n");
             s.append("  [ -d \"$D\" ] || continue\n");

@@ -1167,7 +1167,11 @@ public class MainActivity extends Activity {
                 }
             }
         }
-        boolean hasRecent = recentShow() && refreshRecentHeader();
+        // 搜索时不重建「最近打开」（每敲一个字都重绑二十几个图标太浪费），
+        // 内容沿用上一次的，清空搜索后自然刷新
+        boolean hasRecent = kw.length() == 0
+                ? (recentShow() && refreshRecentHeader())
+                : (recentShow() && recentRow != null && recentRow.getChildCount() > 0);
         if (recentHeader != null) {
             recentHeader.setVisibility(hasRecent ? View.VISIBLE : View.GONE);
         }
@@ -1556,8 +1560,13 @@ public class MainActivity extends Activity {
             bd.setVisibility(View.GONE);
         }
         Drawable d = iconCache.get(pkg);
-        if (d != null) { iv.setImageDrawable(d); return; }
+        if (d != null) { iv.setBackground(null); iv.setImageDrawable(d); return; }
         iv.setImageDrawable(null);
+        // 占位底色：有些系统应用/精简包取不到图标，别留一块空白看着像丢数据
+        android.graphics.drawable.GradientDrawable ph = new android.graphics.drawable.GradientDrawable();
+        ph.setColor(Theme.row(this));
+        ph.setCornerRadius(dp(10));
+        iv.setBackground(ph);
         // 不去重：每个图标位都提交任务，任务内部先查缓存——否则刷新重建后，
         // 新图标位会被「正在加载」去重挡掉，回调又更新的是旧控件，图标就丢了
         iconLoader.execute(new Runnable() {
@@ -1570,7 +1579,10 @@ public class MainActivity extends Activity {
                 if (dd == null) return;
                 final Drawable fd = dd;
                 runOnUiThread(new Runnable() {
-                    public void run() { iv.setImageDrawable(fd); }
+                    public void run() {
+                        iv.setBackground(null);
+                        iv.setImageDrawable(fd);
+                    }
                 });
             }
         });

@@ -283,43 +283,6 @@
             android:textSize="18sp" />
     </LinearLayout>
 
-    <!-- 备份完把「备份前在跑、被备份停掉」的应用依次放回来 -->
-    <LinearLayout
-        android:id="@+id/bk_relaunch_row"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="2dp">
-
-        <TextView
-            android:id="@+id/bk_relaunch_label"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/label_backup_relaunch"
-            android:textSize="15sp" />
-
-        <Switch
-            android:id="@+id/bk_relaunch"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/bk_relaunch_hint"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingBottom="10dp"
-        android:lineSpacingExtra="2dp"
-        android:text="@string/hint_backup_relaunch"
-        android:textSize="11sp" />
-
     <!-- 导出 / 压缩时的进度：批量任务才显示 -->
     <LinearLayout
         android:id="@+id/bk_progress"

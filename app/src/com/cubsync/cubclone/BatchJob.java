@@ -184,9 +184,9 @@ public final class BatchJob {
         Shell.probe();
         bkParts = AppData.parts(ctx);
         bkApkAll = AppData.apkAll(ctx);
-        // 备份前会被停掉的应用，全部备份完再按原样依次拉起来
-        final List<Row> relaunch = new ArrayList<Row>();
-        final boolean relOn = !restore && sp(ctx).getBoolean("backup_relaunch", true);
+        // 备份/恢复前会被停掉的应用，跑完再按原样依次拉起来（记 "空间/包名"）
+        final List<String> relaunch = new ArrayList<String>();
+        final boolean relOn = sp(ctx).getBoolean("backup_relaunch", true);
         // 快照只抓一次：进循环后应用会被 force-stop，边跑边判会把已经杀掉的全判成「没在跑」
         final java.util.Set<String> live = relOn
                 ? AppData.liveApps() : java.util.Collections.<String>emptySet();
@@ -207,12 +207,15 @@ public final class BatchJob {
                         + labelOf(r.pkg) + "  " + spaceLabel(r.user));
                 Notify.progress(ctx, restore, done, rows.size(), head, labelOf(r.pkg));
 
-                final boolean self = AppData.isSelf(r.user, r.pkg);
-                if (relOn && !self && live.contains(r.user + "/" + r.pkg)) relaunch.add(r);
+                final AppData.Backup bk = restore ? AppData.fromPath(r.path) : null;
+                // 恢复可能落到别的空间（targetUser），「在跑」和「重开」都得按目标空间算
+                final int tgt = restore ? (targetUser < 0 ? r.user : targetUser) : r.user;
+                final boolean self = AppData.isSelf(tgt, r.pkg);
+                if (relOn && !self && live.contains(tgt + "/" + r.pkg)) {
+                    relaunch.add(tgt + "/" + r.pkg);
+                }
                 Meter m = new Meter(restore ? null : AppData.backupBase(r.user, r.pkg));
                 m.begin();
-                AppData.Backup bk = restore ? AppData.fromPath(r.path) : null;
-                final int tgt = targetUser < 0 ? r.user : targetUser;
                 String res;
                 if (restore && bk != null && AppData.isSelf(tgt, r.pkg)) {
                     // 恢复自己：脚本里的 force-stop 会杀掉本进程，交给后台跑，跑完自己回来
@@ -269,20 +272,25 @@ public final class BatchJob {
     }
 
     /**
-     * 把备份前在跑的应用依次放回去，最后回到自己。
+     * 把跑之前在用的应用依次放回去，最后回到自己。元素是 "空间/包名"。
      *
      * 顺序有讲究：先把自己摆回前台再弹 toast —— 应用在后台时 toast 会被限流甚至丢掉，
      * 用户只看到一堆应用自己跳出来，不知道在干什么。
      * 最后再回自己一次：最后一个被拉起的三方应用会一直停在前台，任务结束的界面就看不到了。
      */
-    private void relaunchAll(List<Row> list) {
+    private void relaunchAll(List<String> list) {
         bringSelfToFront();
         sleep(600);                       // 切前台也要一点时间，别让 toast 赶在切换中间
         toastBg(ctx.getString(R.string.batch_relaunch_toast, list.size()));
         sleep(1500);                      // 让这句话有时间被看见，再开始跳应用
-        for (Row r : list) {
-            Launcher.relaunch(r.user, r.pkg);   // 依次：一次拉起一堆会互相抢前台
-            sleep(800);
+        for (String k : list) {
+            int i = k.indexOf('/');
+            if (i <= 0) continue;
+            try {
+                Launcher.relaunch(Integer.parseInt(k.substring(0, i)), k.substring(i + 1));
+            } catch (Throwable ignored) {
+            }
+            sleep(800);                   // 依次：一次拉起一堆会互相抢前台
         }
         bringSelfToFront();
     }

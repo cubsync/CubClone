@@ -142,8 +142,8 @@ Owner data is not touched.</string>
     <string name="in_disable_list">In disable list</string>
     <string name="save">Save</string>
     <string name="label_manage_foreign">Manage other clone spaces</string>
-    <string name="label_backup_relaunch">Reopen apps after backup</string>
-    <string name="hint_backup_relaunch">Backup stops apps first; when on, apps that were in use before the backup are reopened one by one after all backups finish. On by default</string>
+    <string name="label_backup_relaunch">Reopen apps after backup/restore</string>
+    <string name="hint_backup_relaunch">Backup and restore both stop apps first; when on, apps that were in use are reopened one by one once everything finishes (only apps with a UI — background push services are ignored). On by default</string>
     <string name="hint_manage_foreign">When on, clone spaces not created by this app can be used as targets: create clones in them, back up/restore their data, and remove/disable apps inside; off by default</string>
     <string name="space_foreign_tag">external</string>
     <string name="space_renamed_synced">Renamed; system name synced</string>
@@ -373,7 +373,7 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="batch_done_all_ok">All %1$d succeeded</string>
     <string name="batch_skipped_n">%1$d skipped</string>
     <string name="batch_relaunch_n">Reopened %1$d app(s)</string>
-    <string name="batch_relaunch_toast">Backup finished — reopening %1$d app(s)</string>
+    <string name="batch_relaunch_toast">Finished — reopening %1$d app(s)</string>
     <string name="self_backup_live">self not stopped</string>
     <string name="self_restore_hand_off">Self-restore handed to background; reopens when done</string>
     <string name="self_restore_after">reopens when done</string>

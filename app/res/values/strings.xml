@@ -142,8 +142,8 @@
     <string name="in_disable_list">已在禁用清单</string>
     <string name="save">保存</string>
     <string name="label_manage_foreign">管理非自建空间</string>
-    <string name="label_backup_relaunch">备份后恢复运行的应用</string>
-    <string name="hint_backup_relaunch">备份会先停止应用；开启后，全部备份做完再把备份前正在使用、被停掉的应用依次打开。默认开启</string>
+    <string name="label_backup_relaunch">备份/还原后恢复运行的应用</string>
+    <string name="hint_backup_relaunch">备份和还原都会先停止应用；开着的话，全部跑完再把当时正在使用、被停掉的应用依次打开（只认有界面的，后台推送常驻不算）。默认开启</string>
     <string name="hint_manage_foreign">开启后，非本应用创建的克隆空间也能当目标：往里创建分身、备份/恢复数据，也可移除/禁用里面的应用；默认关闭</string>
     <string name="space_foreign_tag">非自建</string>
     <string name="rename_space">重命名</string>
@@ -373,7 +373,7 @@
     <string name="batch_done_all_ok">全部成功：%1$d 项</string>
     <string name="batch_skipped_n">跳过 %1$d 项</string>
     <string name="batch_relaunch_n">已重新打开 %1$d 个应用</string>
-    <string name="batch_relaunch_toast">备份完成，正在重新打开 %1$d 个应用</string>
+    <string name="batch_relaunch_toast">已完成，正在重新打开 %1$d 个应用</string>
     <string name="self_backup_live">自身不停</string>
     <string name="self_restore_hand_off">自身恢复交给后台，完成后自动打开</string>
     <string name="self_restore_after">完成后自动打开</string>

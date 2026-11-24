@@ -36,7 +36,8 @@ public class RootActivity extends Activity {
     private TextView masterLabel, masterHint;
     private TextView cloneLabel, cloneHint;
     private TextView backupLabel, backupHint;
-    private Switch swMaster, swClone, swBackup;
+    private TextView relLabel, relHint;
+    private Switch swMaster, swClone, swBackup, swRel;
     private ImageButton btnBack;
 
     private int fg = 0xFF1B1B1F;
@@ -58,9 +59,12 @@ public class RootActivity extends Activity {
         cloneHint = findViewById(R.id.rt_clone_hint);
         backupLabel = findViewById(R.id.rt_backup_label);
         backupHint = findViewById(R.id.rt_backup_hint);
+        relLabel = findViewById(R.id.rt_relaunch_label);
+        relHint = findViewById(R.id.rt_relaunch_hint);
         swMaster = findViewById(R.id.rt_master);
         swClone = findViewById(R.id.rt_clone);
         swBackup = findViewById(R.id.rt_backup);
+        swRel = findViewById(R.id.rt_relaunch);
         btnBack = findViewById(R.id.rt_back);
 
         btnBack.setOnClickListener(new View.OnClickListener() {
@@ -85,6 +89,13 @@ public class RootActivity extends Activity {
                 sp().edit().putBoolean("root_feat_" + Root.BACKUP, checked).apply();
             }
         });
+        // 备份/还原完把跑之前在用的应用放回去（只认有界面的，推送常驻的不算）
+        swRel.setChecked(sp().getBoolean("backup_relaunch", true));
+        swRel.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton v, boolean checked) {
+                sp().edit().putBoolean("backup_relaunch", checked).apply();
+            }
+        });
 
         applyChrome();
         applyGate();
@@ -102,6 +113,7 @@ public class RootActivity extends Activity {
         card.setAlpha(on ? 1f : 0.45f);
         swClone.setEnabled(on);
         swBackup.setEnabled(on);
+        swRel.setEnabled(on);
     }
 
     private void probe() {
@@ -147,8 +159,10 @@ public class RootActivity extends Activity {
         masterLabel.setTextColor(fg);
         cloneLabel.setTextColor(fg);
         backupLabel.setTextColor(fg);
+        relLabel.setTextColor(fg);
         masterHint.setTextColor(sec);
         cloneHint.setTextColor(sec);
         backupHint.setTextColor(sec);
+        relHint.setTextColor(sec);
     }
 }

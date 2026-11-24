@@ -76,9 +76,6 @@ public class BackupActivity extends Activity {
     private TextView progText;
     private TextView selAll;
     private TextView selMore;
-    /** 备份完重开应用：只针对备份前正在用、被备份停掉的那些 */
-    private android.widget.Switch relSwitch;
-    private TextView relLabel, relHint;
 
     private static final int REQ_PICK_DIR = 701;
 
@@ -128,16 +125,6 @@ public class BackupActivity extends Activity {
         partsLabel = findViewById(R.id.bk_parts_label);
         partsValue = findViewById(R.id.bk_parts_value);
         partsArrow = findViewById(R.id.bk_parts_arrow);
-        relSwitch = findViewById(R.id.bk_relaunch);
-        relLabel = findViewById(R.id.bk_relaunch_label);
-        relHint = findViewById(R.id.bk_relaunch_hint);
-        relSwitch.setChecked(sp().getBoolean("backup_relaunch", true));
-        relSwitch.setOnCheckedChangeListener(
-                new android.widget.CompoundButton.OnCheckedChangeListener() {
-                    public void onCheckedChanged(android.widget.CompoundButton v, boolean checked) {
-                        sp().edit().putBoolean("backup_relaunch", checked).apply();
-                    }
-                });
         scopeTv = findViewById(R.id.bk_scope);
         selInv = findViewById(R.id.bk_sel_inv);
         dirValue.setOnClickListener(new View.OnClickListener() {
@@ -318,8 +305,6 @@ public class BackupActivity extends Activity {
         partsLabel.setTextColor(fg);
         partsValue.setTextColor(sec);
         partsArrow.setTextColor(sec);
-        relLabel.setTextColor(fg);
-        relHint.setTextColor(sec);
         scopeTv.setTextColor(sec);
         selMore.setTextColor(fg);
         renderDir();

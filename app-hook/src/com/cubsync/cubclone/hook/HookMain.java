@@ -88,7 +88,14 @@ public final class HookMain extends XposedModule {
         }
         int ctors = hookConstructors(c);
         int methods = hookMethods(c);
-        mark(PROP_APPLY, "ctor=" + ctors + ",m=" + methods);
+        // 安装拦截：把「未指定用户」的安装收敛到 user 0（与空间上限互不影响，各自 try/catch）
+        int install = 0;
+        try {
+            install = new InstallHook(this).apply(cl);
+        } catch (Throwable t) {
+            Log.w(TAG, "install hook failed: " + t);
+        }
+        mark(PROP_APPLY, "ctor=" + ctors + ",m=" + methods + ",i=" + install);
         if (ctors > 0 || methods > 0) {
             mark(PROP, "1");
         }
@@ -258,7 +265,7 @@ public final class HookMain extends XposedModule {
         }
     }
 
-    private static void mark(String key, String value) {
+    static void mark(String key, String value) {
         try {
             Class<?> sp = Class.forName("android.os.SystemProperties");
             Method set = sp.getMethod("set", String.class, String.class);

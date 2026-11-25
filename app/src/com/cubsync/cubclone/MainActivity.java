@@ -1298,10 +1298,14 @@ public class MainActivity extends Activity {
                 }
             });
             final int idx = i;
-            // 非自建空间（MultiApp 等）：默认只读，不给改名/移除；开了「管理非自建空间」才放开
-            if (c.foreign && !sp().getBoolean("manage_foreign", false)) {
+            // 系统自带空间：**永远不给改名** —— 名字是用户分辨「哪个是系统自带、哪个是我们建的」
+            // 的唯一线索，改过之后就分不清，容易误删系统分身。
+            // 移除应用/删空间仍按「管理非自建空间」开关放开（用户确实需要管理自带空间）。
+            if (c.foreign) {
                 row.findViewById(R.id.clone_rename).setVisibility(View.GONE);
-                row.findViewById(R.id.clone_delete).setVisibility(View.GONE);
+                if (!sp().getBoolean("manage_foreign", false)) {
+                    row.findViewById(R.id.clone_delete).setVisibility(View.GONE);
+                }
             }
             int iconTint = Theme.sec(this);
             for (int rid : new int[]{R.id.clone_pin, R.id.clone_open,

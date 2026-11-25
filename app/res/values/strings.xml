@@ -448,7 +448,7 @@
     <string name="select_all_space">全选</string>
     <string name="invert_space">反选</string>
     <string name="opening_primary">正在打开 %1$s</string>
-    <string name="space_foreign">系统分身（只读）</string>
+    <string name="space_foreign">系统分身</string>
     <string name="space_readonly">这是系统分身空间，只读，不能从这里移除</string>
     <string name="uid_tag">(%1$d)</string>
 

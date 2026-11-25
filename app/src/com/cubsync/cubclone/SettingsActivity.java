@@ -1850,7 +1850,7 @@ public class SettingsActivity extends Activity {
         CloneStore.markSpacesDirty(this);   // 建号要几秒，先置位：用户可能等不到就跑回主页
         new Thread(new Runnable() {
             public void run() {
-                String out = Shell.exec(CLI + " create '" + CloneStore.cloneName(name) + "'");
+                String out = Shell.exec(CloneStore.createCmd(SettingsActivity.this, CloneStore.cloneName(name)));
                 Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
                 final int uid = m.find() ? Integer.parseInt(m.group(1)) : -1;
                 if (uid > 0) {

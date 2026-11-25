@@ -44,7 +44,7 @@ public final class CubClone {
             String cmd = args.length > 0 ? args[0] : "list";
             switch (cmd) {
                 case "list":    list(); break;
-                case "create":  create(args[1]); break;
+                case "create":  create(args[1], args.length > 2 ? args[2].split(",") : null); break;
                 case "start":   sh("am", "start-user", args[1]); break;
                 case "remove":  remove(Integer.parseInt(args[1])); break;
                 case "rename":  rename(Integer.parseInt(args[1]), args[2]); break;
@@ -108,7 +108,7 @@ public final class CubClone {
         return true;
     }
 
-    private static void create(String name) throws Exception {
+    private static void create(String name, String[] disallow) throws Exception {
         if (bfu()) return;
 
         int uid = -1;
@@ -122,7 +122,7 @@ public final class CubClone {
         if (m != null) {
             Object r = (m.getParameterTypes().length == 4)
                     ? m.invoke(UM, name, CLONE, 0, 0)
-                    : m.invoke(UM, name, CLONE, 0, 0, null);
+                    : m.invoke(UM, name, CLONE, 0, 0, disallow);
             if (r != null) { uid = parseUid(uidOf(r)); info = r; }
         }
         // 有的 ROM 会忽略 parentId，建出没有父组的 clone。dumpsys user 里那一行不带
@@ -308,12 +308,20 @@ public final class CubClone {
     // ---------- 工具 ----------
 
     private static Method pick(String name) {
+        // 优先 5 参数版本：createProfileForUser(..., disallowedPackages) 才是能「建号时不装」的那个；
+        // 4 参数版本没有这个参数，先拿到它的话清单会被静默丢掉（G7 实测过一次）。
+        Method four = null;
         for (Method m : UserManager.class.getDeclaredMethods()) {
             if (!name.equals(m.getName())) continue;
             int n = m.getParameterTypes().length;
-            if (n == 4 || n == 5) { m.setAccessible(true); return m; }
+            if (n == 5) {
+                m.setAccessible(true);
+                return m;
+            }
+            if (n == 4) four = m;
         }
-        return null;
+        if (four != null) four.setAccessible(true);
+        return four;
     }
 
     private static Object invoke(Object target, String name, Class<?>[] sig, Object... a)

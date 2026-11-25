@@ -207,6 +207,25 @@ public final class CloneStore {
      * 归属由 Java 侧按 $OURS 分类，shell 不看 flags。
      * ⚠别用 awk：Shizuku 起的 sh 里没有 awk，整条命令会静默失败、列表全空。
      */
+    /**
+     * 刚建好、还没跑完 prune 的空间。扫描时只报空间本身、不拉应用列表：
+     * 新空间的系统应用此时还没 disable，拉出来会先铺一屏再消失（G7 实测）。
+     * 只在内存里，App 重启就没了 —— 那时 prune 早跑完，不需要这个标记。
+     */
+    static final Set<Integer> PENDING = java.util.Collections.synchronizedSet(new HashSet<Integer>());
+
+    static void markPending(int uid) {
+        PENDING.add(Integer.valueOf(uid));
+    }
+
+    static void clearPending(int uid) {
+        PENDING.remove(Integer.valueOf(uid));
+    }
+
+    static boolean isPending(int uid) {
+        return PENDING.contains(Integer.valueOf(uid));
+    }
+
     private static final String SCAN =
             "RM=\" $(dumpsys user 2>/dev/null"
             + " | sed -n 's/.*UserInfo{\\([0-9]*\\):.*<removing>.*/\\1/p' | tr '\\n' ' ') \"; "
@@ -221,9 +240,11 @@ public final class CloneStore {
             // 系统里自己建的「访客/第二用户」不能被当成分身显示
             + "case \"$ln\" in *type=profile[.]CLONE*) ;; "
             + "*) case \" $OURS \" in *\" $u \"*) ;; *) continue;; esac;; esac; "
+            // 刚建好、还没 prune 的空间：只报空间本身，不拉应用列表 ——
+            // 此时新空间的系统应用还没禁用，拉出来会先铺一屏再消失（G7 实测）
+            + "case \" $PEND \" in *\" $u \"*) echo \"SPACE $u\" > $SD/$u.txt; continue;; esac; "
             + "( case \" $OURS \" in *\" $u \"*) echo \"SPACE $u\"; t=ICO;; "
-            + "*) echo \"FSPACE $u\"; t=EXT;; esac; "
-            + "pm list packages -e --user $u | sed \"s/^package:/PKG $u /\"; "
+            + "*) echo \"FSPACE $u\"; t=EXT;; esac; "            + "pm list packages -e --user $u | sed \"s/^package:/PKG $u /\"; "
             + "pm list packages -d --user $u | sed \"s/^package:/OFF $u /\"; "
             + "cmd package query-activities --user $u"
             + " -a android.intent.action.MAIN -c android.intent.category.LAUNCHER"
@@ -236,8 +257,26 @@ public final class CloneStore {
         attach(c);
         StringBuilder sb = new StringBuilder("OURS=\" ");
         for (Integer u : markedUids()) sb.append(u).append(' ');
+        sb.append("\"; PEND=\" ");
+        synchronized (PENDING) {
+            for (Integer u : PENDING) sb.append(u).append(' ');
+        }
         sb.append("\"; ");
         return sb.toString() + SCAN;
+    }
+
+    /** 建空间命令：把「不装清单」一起带给 CLI，新空间建号时就不装这些应用 */
+    static String createCmd(Context c, String name) {
+        attach(c);
+        StringBuilder sb = new StringBuilder(CLI).append(" create '")
+                .append(name.replace("'", "")).append("'");
+        StringBuilder ni = new StringBuilder();
+        for (String p : extraUninstall(c)) {
+            if (ni.length() > 0) ni.append(',');
+            ni.append(p);
+        }
+        if (ni.length() > 0) sb.append(" '").append(ni).append("'");
+        return sb.toString();
     }
 
     /** 某空间登记的包；null 表示老版本建的空间，没登记过 */
@@ -586,8 +625,8 @@ public final class CloneStore {
         keep.addAll(defaultKeep(c));   // Play/GMS 默认保留，但可加卸载清单卸载
         StringBuilder kp = new StringBuilder(" ");
         for (String p : keep) kp.append(p).append(' ');
-        StringBuilder ul = new StringBuilder(" ");   // 卸载清单：直接卸载（优先级最高）
-        for (String p : extraUninstall(c)) ul.append(p).append(' ');
+        StringBuilder ul = new StringBuilder(" ");   // 不装清单（老空间补卸）：新空间建号时已经没装
+        if (!fresh) for (String p : extraUninstall(c)) ul.append(p).append(' ');
         StringBuilder di = new StringBuilder(" ");   // 禁用清单：禁用（不可用，先于保留）
         for (String p : extraDisable(c)) di.append(p).append(' ');
         String q = String.valueOf((char) 34);      // "

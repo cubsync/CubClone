@@ -74,7 +74,7 @@ final class WmVisibleHook {
                         // 原本可见的一律不动（Flyme 自己的分身、当前用户都走这一支）
                         if (Boolean.TRUE.equals(r)) return r;
                         int uid = ((Integer) chain.getArg(0)).intValue();
-                        if (!ours(uid)) return r;
+                        if (!ours(uid, ctxOf(chain.getThisObject()))) return r;
                         int k = HITS.incrementAndGet();
                         if (FIRST.getAndIncrement() == 0) {
                             Log.i(TAG, "wm visible: uid " + uid + " -> true");
@@ -92,16 +92,48 @@ final class WmVisibleHook {
         }
     }
 
-    /** uid 是不是我们建的空间（每次现读，App 侧改了列表立刻生效） */
+    /** uid 是不是我们建的空间（属性优先，读不到再查该用户自己的归属标记） */
     static boolean ours(int uid) {
+        return ours(uid, null);
+    }
+
+    /**
+     * @param ctx WMS 的 system context；为 null 时只查属性（老调用点兼容）
+     */
+    static boolean ours(int uid, android.content.Context ctx) {
         if (uid <= 0) return false;
         String csv = read(PROP_SPACES);
-        if (csv.length() == 0) return false;
-        String want = String.valueOf(uid);
-        for (String s : csv.split(",")) {
-            if (s.trim().equals(want)) return true;
+        if (csv.length() > 0) {
+            String want = String.valueOf(uid);
+            for (String s : csv.split(",")) {
+                if (s.trim().equals(want)) return true;
+            }
         }
-        return false;
+        // 属性可能还没同步（CLI 直接建号、App 尚未刷新）：查该用户自己的归属标记，
+        // 这个标记是建号时必写的，比属性可靠
+        if (ctx == null) return false;
+        try {
+            // getIntForUser 是 @SystemApi，编译桩里没有，只能反射；system_server 不受 hidden API 限制
+            java.lang.reflect.Method m = android.provider.Settings.Secure.class.getMethod(
+                    "getIntForUser", android.content.ContentResolver.class,
+                    String.class, int.class, int.class);
+            Object v = m.invoke(null, ctx.getContentResolver(), "cubclone_owned",
+                    Integer.valueOf(0), Integer.valueOf(uid));
+            return ((Integer) v).intValue() == 1;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** 从 WMS 实例取 system context（读别的用户 settings 要用） */
+    static android.content.Context ctxOf(Object wms) {
+        try {
+            java.lang.reflect.Field f = wms.getClass().getDeclaredField("mContext");
+            f.setAccessible(true);
+            return (android.content.Context) f.get(wms);
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     private static String read(String key) {

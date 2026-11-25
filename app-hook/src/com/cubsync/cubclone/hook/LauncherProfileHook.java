@@ -91,6 +91,11 @@ final class LauncherProfileHook {
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(chain -> {
                             Object r = chain.proceed();
+                            android.content.Context ctx = null;
+                            try {
+                                ctx = contextOf(chain.getThisObject());
+                            } catch (Throwable ignored) {
+                            }
                             if (!(r instanceof int[])) {
                                 return r;
                             }
@@ -100,7 +105,7 @@ final class LauncherProfileHook {
                             int[] arr = (int[]) r;
                             int kept = 0;
                             for (int uid : arr) {
-                                if (!WmVisibleHook.ours(uid)) {
+                                if (!WmVisibleHook.ours(uid, ctx)) {
                                     kept++;
                                 }
                             }
@@ -110,7 +115,7 @@ final class LauncherProfileHook {
                             int[] out = new int[kept];
                             int i = 0;
                             for (int uid : arr) {
-                                if (!WmVisibleHook.ours(uid)) {
+                                if (!WmVisibleHook.ours(uid, ctx)) {
                                     out[i++] = uid;
                                 }
                             }

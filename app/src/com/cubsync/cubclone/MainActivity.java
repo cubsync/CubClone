@@ -1837,7 +1837,7 @@ public class MainActivity extends Activity {
                 final List<Integer> t = new ArrayList<Integer>(targets);
                 String newErr = null;
                 if (wantNew) {
-                    String out = Shell.exec(CLI + " create '" + CloneStore.cloneName(name) + "'");
+                    String out = Shell.exec(CloneStore.createCmd(MainActivity.this, CloneStore.cloneName(name)));
                     Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
                     int got = -1;
                     if (m.find()) got = Integer.parseInt(m.group(1));
@@ -2029,7 +2029,7 @@ public class MainActivity extends Activity {
     private void createSpaceWith(final Group g, final String name) {
         new Thread(new Runnable() {
             public void run() {
-                String out = Shell.exec(CLI + " create '" + CloneStore.cloneName(name) + "'");
+                String out = Shell.exec(CloneStore.createCmd(MainActivity.this, CloneStore.cloneName(name)));
                 Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
                 int uid = m.find() ? Integer.parseInt(m.group(1)) : -1;
                 if (uid <= 0) {

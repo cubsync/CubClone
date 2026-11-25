@@ -177,8 +177,8 @@ Owner data is not touched.</string>
     <string name="keep_extra_optional">Optional · check to disable</string>
     <string name="search_sys_app">Search system apps</string>
     <string name="select_all_optional">Select all optional</string>
-    <string name="uninstall_extra_title">Uninstall list</string>
-    <string name="uninstall_extra_hint">Apps in the uninstall list are removed when creating a space; can be restored anytime</string>
+    <string name="uninstall_extra_title">Do-not-install list</string>
+    <string name="uninstall_extra_hint">Apps in this list are not installed when a new space is created; the owner space and existing spaces are unaffected</string>
     <string name="hidden_sys_title">Hide list</string>
     <string name="hidden_sys_hint">Apps in the hide list are hidden when creating a space (stay enabled, just hidden); applies on next space</string>
     <string name="hidden_sys_dialog_tip">Check = hide when creating a space</string>

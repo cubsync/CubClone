@@ -219,10 +219,20 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
                 android:layout_marginEnd="8dp"
-                android:layout_marginBottom="8dp"
                 android:lineSpacingExtra="3dp"
                 android:text="@string/plugin_hint"
                 android:textSize="12sp" />
+
+            <!-- 插件版本状态：运行中的版本 / 已装待重启 / 未安装。一行说清，重装后能看出升没升 -->
+            <TextView
+                android:id="@+id/rt_plugin_state"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginTop="6dp"
+                android:layout_marginEnd="8dp"
+                android:layout_marginBottom="8dp"
+                android:textSize="13sp" />
 
             <LinearLayout
                 android:id="@+id/rt_limit_card"

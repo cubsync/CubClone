@@ -30,6 +30,19 @@ DIST=../dist
 rm -rf "$OUT"
 mkdir -p "$OUT/classes" "$OUT/dex" "$OUT/gen" "$DIST"
 
+# 模块版本常量：hook 启动时上报 sys.cubclone.hook.ver，主应用据此显示「运行中 1.0.7」。
+# 重装 APK 但没重启时，运行中的还是旧值 —— 界面能据此提示「重启后生效」。
+mkdir -p "$OUT/gen/com/cubsync/cubclone/hook"
+cat > "$OUT/gen/com/cubsync/cubclone/hook/BuildVer.java" <<EOF
+package com.cubsync.cubclone.hook;
+
+/** build.sh 生成，勿手改 */
+final class BuildVer {
+    static final String V = "$VER";
+    private BuildVer() { }
+}
+EOF
+
 echo "[1/6] aapt2 compile"
 "$BT/aapt2.exe" compile --dir res -o "$OUT/res.zip"
 

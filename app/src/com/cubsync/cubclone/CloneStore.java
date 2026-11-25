@@ -709,6 +709,30 @@ public final class CloneStore {
     /** persist 属性重启后还在；hook 启动时优先读它，读不到才用默认值 */
     static final String HOOK_LIMIT_PERSIST = "persist.sys.cubclone.hook.limit";
 
+    /** 模块包名（增强插件是独立 APK，装在设备上但不显示图标） */
+    static final String HOOK_PKG = "com.cubsync.cubclone.hook";
+
+    /**
+     * 正在运行的插件版本：hook 在 system_server 启动时上报 {@code sys.cubclone.hook.ver}。
+     * 这是「当前真正在跑的那一版」——重装 APK 但没重启时它还是旧值。没生效返回 null。
+     */
+    public static String hookRunningVersion() {
+        if (!"1".equals(Shell.raw("getprop", "sys.cubclone.hook").trim())) return null;
+        String v = Shell.raw("getprop", "sys.cubclone.hook.ver").trim();
+        return v.length() == 0 ? null : v;
+    }
+
+    /** 设备上已安装的插件版本（模块 APK 的 versionName）；没装返回 null */
+    public static String hookInstalledVersion() {
+        String out = Shell.raw("dumpsys package " + HOOK_PKG);
+        int i = out.indexOf("versionName=");
+        if (i < 0) return null;
+        int s = i + "versionName=".length();
+        int e = out.indexOf('\n', s);
+        String v = (e < 0 ? out.substring(s) : out.substring(s, e)).trim();
+        return v.length() == 0 ? null : v;
+    }
+
     /**
      * 解锁模块生效时返回实际目标值（&gt;0）；没装、没在 LSPosed 里启用、或 hook 没跑起来返回 null。
      * 只看 {@code sys.cubclone.hook}：这个属性只有 system_server 里的 hook 会写，普通进程 getprop 就能读。

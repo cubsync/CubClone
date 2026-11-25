@@ -83,6 +83,8 @@ public final class HookMain extends XposedModule {
     }
 
     private void apply(ClassLoader cl) {
+        // 版本先上报：主应用靠它区分「已装 1.0.7」和「正在跑 1.0.7」，重装后没重启能提示出来
+        mark("sys.cubclone.hook.ver", BuildVer.V);
         Class<?> c = find(cl);
         if (c == null) {
             Log.w(TAG, "UserManagerService not found; nothing done");

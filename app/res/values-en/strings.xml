@@ -62,6 +62,10 @@
     <string name="limit_title">Clone space limit</string>
     <string name="plugin_title">Plugin features</string>
     <string name="plugin_hint">The features below come from the unlock plugin (LSPosed module) and do nothing without it. Reboot once after changing them when asked.</string>
+    <string name="plugin_state_running">Enhancement plugin %1$s running</string>
+    <string name="plugin_state_pending">Enhancement plugin %1$s installed, %2$s still running — reboot to apply</string>
+    <string name="plugin_state_installed">Enhancement plugin %1$s installed but not active (enable it in LSPosed, then reboot)</string>
+    <string name="plugin_state_none">Enhancement plugin not installed</string>
     <string name="install_title">Install interception</string>
     <string name="install_label">Install apps without a target user into the main space only</string>
     <string name="install_state_on">Active</string>

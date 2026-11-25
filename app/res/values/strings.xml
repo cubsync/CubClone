@@ -62,6 +62,10 @@
     <string name="limit_title">分身空间上限</string>
     <string name="plugin_title">插件功能</string>
     <string name="plugin_hint">以下功能由解锁插件（LSPosed 模块）提供，没装插件或插件没生效时都不起作用。改完按提示重启一次。</string>
+    <string name="plugin_state_running">增强插件 %1$s 运行中</string>
+    <string name="plugin_state_pending">增强插件 %1$s 已安装，当前运行的还是 %2$s —— 重启手机后生效</string>
+    <string name="plugin_state_installed">增强插件 %1$s 已安装，尚未生效（在 LSPosed 里启用并重启一次）</string>
+    <string name="plugin_state_none">未安装增强插件</string>
     <string name="install_title">安装拦截</string>
     <string name="install_label">未指定用户的安装只装到主空间</string>
     <string name="install_state_on">已生效</string>

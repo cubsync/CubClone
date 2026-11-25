@@ -40,6 +40,7 @@ public class RootActivity extends Activity {
     private Switch swMaster, swClone, swBackup, swRel;
     private ImageButton btnBack;
     private TextView rtLimitSec, rtLimitState, rtLimitHint, rtLimitInstall, rtLimitTune;
+    private TextView rtPluginState;
     private LinearLayout rtLimitCard;
     private TextView rtInstallLabel, rtInstallState, rtInstallHint;
     private LinearLayout rtInstallCard;
@@ -75,6 +76,7 @@ public class RootActivity extends Activity {
         btnBack = findViewById(R.id.rt_back);
 
         rtLimitSec = findViewById(R.id.rt_limit_sec);
+        rtPluginState = findViewById(R.id.rt_plugin_state);
         rtLimitCard = findViewById(R.id.rt_limit_card);
         rtLimitState = findViewById(R.id.rt_limit_state);
         rtLimitHint = findViewById(R.id.rt_limit_hint);
@@ -134,6 +136,7 @@ public class RootActivity extends Activity {
         probe();
         renderLimit();
         renderInstall();
+        renderPluginState();
         // 直接进本页（不经设置页）时 Shell 还没探测过，ready() 是 false，
         // 两个插件区块会误报「需要先授权 root」。这里自己探一次再重画。
         new Thread(new Runnable() {
@@ -143,6 +146,7 @@ public class RootActivity extends Activity {
                     public void run() {
                         renderLimit();
                         renderInstall();
+                        renderPluginState();
                     }
                 });
             }
@@ -155,6 +159,50 @@ public class RootActivity extends Activity {
         applyChrome();
         renderLimit();
         renderInstall();
+        renderPluginState();
+    }
+
+    /**
+     * 「插件功能」栏的版本状态，一行说清现在跑的是哪一版：
+     * <ul>
+     *   <li>运行中 → 绿色「增强插件 1.0.7 运行中」；</li>
+     *   <li>已装新版但没重启 → 「装的是 1.0.7，运行中还是 1.0.6，重启后生效」——
+     *       以前重装完界面毫无变化，看不出升没升、也看不出要不要重启；</li>
+     *   <li>已装未生效 / 没装 → 灰色，指路 LSPosed 启用。</li>
+     * </ul>
+     * 运行版本来自 hook 启动时上报的 `sys.cubclone.hook.ver`（system_server 重启才更新），
+     * 已装版本读模块 APK 的 versionName（重装立刻变）。两者不同就是「待重启」。
+     */
+    private void renderPluginState() {
+        if (rtPluginState == null) return;
+        if (!Shell.ready()) {
+            rtPluginState.setText("");
+            return;
+        }
+        new Thread(new Runnable() {
+            public void run() {
+                final String run = CloneStore.hookRunningVersion();
+                final String ins = CloneStore.hookInstalledVersion();
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (isFinishing() || rtPluginState == null) return;
+                        if (run != null && ins != null && !ins.equals(run)) {
+                            rtPluginState.setText(getString(R.string.plugin_state_pending, ins, run));
+                            rtPluginState.setTextColor(sec);
+                        } else if (run != null) {
+                            rtPluginState.setText(getString(R.string.plugin_state_running, run));
+                            rtPluginState.setTextColor(Theme.green(RootActivity.this));
+                        } else if (ins != null) {
+                            rtPluginState.setText(getString(R.string.plugin_state_installed, ins));
+                            rtPluginState.setTextColor(sec);
+                        } else {
+                            rtPluginState.setText(R.string.plugin_state_none);
+                            rtPluginState.setTextColor(sec);
+                        }
+                    }
+                });
+            }
+        }).start();
     }
 
     /** 总开关关掉时，下面两个单项一起置灰但保留原值（重新打开总开关就恢复） */

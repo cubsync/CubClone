@@ -61,7 +61,8 @@ echo "[1/7] aapt2 compile"
 "$BT/aapt2.exe" compile --dir res -o "$OUT/res.zip"
 # 版本号唯一真源＝AndroidManifest 的 versionName；versionCode 由它推导，见 docs/VERSIONING.md
 # 正式版 0.7.0 -> 70000。预发布占用本版本号下 100 个槽之前的那段，保证「预发布 < 正式版」且单调：
-#   dev.N 69901-69909 · alpha.N 69911-69929 · beta.N 69931-69959 · rc.N 69961-69989
+#   dev.N 69901-69949 · alpha.N 69951-69964 · beta.N 69966-69979 · rc.N 69981-69994
+#   dev 放到 49 个：开发期出包次数远多于 alpha/beta/rc，9 个不够用。
 VNAME=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' AndroidManifest.xml | head -1)
 [ -n "$VNAME" ] || { echo "读不到 versionName"; exit 1; }
 BASE="${VNAME%%-*}"; PRE=""
@@ -73,10 +74,10 @@ VCODE=$(printf '%s\n' "$BASE" | awk -v pre="$PRE" '{
   if (pre != "") {
     st = pre; sub(/\..*$/, "", st)
     k = match(pre, /[0-9]+$/) ? substr(pre, RSTART)+0 : 1
-    if      (st == "dev")   { off = 100; lim = 9 }
-    else if (st == "alpha") { off = 90;  lim = 19 }
-    else if (st == "beta")  { off = 70;  lim = 29 }
-    else if (st == "rc")    { off = 40;  lim = 29 }
+    if      (st == "dev")   { off = 100; lim = 49 }
+    else if (st == "alpha") { off = 50;  lim = 14 }
+    else if (st == "beta")  { off = 35;  lim = 14 }
+    else if (st == "rc")    { off = 20;  lim = 14 }
     else { print "ERR" ; exit }
     if (k < 1 || k > lim) { print "ERR"; exit }
     code = code - off + k
@@ -90,11 +91,8 @@ echo "    版本 $VNAME  versionCode $VCODE（由 versionName 推导）"
 # 用来认出「设备上这一版是哪次提交」。正式版必须保持干净版本号——用户点「关于」看到的只能是 0.7.0。
 if [ -n "$PRE" ]; then
   SHA=$(git -C .. rev-parse --short HEAD 2>/dev/null || echo nogit)
-  # 提交哈希看不出先后，加一个单调递增的构建号：b167 一定比 b166 新。
-  # 它只是 SemVer §5 的 build metadata，不占版本号、不影响 versionCode 与优先级。
-  CNT=$(git -C .. rev-list --count HEAD 2>/dev/null || echo 0)
   if ! git -C .. diff --quiet 2>/dev/null; then SHA="$SHA-dirty"; fi
-  BUILDV="$VNAME+b$CNT.$SHA"
+  BUILDV="$VNAME+$SHA"
   echo "    构建标记 $BUILDV"
 else
   BUILDV="$VNAME"

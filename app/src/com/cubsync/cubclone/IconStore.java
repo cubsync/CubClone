@@ -59,6 +59,10 @@ final class IconStore {
 
     private static final Handler UI = new Handler(Looper.getMainLooper());
 
+    /** 磁盘文件数上限（1500 × 约 28KB ≈ 40MB） */
+    private static final int MAX_FILES = 1500;
+    private static int writes;
+
     private static Context app;
     private static File dir;
     private static int px;
@@ -188,6 +192,9 @@ final class IconStore {
         if (disk != null) {
             MEM.put(pkg, disk);
             STAMP.put(pkg, Long.valueOf(stamp));
+            // 摸一下访问时间：磁盘满了按 mtime 淘汰时，正在用的图标不会被先删
+            //noinspection ResultOfMethodCallIgnored
+            f.setLastModified(System.currentTimeMillis());
             return disk;
         }
 
@@ -269,9 +276,11 @@ final class IconStore {
 
     private static void save(File f, Bitmap bm) {
         FileOutputStream fo = null;
+        boolean ok = false;
         try {
             fo = new FileOutputStream(f);
             bm.compress(Bitmap.CompressFormat.PNG, 100, fo);
+            ok = true;
         } catch (Throwable ignored) {
         } finally {
             if (fo != null) {
@@ -280,6 +289,28 @@ final class IconStore {
                 } catch (Throwable ignored) {
                 }
             }
+        }
+        if (ok) prune();
+    }
+
+    /**
+     * 磁盘上限：1500 张 ≈ 40MB。装过的应用再多（含各类分身里的包），
+     * 缓存只按包名存一份，不会随空间数翻倍；真超了就按最后访问时间淘汰最旧的四分之一。
+     * 淘汰只是下次多看一次 1ms 的磁盘读，不会丢图。
+     */
+    private static void prune() {
+        if (++writes % 200 != 0) return;   // 每写 200 张扫一次目录就够
+        File[] fs = dir == null ? null : dir.listFiles();
+        if (fs == null || fs.length <= MAX_FILES) return;
+        java.util.Arrays.sort(fs, new java.util.Comparator<File>() {
+            public int compare(File a, File b) {
+                return Long.compare(a.lastModified(), b.lastModified());
+            }
+        });
+        int del = fs.length - MAX_FILES * 3 / 4;
+        for (int i = 0; i < del; i++) {
+            //noinspection ResultOfMethodCallIgnored
+            fs[i].delete();
         }
     }
 }

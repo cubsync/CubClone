@@ -53,13 +53,16 @@
   回执和列表刷新压在 prune 之后。现在建完立即提示并刷新列表，prune 留在后台继续。
 - **Flyme 上 `createProfileForUser` 不可用**：CLI 原来直接报错退出，现在降级到
   `pm create-user --user-type full`（G7 的空间本来就是这么建的）。
-- **系统应用列表滑动卡顿（快停下时顿一下）**：列表/网格改成真正的 View 复用。以前每次
-  `getView` 都重新 inflate 一整张卡片（主身份行 + 每个分身行），ListView 的 convertView
-  只复用了最外层容器；用户应用几十个时看不出来，系统应用两百多个时，快速滑动会把 bind
-  攒到停下那一次 layout 一起做，一屏 8 张卡 × 每张若干次 inflate 直接掉帧。现在控件只找一次、
-  listener 只挂一次，复用时只改文字/图标/可见性。同时：图标缓存 150 → 800（系统应用数量
-  超过缓存会反复淘汰重载）、只对可见项重绑；惯性滑动期间暂停排新图标任务、停稳后补齐；
-  取不到图标时的占位底共用一份；网格格子不再每次 bind 都 findViewById。
+- **应用多的页签上下滑动卡顿、快停下时顿一下**：两条根因都是实测出来的：
+  ① 每次 `getView` 都重新 inflate 一整张卡片（主身份行 + 每个分身行），ListView 的
+  convertView 只复用了最外层容器，一屏 8 张卡 × 每张若干次 inflate，停下那次 layout 一起做就掉帧；
+  ② `getApplicationIcon` 在 G7 上单次 10~175ms、245 个系统应用共 2.9s，**热态仍是 2.5s** ——
+  堆栈显示 Flyme 在 `ApplicationPackageManager.getDrawable` 里注入了 `FlymeThemeHelper.makeThemeIcon`，
+  每次取图标都跑一遍主题图标替换。缓存的 Drawable 又持有 APK 的 Resources，首次 draw 还在绘制路径里加载资源。
+  现在：控件只找一次、listener 只挂一次，内容签名没变整张卡直接跳过；图标在后台画成控件像素尺寸的
+  Bitmap 并落盘（实测重读 1.07ms/个，内存命中 0），主线程只做 `setImageBitmap`，回调校验 tag 防串位。
+  另外：`hiddenClones` 改内存快照（以前每行每个分身各读一次 SharedPreferences 并拷贝集合）、
+  角标不再每次 bind 新建 GradientDrawable、卡片不再每次 bind 调 `setSingleLine`。
 - **同一版本号重打包后设备上的 CLI jar 不更新**：`deploy` 原来按 versionCode 判断是否已释放，
   改成按 jar 内容（长度 + CRC32）判断。
 

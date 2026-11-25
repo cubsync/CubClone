@@ -76,7 +76,6 @@ public class MainActivity extends Activity {
     static final class Group {
         String pkg;
         String label;
-        Drawable icon;
         final List<Clone> clones = new ArrayList<Clone>();
     }
 
@@ -132,20 +131,15 @@ public class MainActivity extends Activity {
     private android.widget.Button btnSelectAll, btnInvert, btnAdd, btnRemove;
 
     /**
-     * 图标缓存：只存「系统给的 Drawable」，按个数限量（150 个）。
-     * 不再生成 44dp 位图 —— 同一应用的图标在 N 个空间里共用同一个 Drawable 实例，
-     * 上千应用 × 十几个空间也只占这一份，内存不随分身数增长。
+     * 取不到图标时的占位底：所有图标位尺寸相同，共用一份。
+     * 图标本体走 {@link IconStore}（固定尺寸 Bitmap + 磁盘缓存）——G7 实测
+     * {@code getApplicationIcon} 单次 10~175ms、245 个系统应用共 2.9s 且热态不降，
+     * 堆栈指向 Flyme 在 {@code ApplicationPackageManager.getDrawable} 里注入的主题图标替换。
      */
-    private final android.util.LruCache<String, Drawable> iconCache =
-            new android.util.LruCache<String, Drawable>(800);
-    /** 滑动/惯性中：只显示已缓存的图标，新任务等停稳再排（见 OnScrollListener） */
-    private volatile boolean iconHold;
-    /** 取不到图标时的占位底：所有图标位尺寸相同，共用一份 */
     private android.graphics.drawable.GradientDrawable placeholderBg;
+    /** placeholderBg 的配色指纹：切主题/纯黑后要重做 */
+    private int placeholderKey;
     private final Map<String, String> labelCache = new HashMap<String, String>();
-    /** 图标异步加载：只做 Binder 取图标（毫秒级），绘制交给系统 RenderThread，后台线程不碰 Canvas */
-    private final java.util.concurrent.ExecutorService iconLoader =
-            java.util.concurrent.Executors.newSingleThreadExecutor();
     /** 只认第三方应用：分身用户里天然带着一堆系统应用 */
     private final Set<String> userApps = new HashSet<String>();
     private final Object metaLock = new Object();
@@ -192,6 +186,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         CloneStore.attach(this);
+        IconStore.init(this);   // 图标仓库（内存 Bitmap + 磁盘 PNG）必须先就绪
         // 备份目录是设置项，备份/克隆都要用，进页面先读一遍
         AppData.loadRoot(sp());
         langAtCreate = Locales.tag(this);
@@ -238,20 +233,11 @@ public class MainActivity extends Activity {
         appAdapter = new AppAdapter();
         appList.setAdapter(appAdapter);
         appList.setSelector(new android.graphics.drawable.ColorDrawable(0));   // 行自己带背景，别叠系统选中色
+        // 滚动的 View 不建立 drawing cache：老 ListView 时代的标准做法，
+        // 省掉滚动期间每个 child 的 bitmap 分配（AOSP AbsListView#setScrollingCacheEnabled）。
+        appList.setScrollingCacheEnabled(false);
         appList.setOnScrollListener(new android.widget.AbsListView.OnScrollListener() {
-            public void onScrollStateChanged(android.widget.AbsListView v, int s) {
-                // 只在惯性滑动（手指抬起后的 fling）期间暂停排新图标任务：fling 会扫过
-                // 几百行，每行都提交会把单线程队列塞满，停稳后集中回调又卡一下
-                // （系统应用多时最明显，就是「快停下顿一下」）。手指拖动不暂停 ——
-                // 那时速度慢、用户在看清图标。停稳后 invalidateViews 只重绑可见项
-                // （View 已复用，不重建），把缺的图标补上。
-                boolean hold = s == android.widget.AbsListView.OnScrollListener.SCROLL_STATE_FLING;
-                if (iconHold && !hold) {
-                    iconHold = false;
-                    appList.invalidateViews();
-                }
-                iconHold = hold;
-            }
+            public void onScrollStateChanged(android.widget.AbsListView v, int s) { }
 
             public void onScroll(android.widget.AbsListView v, int first, int visible, int total) {
                 if (first > 0) collapseSearchIfIdle();   // 往上滚才收起搜索（和以前一致）
@@ -810,7 +796,9 @@ public class MainActivity extends Activity {
         i.addCategory(Intent.CATEGORY_LAUNCHER);
         List<ResolveInfo> ris = pm.queryIntentActivities(i, 0);
         if (ris == null || ris.isEmpty()) return;
-        iconCache.evictAll();
+        // 不在这里清空图标缓存：包列表刷新 ≠ 图标变了。G7 上 245 个系统应用重解一遍是 2.9s，
+        // 原来每次进这个函数都 evictAll，等于把最贵的那段又跑一次。改为按 lastUpdateTime
+        // 同步指纹（这个值 ResolveInfo 里就有，零额外 Binder），只有应用真的升级/换图标才失效。
         labelCache.clear();
         userApps.clear();
         CloneStore.THIRD = new HashSet<String>();
@@ -831,6 +819,9 @@ public class MainActivity extends Activity {
                 sysApps.add(pkg);
             }
         }
+        // 图标缓存按 lastUpdateTime 对账（后台线程做，304 次 getPackageInfo 约几十毫秒）：
+        // 应用升级过就丢掉旧图重解，没升级的一个都不碰。
+        IconStore.syncAll(labelCache.keySet());
     }
 
     // ---------------- 数据 ----------------
@@ -1061,7 +1052,6 @@ public class MainActivity extends Activity {
                     g.pkg = pkg;
                     g.label = labelCache.get(pkg);
                     if (g.label == null) g.label = pkg;    // 元信息里没有就用包名，至少能看见、能点
-                    g.icon = iconCache.get(pkg);
                     List<Clone> l = map.get(pkg);
                     if (l != null) {
                         g.clones.addAll(l);
@@ -1355,6 +1345,12 @@ public class MainActivity extends Activity {
         /** 卡片/按钮上的静态配色只在主题变了才重设，滚动时一次都不碰 */
         int themeKey;
         Group group;
+        /**
+         * 内容签名：绑的是哪个 Group + 多选/主题/角标/隐藏集合/manage_foreign 的状态。
+         * ListView 把同一行滚出去再滚回来时签名不变，bindCard 直接返回 ——
+         * 一整屏 8 张卡、每张 1+N 行，回滚时一次 setText/setImageBitmap 都不做。
+         */
+        int bindKey;
 
         CardHolder(LinearLayout card, CardRow base) {
             this.card = card;
@@ -1460,7 +1456,7 @@ public class MainActivity extends Activity {
                     if (r.clone == null || r.group == null) return;
                     pinShortcut(MainActivity.this, r.clone.uid, r.group.pkg,
                             r.group.label + suffixOf(r.clone.uid, r.group.pkg, r.idx),
-                            r.group.icon, CloneStore.nameOf(MainActivity.this, r.clone.uid));
+                            null, CloneStore.nameOf(MainActivity.this, r.clone.uid));
                 }
             });
         }
@@ -1501,6 +1497,13 @@ public class MainActivity extends Activity {
 
     /** 列表模式的一张卡片：主应用一行 + 它的每个分身一行 */
     private void bindCard(CardHolder h, final Group g) {
+        int key = (System.identityHashCode(g) * 31 + (multi ? 1 : 0)) * 31 + themeKey();
+        key = key * 31 + (sp().getBoolean("space_badge", true) ? 1 : 0);
+        key = key * 31 + CloneStore.hiddenVersion();
+        key = key * 31 + (sp().getBoolean("manage_foreign", false) ? 1 : 0);
+        if (multi) key = key * 31 + (selected.contains(g.pkg) ? 1 : 0);
+        if (h.group == g && h.bindKey == key) return;   // 滚回来内容没变，一个控件都不用碰
+        h.bindKey = key;
         h.group = g;
         CardRow b = h.base;
         b.group = g;
@@ -1557,9 +1560,9 @@ public class MainActivity extends Activity {
             r.icon.setAlpha(1f);
         }
         r.name.setText(nm);
-        r.name.setSingleLine(true);
-        r.name.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
         // 跑马灯只对 selected 的 TextView 生效；超长名字（比如改成了长串）就自己滚。
+        // singleLine / ellipsize / marqueeRepeatLimit 都已在 item_clone_child.xml 声明，
+        // 以前每次 bind 都调一次 setSingleLine（内部会重建 KeyListener 并重排），纯属浪费。
         r.name.setSelected(true);
         if (r.uid != null) r.uid.setText(getString(R.string.uid_tag, c.uid));
         // 系统自带空间：**永远不给改名** —— 名字是用户分辨「哪个是系统自带、哪个是我们建的」
@@ -1577,6 +1580,8 @@ public class MainActivity extends Activity {
     private final class GridRowHolder {
         final LinearLayout row;
         final ArrayList<GridCell> cells = new ArrayList<GridCell>();
+        /** 内容签名：格子对应的 FlatItem 引用 + 多选/主题/角标；没变就不重绑 */
+        int bindKey;
 
         GridRowHolder(LinearLayout row) {
             this.row = row;
@@ -1598,6 +1603,12 @@ public class MainActivity extends Activity {
         int avail = base - dp(8) * 2;
         int cellW = avail > 0 ? avail / cols : dp(80);
         if (cellW < 1) cellW = 1;
+        int key = (cols * 31 + (multi ? 1 : 0)) * 31 + themeKey();
+        key = key * 31 + (sp().getBoolean("space_badge", true) ? 1 : 0);
+        for (int i = 0; i < cols; i++) {
+            int p = first + i;
+            key = key * 31 + (p < flatItems.size() ? System.identityHashCode(flatItems.get(p)) : 0);
+        }
         if (h.cells.size() != cols) {
             h.row.removeAllViews();
             h.cells.clear();
@@ -1608,7 +1619,10 @@ public class MainActivity extends Activity {
                 h.row.addView(cell);
                 h.cells.add(new GridCell(cell));
             }
+            h.bindKey = 0;          // 刚重建的格子必须重新绑
         } else {
+            if (h.bindKey == key) return;   // 同一行的内容没变（滚出去又滚回来）
+            h.bindKey = key;
             for (GridCell c : h.cells) {
                 ViewGroup.LayoutParams lp = c.v.getLayoutParams();
                 if (lp == null || lp.width != cellW || lp.height != gridItemH) {
@@ -1834,68 +1848,78 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * 图标：系统 Drawable 直接交给 ImageView，我们一行都不画。
+     * 图标：固定尺寸 Bitmap 直接贴给 ImageView，我们一行都不画。
      *
-     * 以前为了把空间编号烙进图标，把整张图标在后台画成 44dp 位图；一旦某个矢量图标在
-     * 软件 Canvas 上死循环（实锤：8A 上 VectorDrawable.draw 卡住 352s CPU），单线程队列
-     * 被堵死，后面所有图标永远不出现、还占满一个核。改成「图标归系统画、编号用独立 View 叠」：
-     * 不绘制、不死循环、不随分身数生成位图。
+     * <p>为什么不再把系统 Drawable 交给 ImageView：G7 实测 {@code getApplicationIcon}
+     * 245 个系统应用要 2.9s（p90 25ms、最慢 175ms），热态仍是 2.5s —— Flyme 在
+     * {@code ApplicationPackageManager.getDrawable} 里注入了主题图标替换，每次取都跑一遍。
+     * 缓存的 Drawable 又持有 APK 的 Resources，首次 draw 会在绘制路径里加载资源。
+     * 现在图标在后台画成控件像素尺寸的 Bitmap 并落盘，主线程只做 setImageBitmap。
+     *
+     * <p>回调前校验 tag：ListView 把这一格复用成别的应用后，旧回调不能再往里塞图。
      */
-    private void setIcon(final View host, final String pkg, final int uid) {
+    private void setIcon(View host, final String pkg, final int uid) {
         final ImageView iv = (ImageView) host.findViewById(R.id.icon_img);
         final TextView bd = (TextView) host.findViewById(R.id.icon_badge);
         if (uid > 0 && sp().getBoolean("space_badge", true)) {
             String txt = String.valueOf(uid);           // 显示系统 uid，和其他应用（LSP/数据备份）对得上
-            android.graphics.drawable.GradientDrawable gd =
-                    new android.graphics.drawable.GradientDrawable();
             // 颜色只由 uid 决定：同一个空间在任何位置、任何时刻都是同一个颜色。
             // 以前按「空间序号」取色，而序号来自扫描出来的空间表（SPACE_ORDER）——那张表
             // 首帧、扫描中、把 999 误记成自建空间时给出的是不同的号，同一个 999 在「最近打开」
             // 里算出 4（蓝）、在列表里算出 0（按 uid 兜底 → 品红），两处就对不上（G7 实测）。
             // 角标本来就靠数字区分空间，颜色只需要「同空间同色、不同空间尽量不同」。
-            gd.setColor(BADGE[uid % BADGE.length]);
-            gd.setCornerRadius(dp(13) / 5f);
-            bd.setBackground(gd);
-            bd.setText(txt);
+            // 角标背景只在这个 View 的 uid 变了时才重建：一个 GradientDrawable 被多个
+            // TextView 共享会互相覆盖 callback（View#setBackgroundDrawable 会 setCallback），
+            // 而且滚动时每行 new 一个又是白分配。按 View 缓存最省也最安全。
+            Integer curUid = (Integer) bd.getTag();
+            if (curUid == null || curUid.intValue() != uid) {
+                bd.setTag(Integer.valueOf(uid));
+                bd.setBackground(badgeBg(uid));
+            }
+            if (!txt.contentEquals(bd.getText())) bd.setText(txt);
             bd.setTextColor(Theme.ON_BADGE);
             bd.setTextSize(txt.length() > 2 ? 7f : 9f);   // 三位数（如 999）也塞得下
             bd.setVisibility(View.VISIBLE);
         } else {
             bd.setVisibility(View.GONE);
         }
-        Drawable d = iconCache.get(pkg);
-        if (d != null) { iv.setBackground(null); iv.setImageDrawable(d); return; }
+        Bitmap bm = IconStore.mem(pkg);
+        if (bm != null) {
+            iv.setTag(null);
+            iv.setBackground(null);
+            iv.setImageBitmap(bm);
+            return;
+        }
+        iv.setTag(pkg);   // 这一格在等哪个包
         iv.setImageDrawable(null);
         // 占位底色：有些系统应用/精简包取不到图标，别留一块空白看着像丢数据。
         // 所有占位块尺寸一样，共用一份 drawable，滚动时不再每行 new 一个。
-        if (placeholderBg == null) {
+        int tk = themeKey();
+        if (placeholderBg == null || placeholderKey != tk) {
             android.graphics.drawable.GradientDrawable ph =
                     new android.graphics.drawable.GradientDrawable();
             ph.setColor(Theme.row(this));
             ph.setCornerRadius(dp(10));
             placeholderBg = ph;
+            placeholderKey = tk;
         }
         iv.setBackground(placeholderBg);
-        if (iconHold) return;   // 还在滑：停稳后 invalidateViews 再补
-        // 不去重：每个图标位都提交任务，任务内部先查缓存——否则刷新重建后，
-        // 新图标位会被「正在加载」去重挡掉，回调又更新的是旧控件，图标就丢了
-        iconLoader.execute(new Runnable() {
-            public void run() {
-                Drawable dd = iconCache.get(pkg);   // 可能已被前面的任务填了
-                if (dd == null) {
-                    dd = appIconDrawable(MainActivity.this, pkg);
-                    if (dd != null) iconCache.put(pkg, dd);
-                }
-                if (dd == null) return;
-                final Drawable fd = dd;
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        iv.setBackground(null);
-                        iv.setImageDrawable(fd);
-                    }
-                });
+        IconStore.request(pkg, new IconStore.Cb() {
+            public void onIcon(Bitmap b) {
+                if (!pkg.equals(iv.getTag())) return;   // 这格已经换成别的应用了
+                iv.setBackground(null);
+                iv.setImageBitmap(b);
             }
         });
+    }
+
+    /** 按色板索引造一份角标底（每个 TextView 自己一份，见 setIcon 里的说明） */
+    private android.graphics.drawable.GradientDrawable badgeBg(int uid) {
+        android.graphics.drawable.GradientDrawable gd =
+                new android.graphics.drawable.GradientDrawable();
+        gd.setColor(BADGE[uid % BADGE.length]);
+        gd.setCornerRadius(dp(13) / 5f);
+        return gd;
     }
 
     /**
@@ -2149,7 +2173,7 @@ public class MainActivity extends Activity {
                 if (autoIcon()) {
                     pinShortcut(MainActivity.this, fu, g.pkg,
                             g.label + suffixOf(fu, g.pkg, g.clones.size()),
-                            g.icon, CloneStore.nameOf(MainActivity.this, fu));
+                            null, CloneStore.nameOf(MainActivity.this, fu));
                 }
             }
         });
@@ -2831,7 +2855,6 @@ public class MainActivity extends Activity {
             g.pkg = pkg;
             g.label = labelCache.get(pkg);
             if (g.label == null) g.label = pkg;
-            g.icon = iconCache.get(pkg);
         }
         launch(c, g);
     }

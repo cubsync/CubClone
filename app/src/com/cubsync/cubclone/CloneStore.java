@@ -33,6 +33,18 @@ public final class CloneStore {
 
     /** 归属判据要用 Context 读本地登记；两个入口 Activity 的 onCreate 都会调 attach() */
     static Context appCtx;
+    /**
+     * 隐藏分身的集合缓存。以前每次 isHidden 都 getStringSet + new HashSet 拷贝，
+     * 而 bindCard 对每一行、每个分身各调一次 —— 245 个系统应用滚一屏就是几百次
+     * 加锁读取 + 集合分配。改内存快照后只在 hide/unhide 时换引用。
+     */
+    private static volatile Set<String> HIDDEN;
+    /** 隐藏集合的版本号：列表复用要靠它判断「隐藏状态变没变」 */
+    private static volatile int HIDDEN_VER;
+
+    static int hiddenVersion() {
+        return HIDDEN_VER;
+    }
 
     static void attach(Context c) {
         if (appCtx == null && c != null) {
@@ -295,10 +307,16 @@ public final class CloneStore {
 
     /** 被用户隐藏的分身（"uid:pkg" 集合）：应用保持启用、能跑，只是不在列表里显示 */
     static Set<String> hiddenClones() {
-        if (appCtx == null) return new HashSet<String>();
-        Set<String> s = appCtx.getSharedPreferences("clone", Context.MODE_PRIVATE)
-                .getStringSet("hidden_clones", null);
-        return s == null ? new HashSet<String>() : new HashSet<String>(s);
+        Set<String> s = HIDDEN;
+        if (s != null) return s;
+        synchronized (CloneStore.class) {
+            if (HIDDEN != null) return HIDDEN;
+            Set<String> v = appCtx == null ? null
+                    : appCtx.getSharedPreferences("clone", Context.MODE_PRIVATE)
+                    .getStringSet("hidden_clones", null);
+            HIDDEN = v == null ? new HashSet<String>() : new HashSet<String>(v);
+            return HIDDEN;
+        }
     }
 
     static boolean isHidden(int uid, String pkg) {
@@ -311,6 +329,8 @@ public final class CloneStore {
         Set<String> s = old == null ? new HashSet<String>() : new HashSet<String>(old);
         s.add(uid + ":" + pkg);
         sp.edit().putStringSet("hidden_clones", s).apply();
+        HIDDEN = new HashSet<String>(s);   // copy-on-write，volatile 换引用
+        HIDDEN_VER++;
     }
 
     static void unhideClone(Context c, int uid, String pkg) {
@@ -320,6 +340,8 @@ public final class CloneStore {
         Set<String> s = new HashSet<String>(old);
         if (!s.remove(uid + ":" + pkg)) return;
         sp.edit().putStringSet("hidden_clones", s).apply();
+        HIDDEN = new HashSet<String>(s);
+        HIDDEN_VER++;
     }
 
     /** 隐藏清单（配置）：设置页勾选要隐藏的系统应用；建空间时才一次性固化进 hidden_sys */

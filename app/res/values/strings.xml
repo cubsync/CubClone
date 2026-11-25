@@ -57,7 +57,7 @@
     <string name="space_global">全局上限 %1$d 个</string>
     <string name="space_empty">还没有分身空间，点「新建空间」，或在主界面给应用创建分身</string>
     <string name="space_created">空间已创建：uid %1$d</string>
-    <string name="space_created_private">空间已创建：uid %1$d（本机不支持共享存储，已用独立存储，相册/文件不与主空间共用）</string>
+    <string name="space_created_private">空间已创建：uid %1$d（存储未就绪，暂不与主空间共享相册/文件）</string>
     <string name="space_limit_reached">分身空间已到上限（%1$s 个），先删一个再建</string>
     <string name="limit_title">分身空间上限</string>
     <string name="plugin_title">插件功能</string>

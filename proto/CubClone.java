@@ -110,57 +110,61 @@ public final class CubClone {
 
     private static void create(String name) throws Exception {
         if (bfu()) return;
-        // 不再预判「已有 clone 空间没挂」：卷是异步挂载的，刚重启时全都没挂，
-        // 预判会把好机器误判成存储损坏、直接降级成独立存储（2026-11-24 连踩两次）。
-        // 正确顺序是先建 CLONE，建不成或建完存不上再降级 —— 降级路径本来就在下面。
+
+        int uid = -1;
+        Object info = null;
+
+        // AOSP 正规路径：clone 是 parent（user 0）的 profile，只有把 parentId 传下去，
+        // UserManagerService 才会写 profileGroupId=0。这个字段是同屏的硬前提：
+        // 没有父组的 clone 只是一个带 PROFILE 标志的孤儿用户，启动后永远停在
+        // INITIALIZING、进程不建、visible=false（2026-11-25 G7 实测）。
         Method m = pick("createProfileForUser");
-        if (m == null) { say("ERR no createProfileForUser"); return; }
-        Object r = (m.getParameterTypes().length == 4)
-                ? m.invoke(UM, name, CLONE, 0, 0)
-                : m.invoke(UM, name, CLONE, 0, 0, null);
-        if (r == null) {
-            // Flyme 等 ROM 不认 profile.CLONE（G7 实测：createProfileForUser 直接返回 null，
-            // 自带分身走的是自己的 999 空间），但 pm create-user --user-type full 可用 ——
-            // 降级而不是直接报错，否则这台机器一个空间都建不出来。
-            say("FALLBACK createProfileForUser 返回 null，改用独立存储");
-            createPrivate(name);
+        if (m != null) {
+            Object r = (m.getParameterTypes().length == 4)
+                    ? m.invoke(UM, name, CLONE, 0, 0)
+                    : m.invoke(UM, name, CLONE, 0, 0, null);
+            if (r != null) { uid = parseUid(uidOf(r)); info = r; }
+        }
+        // 有的 ROM 会忽略 parentId，建出没有父组的 clone。dumpsys user 里那一行不带
+        // parentId= 就是证据；这种号删掉改用 pm 的显式 --profileOf 重建。
+        if (uid > 0 && !hasParentGroup(uid)) {
+            say("RETRY clone 没带父组，改用 pm --profileOf 重建");
+            sh("pm", "remove-user", String.valueOf(uid));
+            waitUserGone(uid, 15000);
+            uid = -1;
+        }
+        if (uid <= 0) {
+            String out = sh("pm", "create-user", "--profileOf", "0", "--user-type", CLONE, name);
+            Matcher mm = Pattern.compile("id (\\d+)").matcher(out);
+            if (!mm.find()) { say("ERR 建空间失败: " + out.trim()); return; }
+            uid = Integer.parseInt(mm.group(1));
+            info = "{" + uid + ":" + name + ":1000}";
+        }
+        if (!hasParentGroup(uid)) {
+            say("ERR clone 建出来仍无父组（profileGroupId），已删除");
+            sh("pm", "stop-user", String.valueOf(uid));
+            sh("pm", "remove-user", String.valueOf(uid));
             return;
         }
-        int uid = parseUid(uidOf(r));
-        if (uid <= 0) { say("ERR 建号返回的 uid 解析失败: " + r); return; }
-        say("CREATED " + r);
+
+        say("CREATED " + info);
         sh("am", "start-user", String.valueOf(uid));
-        if (waitStorage(uid, 25000)) {
-            markOwned(uid);
-            say("MODE=shared");
-            return;
-        }
-        // 共享存储挂不上：vold 在 Android/data 的 lookup 被 MediaProvider 的 FUSE 拒掉（EACCES）
-        say("FALLBACK clone 共享存储不可用，改用独立存储（不与主空间共享相册/文件）");
-        // stop-user 对刚启动的 clone 用户常回 -4（related users can't be stopped），
-        // 但 remove-user 照样能删；删是异步的，必须等它真的从用户表里消失再建新号。
-        sh("am", "stop-user", String.valueOf(uid));
-        sh("pm", "remove-user", String.valueOf(uid));
-        waitUserGone(uid, 15000);
-        createPrivate(name);
+        // 存储是异步挂的，25 秒内没起来就如实上报；绝对不再降级成 full.SECONDARY：
+        // full 是独立用户，AOSP 必须切用户才显示，建了也打不开（G7 实测）。
+        boolean storage = waitStorage(uid, 25000);
+        markOwned(uid);
+        say(storage ? "MODE=shared" : "MODE=nofs");
     }
 
-    /** 建独立存储用户：功能与分身一致（独立应用数据、可 pm uninstall --user），只是不共享主空间文件 */
-    private static void createPrivate(String name) throws Exception {
-        if (bfu()) return;
-        String out = sh("pm", "create-user", "--profileOf", "0", "--user-type", PRIVATE, name);
-        say("CREATE " + out.trim());
-        Matcher mm = Pattern.compile("id (\\d+)").matcher(out);
-        if (!mm.find()) { say("ERR 建独立存储空间失败: " + out.trim()); return; }
-        int uid = Integer.parseInt(mm.group(1));
-        sh("am", "start-user", String.valueOf(uid));
-        if (waitStorage(uid, 12000)) {
-            markOwned(uid);
-            say("CREATED {" + uid + ":" + name + ":0}");
-            say("MODE=private");
-        } else {
-            say("ERR 独立存储空间也未挂载（uid=" + uid + "）");
+    /** dumpsys user 里该用户的父组字段（AOSP 打印的是 profileGroupId，名字叫 parentId） */
+    private static boolean hasParentGroup(int uid) throws Exception {
+        String out = sh("dumpsys", "user");
+        for (String line : out.split("\n")) {
+            if (line.contains("UserInfo{" + uid + ":")) {
+                return line.contains(" parentId=");
+            }
         }
+        return false;
     }
 
     /**

@@ -6,10 +6,19 @@
 
 ## [Unreleased]
 
+### 修复
+- **分身应用打不开**：clone 建号时没带父用户，`profileGroupId` 没落盘，系统只把它当成带 PROFILE
+  标志的孤儿用户 —— 解锁正常、task 也建出来，但 Activity 永远停在 INITIALIZING、进程不建、
+  `visible=false`。现在建号强制 `createProfileForUser(parentId=0)`，建完读 `dumpsys user` 校验
+  `parentId=`，没有就删掉改用 `pm create-user --profileOf 0`。G7 实测：带父组的 clone 同屏打开成功，
+  `mFocusedApp` 指向分身应用、主用户始终是 0，没有切用户。
+- **删除 `full.SECONDARY` 降级**：full 是独立用户，AOSP 必须切用户才显示，建了也打不开。共享存储
+  挂不上时保留 clone，只提示「存储未就绪」，不再换号重建。
+
 ### 新增
 - **空间管理页标注分身模式**：每行标「克隆型 / 独立型」。前者是 `profile.CLONE`（和主用户同组、
-  同屏可见），后者是 `full.SECONDARY`（建不出可用 clone profile 时的降级）。两者系统行为不同，
-  标出来才看得懂为什么有的空间打开方式不一样。
+  同屏可见），后者是旧版本降级留下的 `full.SECONDARY`（新版本不再产生，只能手动删）。两者系统
+  行为不同，标出来才看得懂为什么有的空间打开方式不一样。
 - **分身空间数量上限**（Root 功能页）：内置 LSPosed 模块「一键安装」即可把默认 10 个空间放宽，
   上限可选到 21474（系统 UID 上限），不需要自己去仓库下载模块、也不需要勾作用域。
 - **分身空间管理页**：空间多了以后独立成页，可滚动、可重命名、可批量删除 / 批量备份。

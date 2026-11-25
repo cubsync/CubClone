@@ -1875,7 +1875,7 @@ public class SettingsActivity extends Activity {
                         msg = getString(R.string.create_failed, out.trim());
                     }
                 } else {
-                    msg = out.contains("MODE=private")
+                    msg = out.contains("MODE=nofs")
                             ? getString(R.string.space_created_private, uid)
                             : getString(R.string.space_created, uid);
                     CloneStore.markSpacesDirty(SettingsActivity.this);   // 空间变了重扫空间状态；主身份清单没变，不重载

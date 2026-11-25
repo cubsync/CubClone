@@ -57,7 +57,7 @@
     <string name="space_global">Global limit %1$d</string>
     <string name="space_empty">No clone space yet. Tap "New space" or create a clone from the main screen.</string>
     <string name="space_created">Space created: uid %1$d</string>
-    <string name="space_created_private">Space created: uid %1$d (shared storage unavailable on this device; using separate storage, gallery/files not shared with owner)</string>
+    <string name="space_created_private">Space created: uid %1$d (storage not ready yet; gallery/files are not shared with the owner space for now)</string>
     <string name="space_limit_reached">Clone space limit reached (%1$s), delete one first</string>
     <string name="limit_title">Clone space limit</string>
     <string name="plugin_title">Plugin features</string>

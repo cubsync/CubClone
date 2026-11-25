@@ -95,6 +95,24 @@ final class FlymeHook {
         return HOOKED.get();
     }
 
+    /**
+     * 参数里是否出现「我们自己的空间」的 uid。
+     *
+     * <p>两个方法都用 {@code int} 传调用者/目标用户（签名里 check 是 index 4/5/7，
+     * resolve 是 5/6/8），但索引随 ROM 版本会变；这里逐个看 int 参数，
+     * 命中我们的空间就算——比写死索引稳，也不会误伤 999。
+     */
+    private static boolean ours(io.github.libxposed.api.XposedInterface.Chain chain) {
+        java.util.List<Object> args = chain.getArgs();
+        for (int i = 0; i < args.size(); i++) {
+            Object a = args.get(i);
+            if (a instanceof Integer && WmVisibleHook.ours(((Integer) a).intValue())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** 实现类只在第一次拿到时挂一次；后续 get() 再触发直接返回。 */
     private void hookImpl(Class<?> c) {
         if (c == null || !IMPL.compareAndSet(false, true)) {
@@ -118,12 +136,27 @@ final class FlymeHook {
                 xp.hook(m)
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(chain -> {
+                            Object orig = chain.getArg(origArg);
+                            // 我们自己的空间：Flyme 的改写一律不采纳。
+                            // 它把任意 clone profile 都当成自己的多开用户，把启动目标
+                            // 改写成 u0，结果 ATS 在 u0 里找不到组件——G7 实测
+                            // 「Activity class does not exist」，自建的 clone profile
+                            // 因此完全用不了。原参数还回去，走 AOSP 自己的跨用户路径。
+                            // 999 不在我们的空间列表里，这一段对它完全无效。
+                            if (orig != null && ours(chain)) {
+                                int k = HITS.incrementAndGet();
+                                if (k == 1) {
+                                    Log.i(TAG, "flyme " + mn + " -> keep original (our space)");
+                                }
+                                HookMain.mark(PROP_HITS, String.valueOf(k));
+                                HookMain.mark(PROP_LAST, mn);
+                                return orig;
+                            }
                             Object r = chain.proceed();
                             if (r != null) {
                                 return r;
                             }
                             // null 语义＝Flyme 决定不接管。还回原参数，走 AOSP 原生路径。
-                            Object orig = chain.getArg(origArg);
                             if (orig != null) {
                                 int k = HITS.incrementAndGet();
                                 if (k == 1) {

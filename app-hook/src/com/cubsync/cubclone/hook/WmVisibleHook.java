@@ -93,7 +93,7 @@ final class WmVisibleHook {
     }
 
     /** uid 是不是我们建的空间（每次现读，App 侧改了列表立刻生效） */
-    private static boolean ours(int uid) {
+    static boolean ours(int uid) {
         if (uid <= 0) return false;
         String csv = read(PROP_SPACES);
         if (csv.length() == 0) return false;

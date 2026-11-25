@@ -121,8 +121,16 @@ public final class HookMain extends XposedModule {
         } catch (Throwable t) {
             Log.w(TAG, "wm hook failed: " + t);
         }
+        // 解锁自建空间：Flyme 的 LockSettingsService.tieProfileLockIfNecessary 会对 null
+        // UserInfo 取 .id，把 system_server 打死（详见 LockHook）
+        int lock = 0;
+        try {
+            lock = new LockHook(this).apply(cl);
+        } catch (Throwable t) {
+            Log.w(TAG, "lock hook failed: " + t);
+        }
         mark(PROP_APPLY, "ctor=" + ctors + ",m=" + methods + ",i=" + install
-                + ",u=" + cap + ",f=" + flyme + ",w=" + wm);
+                + ",u=" + cap + ",f=" + flyme + ",w=" + wm + ",l=" + lock);
         if (ctors > 0 || methods > 0) {
             mark(PROP, "1");
         }

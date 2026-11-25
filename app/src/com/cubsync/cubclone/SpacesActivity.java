@@ -205,6 +205,19 @@ public class SpacesActivity extends Activity {
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         r.addView(tv);
 
+        // 分身模式：克隆型（profile.CLONE，和主用户同组、天然同屏可见）/
+        // 独立型（full.SECONDARY，Flyme 不支持 clone profile 时的降级结果，可见性由插件补）。
+        // 两者在系统里行为不同，标出来才看得懂为什么有的空间要插件才打得开。
+        if (!foreign) {
+            TextView mode = new TextView(this);
+            mode.setText(CloneStore.isCloneSpace(uid)
+                    ? R.string.space_mode_clone : R.string.space_mode_full);
+            mode.setTextSize(11);
+            mode.setTextColor(secColor);
+            mode.setPadding(dp(6), 0, dp(2), 0);
+            r.addView(mode);
+        }
+
         if (foreign) {
             TextView tag = new TextView(this);
             tag.setText(R.string.space_foreign);

@@ -109,6 +109,8 @@ public class MainActivity extends Activity {
     private LinearLayout tabRow;
     /** 网格格子高度：布局就绪后统一算 */
     private int gridItemH;
+    /** 格子高对应的参数指纹（列×行＋横竖屏＋屏幕尺寸）；变了才重算 */
+    private String gridKey;
     /** 「最近打开」区（动态创建，挂进列表/网格滚动内容顶部，随滚动收起） */
     private LinearLayout recentHeader;
     private TextView recentTitle;
@@ -1138,11 +1140,42 @@ public class MainActivity extends Activity {
     /** 最近打开最多几行：默认 1 行，超出的不显示 */
     private int recentRows() { return clamp(sp().getInt("recent_rows", 1), 1, 4); }
 
-    /** 格子高度 = 网格可视高 / 行数；下限要装得下图标+名字（44+3+文字） */
+    /**
+     * 格子高度 = 网格可视高 / 行数；下限要装得下图标+名字（44+3+文字）。
+     *
+     * <p>高度必须在<b>排版之前</b>就有最终值。以前首帧 {@code appList.getHeight()} 是 0，
+     * 这里兜底 {@code dp(84)}，等 layout 完成后再算成真实值（G7 约 105dp）——
+     * 用户看到的就是「图标先挤在一起，然后间隔被拉长」（G7 实测）。
+     * 改成拿不到实测值时按窗口内容区算，见 {@link #estimateListH()}。
+     */
     private int computeItemH() {
         int h = appList != null ? appList.getHeight() : 0;
-        if (h <= 0) return dp(84);
+        if (h <= 0) h = estimateListH();
         return Math.max(dp(66), h / effRows() - dp(4));
+    }
+
+    /**
+     * 列表还没测量时的可用高度：直接按窗口内容区算，不等 layout。
+     *
+     * <p>依据＝Android 官方 {@code WindowMetrics} API（API 30+）：它给的
+     * {@code getBounds()} 和 {@code getWindowInsets()} 就是「排版前先知道可用空间」用的；
+     * Launcher3 的 {@code DeviceProfile} 也是这么做的——由窗口 bounds 减 insets 算出
+     * 所有格子尺寸，从不依赖 {@code View.getHeight()}。
+     *
+     * <p>再减掉列表上方/下方的固定块：header 56dp；底部状态行 wrap_content（12sp + 10dp padding）。
+     * 搜索行默认 GONE、多选栏只在多选时出现，都不占。
+     */
+    private int estimateListH() {
+        int content;
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            android.view.WindowMetrics m = getWindowManager().getCurrentWindowMetrics();
+            android.graphics.Insets in = m.getWindowInsets()
+                    .getInsets(android.view.WindowInsets.Type.systemBars());
+            content = m.getBounds().height() - in.top - in.bottom;
+        } else {
+            content = getResources().getDisplayMetrics().heightPixels;
+        }
+        return content - dp(56) - dp(24);
     }
 
     private void updateGridBtn() {
@@ -1278,7 +1311,15 @@ public class MainActivity extends Activity {
                     : getString(R.string.empty_no_app));
         }
         if (eh != null) eh.setVisibility(kw.length() > 0 ? View.GONE : View.VISIBLE);
-        gridItemH = computeItemH();
+        // 格子高只在「影响它的参数」变了才重算（列/行数、横竖屏、屏幕尺寸）。
+        // 每次 render 都算的话，第二次会从首帧的估算值换成实测值，照样跳一下。
+        String gk = effCols() + "x" + effRows() + (landscape() ? "L" : "P")
+                + "@" + getResources().getDisplayMetrics().widthPixels
+                + "x" + getResources().getDisplayMetrics().heightPixels;
+        if (gridItemH <= 0 || !gk.equals(gridKey)) {
+            gridKey = gk;
+            gridItemH = computeItemH();
+        }
         // 横向缩进只由每行的外层 FrameLayout 给（网格 8dp / 列表 16dp）。
         // 这里再加一层会让网格比「最近打开」多缩进 8dp，两行图标对不齐（G7 实测偏 22px）。
         appList.setPadding(0, 0, 0, 0);

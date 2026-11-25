@@ -473,6 +473,8 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="invert_space">Invert</string>
     <string name="opening_primary">Opening %1$s</string>
     <string name="space_foreign">system clone</string>
+    <string name="space_mode_clone">clone</string>
+    <string name="space_mode_full">full user</string>
     <string name="space_readonly">System clone space is read-only here</string>
     <string name="uid_tag">uid %1$d</string>
 

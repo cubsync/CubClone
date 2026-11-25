@@ -102,6 +102,18 @@ public final class CloneStore {
 
     /** 分身空间名字缓存：uid → 系统里的名字（`cmd user list --all -v` 的 name= 字段） */
     static volatile Map<Integer, String> SPACE_NAMES = new HashMap<Integer, String>();
+    /**
+     * 空间类型：true＝{@code profile.CLONE}（分身 profile，和主用户同组，天然同屏可见），
+     * false＝{@code full.SECONDARY}（独立用户：Flyme 不支持 clone profile 时的降级结果，
+     * 窗口可见性要插件补，见 WmVisibleHook）。
+     */
+    static volatile Map<Integer, Boolean> SPACE_TYPES = new HashMap<Integer, Boolean>();
+
+    /** 这个空间是不是分身 profile（false＝完整独立用户）；未知按 false */
+    static boolean isCloneSpace(int uid) {
+        Boolean b = SPACE_TYPES.get(Integer.valueOf(uid));
+        return b != null && b.booleanValue();
+    }
 
     static boolean marked(int uid) {
         synchronized (MARKED) {
@@ -1593,7 +1605,38 @@ public final class CloneStore {
 
     /** 我们建的分身空间；建号计数、自动复用、空间序号都只认这一份 */
     static java.util.List<Integer> listSpaceUids() {
-        return listSpaceUids(false);
+        java.util.List<Integer> ids = listSpaceUids(false);
+        syncHookSpaces(ids);
+        return ids;
+    }
+
+    /** 上次报给增强插件的空间列表；没变就不重复发 shell */
+    private static volatile String HOOK_SPACES = "";
+    private static final java.util.concurrent.ExecutorService HOOK_SYNC =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+
+    /**
+     * 把「我们建的空间」报给增强插件（`persist.sys.cubclone.spaces`）。
+     *
+     * <p>插件 hook 的是 {@code WindowManagerService.isCurrentProfile(int)}：AOSP 判断
+     * 「某个用户的窗口要不要显示给当前用户」只有这一道闸（{@code showToCurrentUser()}）。
+     * 8A 上空间是 {@code profile.CLONE}（user 0 的子 profile），天然为真；G7 的 Flyme
+     * 不支持 clone profile，建出来是 {@code full.SECONDARY}，不在 {@code mCurrentProfileIds}
+     * 里，于是 task 建出来也是 {@code visible=false} —— 这就是「启动了但不显示」（G7 实测）。
+     *
+     * <p>用 persist 属性而不是写死：空间增删后下一次判断就生效，不用重启。
+     * 发命令丢到独立线程，别让这条 shell 拖慢调用方（有些调用点在 UI 线程上）。
+     */
+    private static void syncHookSpaces(java.util.List<Integer> ids) {
+        StringBuilder sb = new StringBuilder();
+        for (Integer id : ids) {
+            if (sb.length() > 0) sb.append(',');
+            sb.append(id.intValue());
+        }
+        final String csv = sb.toString();
+        if (csv.equals(HOOK_SPACES)) return;
+        HOOK_SPACES = csv;
+        HOOK_SYNC.execute(() -> Shell.exec("setprop persist.sys.cubclone.spaces '" + csv + "'"));
     }
 
     /**
@@ -1625,6 +1668,7 @@ public final class CloneStore {
     private static java.util.List<Integer> listSpaceUids(boolean includeForeign) {
         java.util.List<Integer> ids = new ArrayList<Integer>();
         Map<Integer, String> names = new HashMap<Integer, String>();
+        Map<Integer, Boolean> types = new HashMap<Integer, Boolean>();
         Set<Integer> ghosts = new HashSet<Integer>();
         // 顺带取一次「卡在 <removing> 的幽灵空间」：这类档案 pm remove-user 早返回 Success 了，
         // 但状态停在 STOPPING，`am stop-user` 也会被拒（-4 related users can't be stopped），
@@ -1662,10 +1706,14 @@ public final class CloneStore {
                 // 名字无条件记下来：isOurs(null, uid) 的调用方（删分身、回收空间）
                 // 要靠它认出「名字带前缀」的空间，不然会把我们自己的空间判成只读
                 if (nm.length() > 0) names.put(Integer.valueOf(uid), nm);
+                // 类型也一起记：空间管理页要标「克隆型 / 独立型」，
+                // 两者的系统行为不同（前者天然同屏可见，后者要靠插件补）
+                final boolean cloneType = t.contains("type=profile.CLONE");
+                types.put(Integer.valueOf(uid), Boolean.valueOf(cloneType));
                 final boolean mine = isOurs(nm, uid);
                 if (mine) {
                     ids.add(Integer.valueOf(uid));
-                } else if (includeForeign && t.contains("type=profile.CLONE")) {
+                } else if (includeForeign && cloneType) {
                     // 非自建分身：只有显式要「可选目标空间」时才列；
                     // 名字已记进 SPACE_NAMES，界面直接显示系统名，不用再起一次 shell 查
                     ids.add(Integer.valueOf(uid));
@@ -1675,6 +1723,7 @@ public final class CloneStore {
         }
         ids.removeAll(ghosts);
         SPACE_NAMES = names;
+        SPACE_TYPES = types;
         return ids;
     }
 

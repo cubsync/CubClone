@@ -113,8 +113,16 @@ public final class HookMain extends XposedModule {
         } catch (Throwable t) {
             Log.w(TAG, "flyme hook failed: " + t);
         }
+        // 跨用户窗口可见性：full.SECONDARY 空间不在 mCurrentProfileIds 里，
+        // task 建出来也是 invisible（G7 实测）。这是让窗口真正显示的那一道闸。
+        int wm = 0;
+        try {
+            wm = new WmVisibleHook(this).apply(cl);
+        } catch (Throwable t) {
+            Log.w(TAG, "wm hook failed: " + t);
+        }
         mark(PROP_APPLY, "ctor=" + ctors + ",m=" + methods + ",i=" + install
-                + ",u=" + cap + ",f=" + flyme);
+                + ",u=" + cap + ",f=" + flyme + ",w=" + wm);
         if (ctors > 0 || methods > 0) {
             mark(PROP, "1");
         }

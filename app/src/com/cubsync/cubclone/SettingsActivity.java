@@ -829,12 +829,22 @@ public class SettingsActivity extends Activity {
         // 我们既不报也不用用户管，列表里已经把它过滤掉了。
         spaceLimit.setText(sb.toString());
 
-        // 刚建好、还在准备的空间：本地先插一行，不等扫描（扫描要等系统把新用户列出来）
+        // 刚建好、还在准备的空间：本地先插一行，不等扫描（扫描要等系统把新用户列出来）。
+        // 移除条件不是「就绪完成」，而是「扫描已经能看到它」——否则就绪很快时会空窗：
+        // 准备中行没了、真实行还没扫出来（G7 实测 3 秒空窗）。
         java.util.List<java.util.Map.Entry<Integer, String>> pend;
         synchronized (pendingNames) {
+            for (java.util.Iterator<Integer> it = pendingNames.keySet().iterator(); it.hasNext(); ) {
+                Integer u = it.next();
+                if (!CloneStore.isPending(u.intValue()) && uids.contains(u)) {
+                    it.remove();
+                }
+            }
             pend = new java.util.ArrayList<java.util.Map.Entry<Integer, String>>(pendingNames.entrySet());
         }
+        java.util.HashSet<Integer> pendUids = new java.util.HashSet<Integer>();
         for (java.util.Map.Entry<Integer, String> e : pend) {
+            pendUids.add(e.getKey());
             spaceList.addView(pendingRow(e.getKey().intValue(), e.getValue()));
         }
 
@@ -853,7 +863,7 @@ public class SettingsActivity extends Activity {
         final int shown = Math.min(uids.size(), 3);
         for (int i = 0; i < shown; i++) {
             final int uid = uids.get(i);
-            if (CloneStore.isPending(uid)) continue;   // 已由上面那一行代表，别画两遍
+            if (CloneStore.isPending(uid) || pendUids.contains(Integer.valueOf(uid))) continue;   // 已由上面那一行代表
             int n = counts.get(i).size();
 
             LinearLayout row = new LinearLayout(this);
@@ -1947,17 +1957,22 @@ public class SettingsActivity extends Activity {
                     }
                 });
 
-                // 后台继续：等共享存储（最长 25 秒）→ 输入法 → 预处理系统应用。
-                boolean shared = CloneStore.prepareSpace(SettingsActivity.this, uid);
-                synchronized (pendingNames) {
-                    pendingNames.remove(Integer.valueOf(uid));
-                }
+                // 就绪：等存储（unmountable 会立刻返回）。「准备中」这一行不在这里摘——
+                // 等扫描能看见这个空间时由 renderSpaces 换成真实行，避免中间空窗。
+                boolean shared = CloneStore.readySpace(SettingsActivity.this, uid);
                 CloneStore.markSpacesDirty(SettingsActivity.this);   // 空间变了重扫空间状态
                 runOnUiThread(new Runnable() {
                     public void run() {
                         creating = false;
                         btnNewSpace.setEnabled(true);
                         if (!shared) toast(getString(R.string.space_created_private, uid));
+                        loadSpaces();
+                    }
+                });
+                // 预处理系统应用很慢（一两分钟），放最后；它不占「准备中」，界面先可用
+                CloneStore.cleanSpace(SettingsActivity.this, uid);
+                runOnUiThread(new Runnable() {
+                    public void run() {
                         loadSpaces();
                     }
                 });

@@ -742,20 +742,41 @@ public final class CloneStore {
     }
 
     /**
-     * 建号之后的收尾：等存储 → 输入法 → 预处理系统应用，最后摘掉「准备中」。
-     * 跑在后台线程。无论成功失败都要摘标记，否则这个空间在本进程里永远显示准备中、
-     * 扫描也不拉应用列表。
+     * 建号后的「就绪」步骤：只等存储，完了立刻摘掉「准备中」。
+     * 装输入法、预处理系统应用都不影响「空间能不能用」，放到 {@link #cleanSpace} 里后置，
+     * 否则「准备中」要挂十几秒（G7 实测装输入法就占了大头）。
      */
-    static boolean prepareSpace(Context c, int uid) {
+    static boolean readySpace(Context c, int uid) {
         boolean shared = false;
         try {
             shared = settleSpace(c, uid);
             markOurs(uid);
-            ensureIme(uid);
-            if (pruneSys(c)) pruneSpace(c, uid, true);
         } finally {
             clearPending(uid);
         }
+        return shared;
+    }
+
+    /**
+     * 建号后的收尾（慢，一两分钟）：装输入法 + 预处理系统应用。
+     * 界面这时已经可用了，只是空间里暂时没有键盘。
+     */
+    static int cleanSpace(Context c, int uid) {
+        try {
+            ensureIme(uid);
+            if (pruneSys(c)) return pruneSpace(c, uid, true);
+        } catch (Throwable ignored) {
+        }
+        return 0;
+    }
+
+    /**
+     * 建号之后的收尾（兼容老调用点）：就绪 + 预处理一次做完。
+     * 界面要即时反馈时用 {@link #readySpace} + {@link #cleanSpace} 分两步。
+     */
+    static boolean prepareSpace(Context c, int uid) {
+        boolean shared = readySpace(c, uid);
+        cleanSpace(c, uid);
         return shared;
     }
 

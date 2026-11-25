@@ -167,7 +167,7 @@ public final class CubClone {
      */
     private static void settle(int uid) throws Exception {
         if (bfu()) return;
-        boolean storage = waitStorage(uid, 25000);
+        boolean storage = waitStorage(uid, 12000);
         markOwned(uid);
         say(storage ? "MODE=shared" : "MODE=nofs");
     }
@@ -210,19 +210,38 @@ public final class CubClone {
     }
 
     /** 等某个用户的 emulated 卷变成 mounted；超时返回 false */
-    private static boolean waitStorage(int uid, long ms) {
-        long end = System.currentTimeMillis() + ms;
-        // 轮询别太密：每次都是一次 su fork，0.4 秒一次会把同期 App 的扫描/刷新全挤慢
-        // （G7 实测建号后列表「读取中」卡二十多秒）。1.5 秒足够，存储挂载本来就要几秒。
-        while (System.currentTimeMillis() < end) {
-            if (sh("sm", "list-volumes").contains("emulated;" + uid + " mounted")) return true;
+    /**
+     * 等用户共享存储挂好。策略按 AWS《Timeouts, retries, and backoff with jitter》的
+     * capped exponential backoff：先查一次，之后间隔 200ms 起、×1.8 递增、封顶 2.5s，
+     * 总预算 12s。单机单次操作不需要 jitter（那是防多客户端同时重试）。
+     *
+     * <p>两个提前退出，避免白等：
+     * <ul>
+     *   <li>{@code mounted} → 成功；</li>
+     *   <li>{@code unmountable} → 这个卷在这台机器上永远挂不起来（G7 实测 sdcardfs 冲突，
+     *       6 秒就到这个状态），再等也不会变，立刻返回。</li>
+     * </ul>
+     */
+    private static boolean waitStorage(int uid, long budgetMs) {
+        long deadline = System.currentTimeMillis() + budgetMs;
+        long gap = 200;
+        String key = "emulated;" + uid;
+        while (true) {
+            String out = sh("sm", "list-volumes", "all");
+            for (String line : out.split("\n")) {
+                if (!line.startsWith(key)) continue;
+                if (line.contains(" mounted")) return true;
+                if (line.contains("unmountable")) return false;
+            }
+            long left = deadline - System.currentTimeMillis();
+            if (left <= 0) return false;
             try {
-                Thread.sleep(1500);
+                Thread.sleep(Math.min(gap, left));
             } catch (InterruptedException e) {
                 return false;
             }
+            gap = Math.min((long) (gap * 1.8), 2500);
         }
-        return false;
     }
 
     /** 等某个用户从用户表里消失（remove-user 是异步的，删一半时建新号会撞上限） */

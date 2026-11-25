@@ -1846,8 +1846,9 @@ public class MainActivity extends Activity {
                         CloneStore.markPending(got);
                         Launcher.hideSelfFrom(got);
                         t.add(Integer.valueOf(got));
-                        // 装应用前必须等存储挂上；预处理系统应用一并在这里做完
-                        CloneStore.prepareSpace(MainActivity.this, got);
+                        // 装应用前必须就绪；预处理系统应用一并做完
+                        CloneStore.readySpace(MainActivity.this, got);
+                        CloneStore.cleanSpace(MainActivity.this, got);
                     } else {
                         newErr = out.contains("Cannot add more")
                                 ? getString(R.string.space_limit_one)
@@ -2041,15 +2042,12 @@ public class MainActivity extends Activity {
                     });
                     return;
                 }
-                // 建号成功：先标记归属与「准备中」，装应用要等存储挂上（最长 25 秒），
-                // 这期间扫描不会把这个空间的应用列出来。
+                // 建号成功：先标记归属与「准备中」，装应用要等存储挂上；
+                // unmountable 的机器会立刻返回，不再白等 25 秒。
                 CloneStore.markOurs(uid);
                 CloneStore.markPending(uid);
-                try {
-                    CloneStore.settleSpace(MainActivity.this, uid);
-                } finally {
-                    CloneStore.clearPending(uid);
-                }
+                CloneStore.readySpace(MainActivity.this, uid);
+                CloneStore.cleanSpace(MainActivity.this, uid);
                 installIntoClone(g, uid, false, name, true);
             }
         }).start();

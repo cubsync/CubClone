@@ -2500,10 +2500,17 @@ public class MainActivity extends Activity {
 
         // 内容没变就不重建：切页签、切主题都会走 render，重建一次要重绑二十几个图标，
         // 而且重建会闪。签名里带上配色，主题换了仍然会重建。
+        // ⚠必须带 spaceIndex：角标颜色按空间序号取（CloneStore.spaceIndex），而序号要等后台扫描
+        // 完成才就绪（快照首帧时是空的，走 uid 兜底取色）。序号变了这里不跟着变，就会留下
+        // 「同一个 uid=11，最近打开一种颜色、列表里另一种颜色」——G7 实测（2026-11-25）。
+        // 角标开关同理：关掉后签名不变就关不掉已有图标上的角标。
         StringBuilder sg = new StringBuilder(dark ? "d" : "l")
-                .append(isBlack() ? "b" : "x").append('/').append(cols).append('/');
+                .append(isBlack() ? "b" : "x").append('/').append(cols).append('/')
+                .append(sp().getBoolean("space_badge", true) ? '1' : '0').append('/');
         for (int i = 0; i < uids.size(); i++) {
-            sg.append(uids.get(i)).append(':').append(pkgs.get(i)).append(' ');
+            int u = uids.get(i).intValue();
+            sg.append(u).append('#').append(CloneStore.spaceIndex(u))
+                    .append(':').append(pkgs.get(i)).append(' ');
         }
         String sig = sg.toString();
         if (sig.equals(recentSig) && recentRow.getChildCount() > 0) return true;
@@ -2924,7 +2931,10 @@ public class MainActivity extends Activity {
     // ---------------- 底层 ----------------
 
     private boolean deploy() {
-        if (sp().getInt("deployed", -1) == buildVersion()) return true;
+        // 用 jar 内容签名判断，不用 versionCode：同一版本号下重打包（修 CLI、补丁号不动）时
+        // versionCode 不变，按版本号判断会永远不更新设备上的旧 jar（2026-11-25 踩过）。
+        final String sig = jarSig();
+        if (sig != null && sig.equals(sp().getString("jar_sig", ""))) return true;
         try {
             InputStream is = getAssets().open(JAR);
             java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
@@ -2935,7 +2945,7 @@ public class MainActivity extends Activity {
             String r = Shell.write(REMOTE, bos.toByteArray());
             boolean ok = !r.startsWith("ERR") && !r.contains("denied")
                     && !r.contains("Permission denied");
-            if (ok) sp().edit().putInt("deployed", buildVersion()).apply();
+            if (ok && sig != null) sp().edit().putString("jar_sig", sig).apply();
             return ok;
         } catch (Throwable t) {
             android.util.Log.e("CubClone", "deploy fail", t);
@@ -2943,11 +2953,22 @@ public class MainActivity extends Activity {
         }
     }
 
-    private int buildVersion() {
+    /** APK 里 assets/cubclone.jar 的内容签名（长度 + CRC32） */
+    private String jarSig() {
         try {
-            return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+            InputStream is = getAssets().open(JAR);
+            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            byte[] buf = new byte[8192];
+            long total = 0;
+            int n;
+            while ((n = is.read(buf)) > 0) {
+                crc.update(buf, 0, n);
+                total += n;
+            }
+            is.close();
+            return total + ":" + Long.toHexString(crc.getValue());
         } catch (Throwable t) {
-            return -1;
+            return null;
         }
     }
 

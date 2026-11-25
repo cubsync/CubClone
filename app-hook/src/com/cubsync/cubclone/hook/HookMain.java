@@ -95,7 +95,22 @@ public final class HookMain extends XposedModule {
         } catch (Throwable t) {
             Log.w(TAG, "install hook failed: " + t);
         }
-        mark(PROP_APPLY, "ctor=" + ctors + ",m=" + methods + ",i=" + install);
+        // 整机用户数上限（Flyme/Lineage 压得比目标值小，建到一半就 "Maximum user limit"）
+        int cap = 0;
+        try {
+            cap = new UserCapHook(this).apply(cl);
+        } catch (Throwable t) {
+            Log.w(TAG, "user cap hook failed: " + t);
+        }
+        // Flyme 跨用户启动拦截：只放行返回值 null 的情况（我们的空间否则打不开）
+        int flyme = 0;
+        try {
+            flyme = new FlymeHook(this).apply(cl);
+        } catch (Throwable t) {
+            Log.w(TAG, "flyme hook failed: " + t);
+        }
+        mark(PROP_APPLY, "ctor=" + ctors + ",m=" + methods + ",i=" + install
+                + ",u=" + cap + ",f=" + flyme);
         if (ctors > 0 || methods > 0) {
             mark(PROP, "1");
         }
@@ -177,7 +192,7 @@ public final class HookMain extends XposedModule {
         }
     }
 
-    private static int readLimit() {
+    static int readLimit() {
         int v = DEFAULT_LIMIT;
         try {
             Class<?> sp = Class.forName("android.os.SystemProperties");

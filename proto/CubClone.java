@@ -118,7 +118,14 @@ public final class CubClone {
         Object r = (m.getParameterTypes().length == 4)
                 ? m.invoke(UM, name, CLONE, 0, 0)
                 : m.invoke(UM, name, CLONE, 0, 0, null);
-        if (r == null) { say("ERR create returned null (上限或权限)"); return; }
+        if (r == null) {
+            // Flyme 等 ROM 不认 profile.CLONE（G7 实测：createProfileForUser 直接返回 null，
+            // 自带分身走的是自己的 999 空间），但 pm create-user --user-type full 可用 ——
+            // 降级而不是直接报错，否则这台机器一个空间都建不出来。
+            say("FALLBACK createProfileForUser 返回 null，改用独立存储");
+            createPrivate(name);
+            return;
+        }
         int uid = parseUid(uidOf(r));
         if (uid <= 0) { say("ERR 建号返回的 uid 解析失败: " + r); return; }
         say("CREATED " + r);

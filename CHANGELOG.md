@@ -39,6 +39,22 @@
   名字改掉就分不清哪个是系统自带、哪个是我们建的，容易误删系统分身。现在自带空间永远只给
   「移除应用 / 删空间」；标签也从「系统分身（只读）」改成「系统分身」，不再有“只读”的误导。
 - 建号前若设备刚开机还没解密（BFU），不再白等 25s 才失败，直接给出提示。
+- **Flyme 上建不了第二个空间**（增强插件 1.0.7）：Flyme 把整机用户数上限压到 4，
+  主用户 + 自带分身就占两个，`pm create-user` 直接报 "Maximum user limit is reached"。
+  插件现在把 `UserManager.getMaxSupportedUsers()` 抬到「空间上限」那个值，建号不再被这道闸卡住。
+- **Flyme 上分身应用打不开**（增强插件 1.0.7）：Flyme 改写了 `ActivityStarter`，跨用户启动只放行
+  它自己的 `FlymeParallelSpace(999)`，对其他用户空间直接丢弃 —— Splash 一闪，进程都不建。
+  插件在 `FlymeMultiOpenServiceInject` 返回 null 时把原 Intent / ActivityInfo 还回去，
+  让启动按原生路径继续；非 null（Flyme 自己的分身）不碰。
+- **「最近打开」的角标颜色和列表不一致**：角标按空间序号取色，序号要等后台扫描完成才就绪，
+  首帧只能按 uid 兜底；扫描完列表重建换了色，而「最近打开」的内容签名没带序号被短路、不重建，
+  于是同一个 uid=11 在两个位置两种颜色。签名补上空间序号与角标开关。
+- **新建空间看起来「点了没反应」**：建号成功后还要逐包 prune（G7 上 245 个系统包要跑一两分钟），
+  回执和列表刷新压在 prune 之后。现在建完立即提示并刷新列表，prune 留在后台继续。
+- **Flyme 上 `createProfileForUser` 不可用**：CLI 原来直接报错退出，现在降级到
+  `pm create-user --user-type full`（G7 的空间本来就是这么建的）。
+- **同一版本号重打包后设备上的 CLI jar 不更新**：`deploy` 原来按 versionCode 判断是否已释放，
+  改成按 jar 内容（长度 + CRC32）判断。
 
 ## [0.7.1] - 2026-11-24
 

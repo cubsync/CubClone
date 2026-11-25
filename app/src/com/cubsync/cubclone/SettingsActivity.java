@@ -1861,9 +1861,6 @@ public class SettingsActivity extends Activity {
                     // 只建号不建存储，不 start 的话备份还原会报「目录不存在」。
                     CloneStore.startSpace(uid);
                     CloneStore.ensureIme(uid);   // 装主空间输入法并抄一份设置（词库各自独立）
-                    if (CloneStore.pruneSys(SettingsActivity.this)) {
-                        CloneStore.pruneSpace(SettingsActivity.this, uid, true);
-                    }
                 }
 
                 final String msg;
@@ -1883,12 +1880,23 @@ public class SettingsActivity extends Activity {
                             : getString(R.string.space_created, uid);
                     CloneStore.markSpacesDirty(SettingsActivity.this);   // 空间变了重扫空间状态；主身份清单没变，不重载
                 }
+                // ⚠回执和列表刷新必须放在 prune 之前：prune 要逐包 pm disable，G7 上 245 个
+                // 系统包能跑一两分钟，压在后面用户看到的就是「点了完全没反应」（G7 实测）。
                 runOnUiThread(new Runnable() {
                     public void run() {
                         toast(msg);
                         loadSpaces();
                     }
                 });
+                if (uid > 0 && CloneStore.pruneSys(SettingsActivity.this)) {
+                    CloneStore.pruneSpace(SettingsActivity.this, uid, true);
+                    // prune 会改「空间里剩几个应用」，跑完再刷一次
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            loadSpaces();
+                        }
+                    });
+                }
             }
         }).start();
     }

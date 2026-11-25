@@ -1620,11 +1620,15 @@ public class MainActivity extends Activity {
         final ImageView iv = (ImageView) host.findViewById(R.id.icon_img);
         final TextView bd = (TextView) host.findViewById(R.id.icon_badge);
         if (uid > 0 && sp().getBoolean("space_badge", true)) {
-            int no = CloneStore.spaceIndex(uid);        // 空间序号（只用于取色，同空间同色）；foreign 为 0
             String txt = String.valueOf(uid);           // 显示系统 uid，和其他应用（LSP/数据备份）对得上
             android.graphics.drawable.GradientDrawable gd =
                     new android.graphics.drawable.GradientDrawable();
-            gd.setColor(BADGE[(no > 0 ? no - 1 : uid) % BADGE.length]);
+            // 颜色只由 uid 决定：同一个空间在任何位置、任何时刻都是同一个颜色。
+            // 以前按「空间序号」取色，而序号来自扫描出来的空间表（SPACE_ORDER）——那张表
+            // 首帧、扫描中、把 999 误记成自建空间时给出的是不同的号，同一个 999 在「最近打开」
+            // 里算出 4（蓝）、在列表里算出 0（按 uid 兜底 → 品红），两处就对不上（G7 实测）。
+            // 角标本来就靠数字区分空间，颜色只需要「同空间同色、不同空间尽量不同」。
+            gd.setColor(BADGE[uid % BADGE.length]);
             gd.setCornerRadius(dp(13) / 5f);
             bd.setBackground(gd);
             bd.setText(txt);
@@ -2500,17 +2504,13 @@ public class MainActivity extends Activity {
 
         // 内容没变就不重建：切页签、切主题都会走 render，重建一次要重绑二十几个图标，
         // 而且重建会闪。签名里带上配色，主题换了仍然会重建。
-        // ⚠必须带 spaceIndex：角标颜色按空间序号取（CloneStore.spaceIndex），而序号要等后台扫描
-        // 完成才就绪（快照首帧时是空的，走 uid 兜底取色）。序号变了这里不跟着变，就会留下
-        // 「同一个 uid=11，最近打开一种颜色、列表里另一种颜色」——G7 实测（2026-11-25）。
-        // 角标开关同理：关掉后签名不变就关不掉已有图标上的角标。
+        // 角标颜色现在只由 uid 取（见 setIcon），uid 已在下面，不必再带空间序号；
+        // 开关仍要带——关掉后签名不变就关不掉已有图标上的角标。
         StringBuilder sg = new StringBuilder(dark ? "d" : "l")
                 .append(isBlack() ? "b" : "x").append('/').append(cols).append('/')
                 .append(sp().getBoolean("space_badge", true) ? '1' : '0').append('/');
         for (int i = 0; i < uids.size(); i++) {
-            int u = uids.get(i).intValue();
-            sg.append(u).append('#').append(CloneStore.spaceIndex(u))
-                    .append(':').append(pkgs.get(i)).append(' ');
+            sg.append(uids.get(i)).append(':').append(pkgs.get(i)).append(' ');
         }
         String sig = sg.toString();
         if (sig.equals(recentSig) && recentRow.getChildCount() > 0) return true;

@@ -90,8 +90,6 @@ public final class CloneStore {
 
     /** 分身空间名字缓存：uid → 系统里的名字（`cmd user list --all -v` 的 name= 字段） */
     static volatile Map<Integer, String> SPACE_NAMES = new HashMap<Integer, String>();
-    /** 我们建的空间按扫描顺序（只用于显示「空间 1/2/3」，跟系统 id 无关） */
-    static volatile java.util.List<Integer> SPACE_ORDER = new ArrayList<Integer>();
 
     static boolean marked(int uid) {
         synchronized (MARKED) {
@@ -152,13 +150,6 @@ public final class CloneStore {
         }
         Shell.exec("settings put --user " + uid + " secure " + OWNED + " 1");
         Shell.exec("settings delete --user " + uid + " secure " + OWNED_LEGACY);
-        // 立刻把它排进序号表，否则新建的空间要等下一次扫描才会显示成「空间 N」，
-        // 中间这段会退回到系统名/id（用户看到的就是「又变成空间 20」）。
-        java.util.List<Integer> ord = new ArrayList<Integer>(SPACE_ORDER);
-        if (!ord.contains(Integer.valueOf(uid))) {
-            ord.add(Integer.valueOf(uid));
-            SPACE_ORDER = ord;
-        }
     }
 
     static void unmarkOurs(int uid) {
@@ -637,15 +628,9 @@ public final class CloneStore {
             if (t2.length() > 0 && !t2.equalsIgnoreCase("space")) return t2;
         }
         // 兜底（系统名是 space / 读不到）：直接用空间 id。
-        // ⛔ 不能用 SPACE_ORDER 下标：那个下标随建的顺序排、删过空间还会留洞，
+        // ⛔ 不能按「第几个建的空间」编号：那个号随建的顺序排、删过空间还会留洞，
         // 同一个空间昨天叫「空间 2」今天可能叫「空间 24」，用户看到的号会自己变。
         return c.getString(R.string.space_name, String.valueOf(uid));
-    }
-
-    /** 这个 uid 的「空间序号」（1 起，对应「空间 N」）；不在我们建的空间里（foreign）返回 0 */
-    static int spaceIndex(int uid) {
-        int i = SPACE_ORDER.indexOf(Integer.valueOf(uid));
-        return i < 0 ? 0 : i + 1;
     }
 
     /**
@@ -1617,7 +1602,6 @@ public final class CloneStore {
      */
     private static java.util.List<Integer> listSpaceUids(boolean includeForeign) {
         java.util.List<Integer> ids = new ArrayList<Integer>();
-        java.util.List<Integer> ours = new ArrayList<Integer>();
         Map<Integer, String> names = new HashMap<Integer, String>();
         Set<Integer> ghosts = new HashSet<Integer>();
         // 顺带取一次「卡在 <removing> 的幽灵空间」：这类档案 pm remove-user 早返回 Success 了，
@@ -1658,7 +1642,6 @@ public final class CloneStore {
                 if (nm.length() > 0) names.put(Integer.valueOf(uid), nm);
                 final boolean mine = isOurs(nm, uid);
                 if (mine) {
-                    ours.add(Integer.valueOf(uid));
                     ids.add(Integer.valueOf(uid));
                 } else if (includeForeign && t.contains("type=profile.CLONE")) {
                     // 非自建分身：只有显式要「可选目标空间」时才列；
@@ -1669,7 +1652,6 @@ public final class CloneStore {
             }
         }
         ids.removeAll(ghosts);
-        SPACE_ORDER = new ArrayList<Integer>(ours);
         SPACE_NAMES = names;
         return ids;
     }

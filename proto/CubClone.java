@@ -148,12 +148,28 @@ public final class CubClone {
         }
 
         say("CREATED " + info);
+        // 先把 uid 报给插件再 start-user：launcher 收到 USER_ADDED 就会拉 profile 列表，
+        // 那时属性里没有这个 uid 的话，桌面照样会摆出分身应用（G7 实测）。
+        addHookSpace(uid);
         sh("am", "start-user", String.valueOf(uid));
         // 存储是异步挂的，25 秒内没起来就如实上报；绝对不再降级成 full.SECONDARY：
         // full 是独立用户，AOSP 必须切用户才显示，建了也打不开（G7 实测）。
         boolean storage = waitStorage(uid, 25000);
         markOwned(uid);
         say(storage ? "MODE=shared" : "MODE=nofs");
+    }
+
+    /** 把新空间追加进插件用的属性（逗号分隔）；App 扫描后会整体覆盖，不冲突 */
+    private static void addHookSpace(int uid) {
+        try {
+            String cur = sh("getprop", "persist.sys.cubclone.spaces").trim();
+            String want = String.valueOf(uid);
+            for (String s : cur.split(",")) {
+                if (s.trim().equals(want)) return;
+            }
+            sh("setprop", "persist.sys.cubclone.spaces", cur.isEmpty() ? want : cur + "," + want);
+        } catch (Throwable ignored) {
+        }
     }
 
     /** dumpsys user 里该用户的父组字段（AOSP 打印的是 profileGroupId，名字叫 parentId） */

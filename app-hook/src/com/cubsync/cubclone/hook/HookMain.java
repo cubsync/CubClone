@@ -129,8 +129,16 @@ public final class HookMain extends XposedModule {
         } catch (Throwable t) {
             Log.w(TAG, "lock hook failed: " + t);
         }
+        // 桌面看不到我们建的空间：launcher 拿 profile 列表时把我们的 uid 去掉，
+        // 分身应用的入口只留 CubClone（详见 LauncherProfileHook）
+        int lp = 0;
+        try {
+            lp = new LauncherProfileHook(this).apply(cl);
+        } catch (Throwable t) {
+            Log.w(TAG, "launcher hook failed: " + t);
+        }
         mark(PROP_APPLY, "ctor=" + ctors + ",m=" + methods + ",i=" + install
-                + ",u=" + cap + ",f=" + flyme + ",w=" + wm + ",l=" + lock);
+                + ",u=" + cap + ",f=" + flyme + ",w=" + wm + ",l=" + lock + ",lp=" + lp);
         if (ctors > 0 || methods > 0) {
             mark(PROP, "1");
         }

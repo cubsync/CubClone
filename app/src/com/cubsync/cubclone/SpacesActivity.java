@@ -206,23 +206,25 @@ public class SpacesActivity extends Activity {
         r.addView(tv);
 
         // 分身模式：克隆型（profile.CLONE，和主用户同组、天然同屏可见）/
-        // 独立型（full.SECONDARY，Flyme 不支持 clone profile 时的降级结果，可见性由插件补）。
-        // 两者在系统里行为不同，标出来才看得懂为什么有的空间要插件才打得开。
+        // 独立型（full.SECONDARY，旧版本降级留下的，可见性要靠插件补）。
+        // 用颜色分开：克隆型青、独立型橙；两者在系统里行为不同，一眼要能看出来。
         if (!foreign) {
             TextView mode = new TextView(this);
-            mode.setText(CloneStore.isCloneSpace(uid)
-                    ? R.string.space_mode_clone : R.string.space_mode_full);
+            boolean cloneSpace = CloneStore.isCloneSpace(uid);
+            mode.setText(cloneSpace ? R.string.space_mode_clone : R.string.space_mode_full);
             mode.setTextSize(11);
-            mode.setTextColor(secColor);
+            mode.setTextColor(cloneSpace ? Theme.teal(this) : Theme.warn(this));
             mode.setPadding(dp(6), 0, dp(2), 0);
             r.addView(mode);
         }
 
         if (foreign) {
+            // 系统分身：不是我们建的，删了不可恢复，红字加粗，和普通空间拉开
             TextView tag = new TextView(this);
             tag.setText(R.string.space_foreign);
             tag.setTextSize(12);
-            tag.setTextColor(secColor);
+            tag.setTypeface(null, android.graphics.Typeface.BOLD);
+            tag.setTextColor(Theme.red(this));
             tag.setPadding(dp(8), 0, dp(4), 0);
             r.addView(tag);
         }

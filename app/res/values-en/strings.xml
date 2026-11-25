@@ -60,6 +60,19 @@
     <string name="space_created_private">Space created: uid %1$d (shared storage unavailable on this device; using separate storage, gallery/files not shared with owner)</string>
     <string name="space_limit_reached">Clone space limit reached (%1$s), delete one first</string>
     <string name="limit_title">Clone space limit</string>
+    <string name="plugin_title">Plugin features</string>
+    <string name="plugin_hint">The features below come from the unlock plugin (LSPosed module) and do nothing without it. Reboot once after changing them when asked.</string>
+    <string name="install_title">Install interception</string>
+    <string name="install_label">Install apps without a target user into the main space only</string>
+    <string name="install_state_on">Active</string>
+    <string name="install_state_off">Off</string>
+    <string name="install_no_module">Enhancement plugin not detected (install it above first)</string>
+    <string name="install_need_perm">Root permission required</string>
+    <string name="install_on_toast">On: untargeted installs go to the main space only</string>
+    <string name="install_off_toast">Off: installs follow the system default (all spaces)</string>
+    <string name="install_save_fail">Save failed: %1$s</string>
+    <string name="install_hint">Apps installed from the system installer, app stores or adb without a target user go to the main space only. The switch takes effect immediately, no reboot; "install to space N" inside the app is unaffected.</string>
+
     <string name="limit_sys">System default %1$d</string>
     <string name="limit_on">Unlocked %1$d</string>
     <string name="limit_tag_lock">Unlock</string>
@@ -71,12 +84,12 @@ How many you can actually create depends on free storage.
 
 Requires root + LSPosed: enable the module in LSPosed, then reboot once.</string>
     <string name="limit_saved">Set to %1$d, takes effect after reboot</string>
-    <string name="limit_no_module">Unlock module not detected</string>
+    <string name="limit_no_module">Enhancement plugin not detected</string>
     <string name="limit_module_ver">Unlock module %1$s active · device limit %2$d</string>
     <string name="limit_need_perm">Root permission required</string>
     <string name="limit_bad_value">Enter a number between 1 and %1$d</string>
-    <string name="limit_install">Install unlock module</string>
-    <string name="limit_reinstall">Reinstall module</string>
+    <string name="limit_install">Install enhancement plugin</string>
+    <string name="limit_reinstall">Reinstall enhancement plugin</string>
     <string name="limit_install_tip">Enable this module in LSPosed, then reboot once. The module has no UI and no launcher icon.</string>
     <string name="limit_install_ok">Module installed. Enable CubClone in LSPosed, then reboot</string>
     <string name="limit_install_fail">Install failed: %1$s</string>

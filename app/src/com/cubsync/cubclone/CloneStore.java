@@ -743,6 +743,59 @@ public final class CloneStore {
     /** assets 里内置的解锁模块（app/build.sh 从 dist/ 拷进来） */
     static final String HOOK_ASSET = "CubCloneHook.apk";
 
+    /** 安装拦截开关：hook 每次拦截现读这个属性，缺省 1（开） */
+    public static final String HOOK_INSTALL_PERSIST = "persist.sys.cubclone.hook.install";
+
+    /**
+     * 空间增删改后打个「待刷新」标记：进程被杀也不会丢，主页 onResume 消费一次。
+     * 只靠静态 dirty 不行 —— 建空间是在后台线程里跑完的，用户可能已经先回到主页。
+     */
+    static void markSpacesDirty(Context c) {
+        dirty = true;
+        try {
+            c.getSharedPreferences("clone", Context.MODE_PRIVATE)
+                    .edit().putBoolean("spaces_dirty", true).apply();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 取并清「待刷新」标记（只让主页刷一次，别每次 onResume 都重扫） */
+    static boolean takeSpacesDirty(Context c) {
+        try {
+            android.content.SharedPreferences sp = c.getSharedPreferences("clone", Context.MODE_PRIVATE);
+            boolean v = sp.getBoolean("spaces_dirty", false);
+            if (v) sp.edit().putBoolean("spaces_dirty", false).apply();
+            return v;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * 读安装拦截开关。
+     * @return null ＝ 没 root 读不到；属性没写过按「开」算（和 hook 的缺省一致）
+     */
+    public static Boolean installConverge() {
+        if (!Shell.ready()) return null;
+        String v = Shell.raw("getprop", HOOK_INSTALL_PERSIST).trim();
+        if (v.length() == 0) return Boolean.TRUE;
+        return Boolean.valueOf(!"0".equals(v));
+    }
+
+    /**
+     * 写安装拦截开关。hook 每次拦截现读，所以**立即生效、不用重启**。
+     * @return 失败原因，null = 成功
+     */
+    public static String writeInstallConverge(boolean on) {
+        String val = on ? "1" : "0";
+        String out = Shell.exec("setprop " + HOOK_INSTALL_PERSIST + " " + val);
+        String back = Shell.raw("getprop", HOOK_INSTALL_PERSIST).trim();
+        if (!val.equals(back)) {
+            return out.length() == 0 ? "readback=" + back : out.trim();
+        }
+        return null;
+    }
+
     /**
      * 建号链上的实际有效上限：两道闸取小的那个。一次 dumpsys 同时读两个字段，
      * 各自读一次要跑两遍 shell（dumpsys user 几百毫秒）。

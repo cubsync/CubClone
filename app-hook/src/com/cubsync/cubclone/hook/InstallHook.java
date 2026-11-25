@@ -25,7 +25,8 @@ import io.github.libxposed.api.XposedInterface;
  * {@code installFlags} 带 {@code INSTALL_ALL_USERS(0x40)}。显式指定 0..N 的安装
  * （包括本应用「装到空间 N」的路径）一律不动。全部 try/catch，hook 失败就放行原参数。
  *
- * <p>开关：{@code persist.sys.cubclone.hook.install=0} 可整体关掉（重启生效）。
+ * <p>开关：{@code persist.sys.cubclone.hook.install}，缺省 1（开）。每次拦截现读，
+ * 所以主应用里关掉/打开立即生效，不需要重启（钩子本身总是挂着）。
  */
 final class InstallHook {
 
@@ -46,10 +47,9 @@ final class InstallHook {
     }
 
     int apply(ClassLoader cl) {
-        if (!on()) {
-            Log.i(TAG, "install hook off (" + PROP_ON + "=0)");
-            return 0;
-        }
+        // 开关在每次拦截时读（见 gate），所以这里**总是**挂钩子：
+        // 关掉再打开不需要重启，代价只是一次 SystemProperties 读取（安装本来就不频繁）。
+        Log.i(TAG, "install hook on=" + on());
         int a = hookSessions(cl);
         int b = hookInstallAsUser(cl);
         int c = hookSessionCtor(cl);
@@ -57,7 +57,7 @@ final class InstallHook {
         dumpFields(cl);
         Log.i(TAG, "install hook: sessions=" + a + ", pms=" + b + ", ctor=" + c + ", commit=" + d);
         HookMain.mark("sys.cubclone.hook.install.apply",
-                "s=" + a + ",p=" + b + ",c=" + c + ",k=" + d);
+                "s=" + a + ",p=" + b + ",c=" + c + ",k=" + d + ",on=" + (on() ? 1 : 0));
         return a + b + c + d;
     }
 
@@ -84,6 +84,9 @@ final class InstallHook {
                     xp.hook(m)
                             .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                             .intercept(chain -> {
+                                if (!gate()) {
+                                    return chain.proceed();
+                                }
                                 rewriteParams(chain.getArg(0));
                                 // 老签名把目标用户放在参数里（-1 = 所有用户）
                                 List<Object> args = chain.getArgs();
@@ -173,6 +176,9 @@ final class InstallHook {
                     xp.hook(m)
                             .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                             .intercept(chain -> {
+                                if (!gate()) {
+                                    return chain.proceed();
+                                }
                                 List<Object> args = chain.getArgs();
                                 Object cur = args.get(ui);
                                 if (cur instanceof Integer
@@ -266,6 +272,9 @@ final class InstallHook {
 
     /** session 里的 userId 只要还是「所有用户」就钉到 0（A16 字段名是 userId，不是 mUserId） */
     private static void forceUser(Object session) throws Exception {
+        if (!gate()) {
+            return;
+        }
         Class<?> c = session.getClass();
         Field uf = null;
         for (String n : new String[]{"userId", "mUserId"}) {
@@ -315,6 +324,14 @@ final class InstallHook {
                 Log.w(TAG, "dump " + cn + " failed: " + t);
             }
         }
+    }
+
+    /**
+     * 开关：{@code persist.sys.cubclone.hook.install}，缺省 1（开）。
+     * 每次拦截都读一次，改开关立即生效；读不到按开处理（宁可按目标行为）。
+     */
+    private static boolean gate() {
+        return on();
     }
 
     private static boolean on() {

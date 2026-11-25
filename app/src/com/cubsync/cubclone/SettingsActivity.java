@@ -1847,6 +1847,7 @@ public class SettingsActivity extends Activity {
     private void createSpace(final String name) {
         // 持续显示「创建中」：start+prune 可能要好几秒，短 toast 早没了会让用户以为卡住
         spaceLimit.setText(getString(R.string.creating));
+        CloneStore.markSpacesDirty(this);   // 建号要几秒，先置位：用户可能等不到就跑回主页
         new Thread(new Runnable() {
             public void run() {
                 String out = Shell.exec(CLI + " create '" + CloneStore.cloneName(name) + "'");
@@ -1880,7 +1881,7 @@ public class SettingsActivity extends Activity {
                     msg = out.contains("MODE=private")
                             ? getString(R.string.space_created_private, uid)
                             : getString(R.string.space_created, uid);
-                    CloneStore.dirty = true;   // 空间变了重扫空间状态；主身份清单没变，不重载
+                    CloneStore.markSpacesDirty(SettingsActivity.this);   // 空间变了重扫空间状态；主身份清单没变，不重载
                 }
                 runOnUiThread(new Runnable() {
                     public void run() {

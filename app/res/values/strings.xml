@@ -60,6 +60,19 @@
     <string name="space_created_private">空间已创建：uid %1$d（本机不支持共享存储，已用独立存储，相册/文件不与主空间共用）</string>
     <string name="space_limit_reached">分身空间已到上限（%1$s 个），先删一个再建</string>
     <string name="limit_title">分身空间上限</string>
+    <string name="plugin_title">插件功能</string>
+    <string name="plugin_hint">以下功能由解锁插件（LSPosed 模块）提供，没装插件或插件没生效时都不起作用。改完按提示重启一次。</string>
+    <string name="install_title">安装拦截</string>
+    <string name="install_label">未指定用户的安装只装到主空间</string>
+    <string name="install_state_on">已生效</string>
+    <string name="install_state_off">已关闭</string>
+    <string name="install_no_module">未检测到增强插件（先在上面装好插件）</string>
+    <string name="install_need_perm">需要先授权 root</string>
+    <string name="install_on_toast">已开启：未指定用户的安装只装主空间</string>
+    <string name="install_off_toast">已关闭：安装恢复系统行为（铺到所有空间）</string>
+    <string name="install_save_fail">保存失败：%1$s</string>
+    <string name="install_hint">用系统安装器、应用商店或 adb 装应用时，没指定用户就只装进主空间，不会再铺满每个分身空间。开关立即生效、不用重启；应用里「装到空间 N」不受影响。</string>
+
     <string name="limit_sys">系统默认 %1$d</string>
     <string name="limit_on">已解锁 %1$d</string>
     <string name="limit_tag_lock">解锁</string>
@@ -71,19 +84,19 @@
 
 需要 root + LSPosed：装完模块后要在 LSPosed 里启用，再重启一次才生效。</string>
     <string name="limit_saved">已写入 %1$d，重启后生效</string>
-    <string name="limit_no_module">未检测到解锁模块</string>
-    <string name="limit_module_ver">解锁模块 %1$s 已生效 · 本机上限 %2$d</string>
+    <string name="limit_no_module">未检测到增强插件</string>
+    <string name="limit_module_ver">增强插件 %1$s 已生效 · 本机上限 %2$d</string>
     <string name="limit_need_perm">需要先授权 root</string>
     <string name="limit_bad_value">请输入 1–%1$d 之间的数字</string>
-    <string name="limit_install">安装解锁模块</string>
-    <string name="limit_reinstall">重装解锁模块</string>
-    <string name="limit_install_tip">装完要去 LSPosed 里启用本模块，再重启一次才生效。模块本身没有界面，也不会出现在桌面。</string>
-    <string name="limit_install_ok">模块已安装。请打开 LSPosed 启用 CubClone，然后重启手机</string>
+    <string name="limit_install">安装增强插件</string>
+    <string name="limit_reinstall">重装增强插件</string>
+    <string name="limit_install_tip">装完要去 LSPosed 里启用本插件，再重启一次才生效。插件本身没有界面，也不会出现在桌面。</string>
+    <string name="limit_install_ok">插件已安装。请打开 LSPosed 启用 CubClone，然后重启手机</string>
     <string name="limit_install_fail">安装失败：%1$s</string>
     <string name="limit_no_asset">安装包里没有内置模块</string>
-    <string name="limit_installing">正在安装模块…</string>
+    <string name="limit_installing">正在安装插件…</string>
     <string name="limit_manage">管理</string>
-    <string name="limit_active_tip">模块已生效。改数值后要重启才生效；卸载模块并重启即恢复系统原值。</string>
+    <string name="limit_active_tip">插件已生效。改数值后要重启才生效；卸载插件并重启即恢复系统原值。</string>
     <string name="space_deleted">已删除空间 uid %1$d</string>
     <string name="delete_space_msg">删除空间 uid %1$d 会把里面所有分身应用的数据一起清掉，主空间那份不受影响。\n\n机主数据不会被触碰。</string>
     <string name="delete_space_msg_foreign">⚠️ 这是系统自带的克隆空间，不是本应用创建的。删除会清掉里面所有应用及其数据，无法恢复。\n\n确认删除空间 uid %1$d？</string>

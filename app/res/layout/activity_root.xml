@@ -202,16 +202,27 @@
                     android:textSize="12sp" />
             </LinearLayout>
 
-            <!-- ═══ 分身数量上限（解锁模块） ═══ -->
+            <!-- ═══ 插件功能（LSPosed 模块提供的能力都在这一栏） ═══ -->
             <TextView
                 android:id="@+id/rt_limit_sec"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
                 android:layout_marginTop="18dp"
-                android:layout_marginBottom="8dp"
-                android:text="@string/limit_title"
+                android:layout_marginBottom="4dp"
+                android:text="@string/plugin_title"
                 android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/rt_plugin_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:layout_marginBottom="8dp"
+                android:lineSpacingExtra="3dp"
+                android:text="@string/plugin_hint"
+                android:textSize="12sp" />
 
             <LinearLayout
                 android:id="@+id/rt_limit_card"
@@ -222,7 +233,14 @@
                 android:padding="16dp">
 
                 <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/limit_title"
+                    android:textSize="15sp" />
+
+                <TextView
                     android:id="@+id/rt_limit_state"
+                    android:layout_marginTop="4dp"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:textSize="15sp" />
@@ -263,6 +281,58 @@
                         android:text="@string/limit_tag_tune"
                         android:textSize="14sp" />
                 </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/rt_install_card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_card"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/install_title"
+                    android:textSize="15sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/rt_install_label"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/install_label"
+                        android:textSize="15sp" />
+
+                    <Switch
+                        android:id="@+id/rt_install"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/rt_install_state"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/rt_install_hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text="@string/install_hint"
+                    android:textSize="12sp" />
             </LinearLayout>
         </LinearLayout>
     </ScrollView>

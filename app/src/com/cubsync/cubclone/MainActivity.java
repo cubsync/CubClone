@@ -114,6 +114,8 @@ public class MainActivity extends Activity {
     private LinearLayout recentHeader;
     private TextView recentTitle;
     private LinearLayout recentRow;
+    /** 「最近打开」当前内容签名：一样就不用重建 */
+    private String recentSig;
     private View searchRow;
     /** 所有有效分身（不分用户/系统页签）：key="uid:pkg"，供「最近打开」反查图标/名字/禁用态 */
     private final Map<String, Clone> allClones = new HashMap<String, Clone>();
@@ -224,6 +226,9 @@ public class MainActivity extends Activity {
             public void onClick(View v) { switchTab(1); }
         });
         // 「最近打开」和页签行走 ListView 表头：跟着列表一起滚走，跟以前一样
+        // 「最近打开」和页签行作为表头：跟着列表滚走（上滑自然收起、回顶再出来）。
+        // ⚠切页签时绝不能重建它们：手指底下那一行被 removeAllViews 拆掉，ListView 会把
+        // 这次按压判成长按，弹出卡片菜单（网格模式 100% 复现）——refreshRecentHeader 已按签名短路。
         appList.addHeaderView(recentHeader, null, false);
         appList.addHeaderView(tabRow, null, false);
         appAdapter = new AppAdapter();
@@ -286,7 +291,7 @@ public class MainActivity extends Activity {
             }
         }
         boolean dm = isNight(), bm2 = isBlack();
-        if (CloneStore.dirty || groups.isEmpty()) {
+        if (CloneStore.dirty || CloneStore.takeSpacesDirty(this) || groups.isEmpty()) {
             lastDark = dm;
             lastBlack = bm2;
             refresh();
@@ -561,6 +566,8 @@ public class MainActivity extends Activity {
     private long swipeT0, swipeLastMoveT;
     private View swipeTarget;
     private boolean swipingH;
+    /** 按下时列表是否在顶部：下拉出搜索只在顶部生效，免得滑列表中段就弹键盘 */
+    private boolean pullAtTop;
 
     @Override
     public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
@@ -572,8 +579,9 @@ public class MainActivity extends Activity {
             swipeT0 = swipeLastMoveT = System.currentTimeMillis();
             swipingH = false;
             swipeTarget = appList;
+            pullAtTop = isAtTop();
         } else if (a == android.view.MotionEvent.ACTION_MOVE && swipingH) {
-            if (swipeTarget != null) swipeTarget.setTranslationX(ev.getX() - swipeX0);   // 跟手
+            swipeTo(ev.getX() - swipeX0);   // 跟手（只挪列表内容）
             swipeLastX = ev.getX();
             swipeLastMoveT = System.currentTimeMillis();
             return true;
@@ -585,7 +593,10 @@ public class MainActivity extends Activity {
                     && ((dx > 0 && tab == 1) || (dx < 0 && tab == 0))) {
                 swipingH = true;
                 swipeTarget = appList;
-                if (swipeTarget != null) swipeTarget.setTranslationX(dx);
+                // 关键：按下时事件已经派给图标了，横滑被我们接管后必须给子树补一个 CANCEL，
+                // 否则图标的长按计时器照常到点 —— 从图标起手左右滑必弹长按菜单（8A/G7 都复现）。
+                cancelChildTouch(ev);
+                swipeTo(dx);
                 return true;
             }
         } else if (a == android.view.MotionEvent.ACTION_UP
@@ -602,10 +613,10 @@ public class MainActivity extends Activity {
                         || Math.abs(vx) > 800f;
                 int want = dx < 0 ? 1 : 0;
                 if (go && want != tab) {
-                    switchTab(want);                      // 内容重渲染后归位
-                    if (t != null) t.setTranslationX(0);
-                } else if (t != null) {
-                    t.animate().translationX(0).setDuration(180).start();   // 回弹
+                    swipeBack(false);                     // 内容重渲染后归位
+                    switchTab(want);
+                } else {
+                    swipeBack(true);                      // 回弹
                 }
                 return true;
             }
@@ -613,8 +624,13 @@ public class MainActivity extends Activity {
             float dx = ev.getX() - swipeX0, dy = ev.getY() - swipeY0;
             // 上推收起搜索框：只认「方向竖直 + 够远 + 够快」，不再看起手落在屏幕哪一截。
             // 之前那个 nearTop 条件（列表在顶 或 起手在上 40%）就是「有时能收有时不能」的根源。
-            // 「下拉出搜索」已删：最近打开挂进列表顶后，滑到顶再下拉就误触开搜索+键盘，
-            // 来回滑动列表反复跳动。开搜索走顶栏放大镜。
+            // 下拉到顶出搜索框（早期设计）：只在「按下时本来就在顶部」才认，
+            // 从列表中间往下滑不会误弹键盘。
+            if (searchRow != null && searchRow.getVisibility() != View.VISIBLE
+                    && pullAtTop && dy > dp(60) && Math.abs(dy) > Math.abs(dx) * 2f && ms < 900) {
+                toggleSearch();
+                return true;
+            }
             if (searchRow != null && searchRow.getVisibility() == View.VISIBLE) {
                 if (dy < -dp(90) && Math.abs(dy) > Math.abs(dx) * 2f && ms < 1000) {
                     toggleSearch();
@@ -623,6 +639,50 @@ public class MainActivity extends Activity {
             }
         }
         return super.dispatchTouchEvent(ev);
+    }
+
+    /** 列表在顶部（表头完整可见）：下拉出搜索只在这个状态下认 */
+    private boolean isAtTop() {
+        if (appList == null) return true;
+        return appList.getFirstVisiblePosition() == 0
+                && (appList.getChildCount() == 0 || appList.getChildAt(0).getTop() >= 0);
+    }
+
+    /** 给当前接收按下的子视图补发 ACTION_CANCEL，清掉按下态和长按计时器 */
+    private void cancelChildTouch(android.view.MotionEvent src) {
+        try {
+            android.view.MotionEvent cancel = android.view.MotionEvent.obtain(src);
+            cancel.setAction(android.view.MotionEvent.ACTION_CANCEL);
+            super.dispatchTouchEvent(cancel);
+            cancel.recycle();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * 左右跟手：只挪「卡片/格子」这些行视图，表头（最近打开 / 页签行）一个像素都不动。
+     *
+     * 不能挪整个 ListView 再把表头反着挪：两边都在合成，滑的时候整屏（连同最近区）会闪。
+     * 逐行设置 translationX 只在内容行上动，表头不受影响。
+     */
+    private void swipeTo(float dx) {
+        if (appList == null) return;
+        for (int i = 0; i < appList.getChildCount(); i++) {
+            View c = appList.getChildAt(i);
+            if (c == null || c == recentHeader || c == tabRow) continue;
+            c.setTranslationX(dx);
+        }
+    }
+
+    /** 松手归位：anim=true 慢慢弹回，false 立刻复位（切页签时内容本来就要重建） */
+    private void swipeBack(boolean anim) {
+        if (appList == null) return;
+        for (int i = 0; i < appList.getChildCount(); i++) {
+            View c = appList.getChildAt(i);
+            if (c == null || c == recentHeader || c == tabRow) continue;
+            if (anim) c.animate().translationX(0).setDuration(180).start();
+            else c.setTranslationX(0);
+        }
     }
 
     private void applyTabs() {
@@ -649,8 +709,15 @@ public class MainActivity extends Activity {
         applyTabs();
         if (groups.isEmpty()) refresh();   // 还没扫过就重扫一次
         else {
-            render();                      // 已扫过，直接切显示
-            appList.setSelection(0);       // 换页签从顶部开始（以前重建列表天然在顶部）
+            // 推迟一帧再重建：点击抬手瞬间就拆表头/行，ListView 会把这次按压判成长按
+            // （网格模式切页签 100% 弹卡片菜单）。
+            appList.post(new Runnable() {
+                public void run() {
+                    render();                      // 已扫过，直接切显示
+                    appList.setSelection(0);       // 换页签从顶部开始（以前重建列表天然在顶部）
+                    // 不再做淡入：横滑跟手 + 回弹本身就是动画，再叠 alpha 会整屏闪一下（川报）
+                }
+            });
         }
     }
 
@@ -1184,8 +1251,9 @@ public class MainActivity extends Activity {
         }
         if (eh != null) eh.setVisibility(kw.length() > 0 ? View.GONE : View.VISIBLE);
         gridItemH = computeItemH();
-        int pad = grid ? dp(8) : 0;
-        appList.setPadding(pad, 0, pad, 0);
+        // 横向缩进只由每行的外层 FrameLayout 给（网格 8dp / 列表 16dp）。
+        // 这里再加一层会让网格比「最近打开」多缩进 8dp，两行图标对不齐（G7 实测偏 22px）。
+        appList.setPadding(0, 0, 0, 0);
         appAdapter.notifyDataSetChanged();
         if (multi) updateCount();
         android.util.Log.i("CubClone", "render rows=" + shownGroups.size() + " grid=" + grid
@@ -1338,7 +1406,10 @@ public class MainActivity extends Activity {
     /** 网格模式的一行：横向 cols 个格子，最后一行不满也靠左（跟启动器一致） */
     private View buildGridRow(int first) {
         int cols = effCols();
-        int avail = appList.getWidth() - appList.getPaddingLeft() - appList.getPaddingRight();
+        // 可用宽 = 列表宽 - 外层 FrameLayout 的 8dp 内边距（appList 自己不再加 padding）
+        int base = appList.getWidth() > 0 ? appList.getWidth()
+                : getResources().getDisplayMetrics().widthPixels;
+        int avail = base - dp(8) * 2;
         int cellW = avail > 0 ? avail / cols : dp(80);
         if (cellW < 1) cellW = 1;
         LinearLayout row = new LinearLayout(this);
@@ -2391,7 +2462,6 @@ public class MainActivity extends Activity {
     /** 刷「最近打开」区内容；返回是否有可显示的项（挂到哪由 render/buildGrid 决定） */
     private boolean refreshRecentHeader() {
         if (recentHeader == null) return false;
-        recentRow.removeAllViews();
         boolean dark = isNight();
         int nameColor = Theme.fg(this);
         recentTitle.setTextColor(Theme.sec(this));
@@ -2427,6 +2497,18 @@ public class MainActivity extends Activity {
             uids.remove(uids.size() - 1);
             pkgs.remove(pkgs.size() - 1);
         }
+
+        // 内容没变就不重建：切页签、切主题都会走 render，重建一次要重绑二十几个图标，
+        // 而且重建会闪。签名里带上配色，主题换了仍然会重建。
+        StringBuilder sg = new StringBuilder(dark ? "d" : "l")
+                .append(isBlack() ? "b" : "x").append('/').append(cols).append('/');
+        for (int i = 0; i < uids.size(); i++) {
+            sg.append(uids.get(i)).append(':').append(pkgs.get(i)).append(' ');
+        }
+        String sig = sg.toString();
+        if (sig.equals(recentSig) && recentRow.getChildCount() > 0) return true;
+        recentSig = sig;
+        recentRow.removeAllViews();
 
         // 「最近打开」独立于主视图：挂无 padding 的 recent_host，缩进自己管（左右 8dp 和网格一致）。
         // 格子宽 = (屏幕宽 - 16dp) / 列数 = 网格 cellW，两种视图一致、跟随列数时上下对齐。

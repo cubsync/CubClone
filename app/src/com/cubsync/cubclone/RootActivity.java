@@ -41,6 +41,11 @@ public class RootActivity extends Activity {
     private ImageButton btnBack;
     private TextView rtLimitSec, rtLimitState, rtLimitHint, rtLimitInstall, rtLimitTune;
     private LinearLayout rtLimitCard;
+    private TextView rtInstallLabel, rtInstallState, rtInstallHint;
+    private LinearLayout rtInstallCard;
+    private Switch swInstall;
+    /** 程序化 setChecked 会回调监听器，用这个挡住，免得自己把属性写一圈 */
+    private boolean installBinding;
 
     private int fg = Theme.FG_LIGHT;
     private int sec = Theme.SEC_LIGHT;
@@ -82,6 +87,18 @@ public class RootActivity extends Activity {
             public void onClick(View v) { askLimit(); }
         });
 
+        rtInstallCard = findViewById(R.id.rt_install_card);
+        rtInstallLabel = findViewById(R.id.rt_install_label);
+        rtInstallState = findViewById(R.id.rt_install_state);
+        rtInstallHint = findViewById(R.id.rt_install_hint);
+        swInstall = findViewById(R.id.rt_install);
+        swInstall.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton v, boolean checked) {
+                if (installBinding) return;
+                saveInstall(checked);
+            }
+        });
+
         btnBack.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { finish(); }
         });
@@ -116,6 +133,20 @@ public class RootActivity extends Activity {
         applyGate();
         probe();
         renderLimit();
+        renderInstall();
+        // 直接进本页（不经设置页）时 Shell 还没探测过，ready() 是 false，
+        // 两个插件区块会误报「需要先授权 root」。这里自己探一次再重画。
+        new Thread(new Runnable() {
+            public void run() {
+                Shell.probe();
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        renderLimit();
+                        renderInstall();
+                    }
+                });
+            }
+        }).start();
     }
 
     protected void onResume() {
@@ -123,6 +154,7 @@ public class RootActivity extends Activity {
         // 从 LSPosed 启用/装完模块回来，这一块的状态必须重读
         applyChrome();
         renderLimit();
+        renderInstall();
     }
 
     /** 总开关关掉时，下面两个单项一起置灰但保留原值（重新打开总开关就恢复） */
@@ -277,6 +309,88 @@ public class RootActivity extends Activity {
         }).start();
     }
 
+    // ── 安装拦截（未指定用户 → 主空间） ──────────────────────────
+
+    /**
+     * 三态：没 root / 模块没生效 / 已生效（或已关闭）。
+     * 默认开：属性没写过就按开显示——hook 自己缺省也是开，两边不能不一致。
+     */
+    private void renderInstall() {
+        if (rtInstallState == null) return;
+        if (!Shell.ready()) {
+            rtInstallState.setText(R.string.install_need_perm);
+            rtInstallState.setTextColor(sec);
+            installBinding = true;
+            swInstall.setChecked(false);
+            installBinding = false;
+            swInstall.setEnabled(false);
+            rtInstallCard.setAlpha(0.45f);
+            return;
+        }
+        rtInstallState.setText(R.string.loading);
+        rtInstallState.setTextColor(sec);
+        new Thread(new Runnable() {
+            public void run() {
+                final Boolean on = CloneStore.installConverge();
+                // 属性没写过就落一次显式值：以后 hook 改缺省也不会和我们显示的对不上
+                if (Shell.raw("getprop", CloneStore.HOOK_INSTALL_PERSIST).trim().length() == 0) {
+                    CloneStore.writeInstallConverge(on == null || on.booleanValue());
+                }
+                final boolean val = on == null || on.booleanValue();
+                final boolean mod = CloneStore.hookLimit() != null;
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (isFinishing() || rtInstallState == null) return;
+                        installBinding = true;
+                        swInstall.setChecked(val);
+                        installBinding = false;
+                        swInstall.setEnabled(true);
+                        rtInstallCard.setAlpha(1f);
+                        if (!mod) {
+                            rtInstallState.setText(R.string.install_no_module);
+                            rtInstallState.setTextColor(sec);
+                        } else {
+                            rtInstallState.setText(val ? R.string.install_state_on
+                                    : R.string.install_state_off);
+                            rtInstallState.setTextColor(val
+                                    ? Theme.green(RootActivity.this) : sec);
+                        }
+                        applyChrome();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void saveInstall(final boolean on) {
+        if (!Shell.ready()) {
+            installBinding = true;
+            swInstall.setChecked(!on);
+            installBinding = false;
+            toast(getString(R.string.install_need_perm));
+            return;
+        }
+        new Thread(new Runnable() {
+            public void run() {
+                final String err = CloneStore.writeInstallConverge(on);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (err != null) {
+                            installBinding = true;
+                            swInstall.setChecked(!on);
+                            installBinding = false;
+                            toast(getString(R.string.install_save_fail, err));
+                        } else {
+                            toast(on ? getString(R.string.install_on_toast)
+                                    : getString(R.string.install_off_toast));
+                        }
+                        renderInstall();
+                    }
+                });
+            }
+        }).start();
+    }
+
     private void toast(String s) {
         android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show();
     }
@@ -314,6 +428,8 @@ public class RootActivity extends Activity {
 
         if (rtLimitSec != null) rtLimitSec.setTextColor(sec);
         if (rtLimitHint != null) rtLimitHint.setTextColor(sec);
+        if (rtInstallLabel != null) rtInstallLabel.setTextColor(fg);
+        if (rtInstallHint != null) rtInstallHint.setTextColor(sec);
         int btnBg = Theme.chipBg(this);
         int btnFg = Theme.chipFg(this);
         for (TextView t : new TextView[]{rtLimitInstall, rtLimitTune}) {

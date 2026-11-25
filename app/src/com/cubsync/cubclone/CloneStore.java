@@ -712,12 +712,17 @@ public final class CloneStore {
     /** 模块包名（增强插件是独立 APK，装在设备上但不显示图标） */
     static final String HOOK_PKG = "com.cubsync.cubclone.hook";
 
+    /** hook 是否已跑起来（system_server 里挂上了）。只有 hook 会写这个属性。 */
+    public static boolean hookActive() {
+        return "1".equals(Shell.raw("getprop", "sys.cubclone.hook").trim());
+    }
+
     /**
      * 正在运行的插件版本：hook 在 system_server 启动时上报 {@code sys.cubclone.hook.ver}。
-     * 这是「当前真正在跑的那一版」——重装 APK 但没重启时它还是旧值。没生效返回 null。
+     * 这是「当前真正在跑的那一版」——重装 APK 但没重启时它还是旧值。
+     * 1.0.7 及更早的模块不写这个属性，那时返回 null（调用方按「运行中但版本未知」显示）。
      */
     public static String hookRunningVersion() {
-        if (!"1".equals(Shell.raw("getprop", "sys.cubclone.hook").trim())) return null;
         String v = Shell.raw("getprop", "sys.cubclone.hook.ver").trim();
         return v.length() == 0 ? null : v;
     }

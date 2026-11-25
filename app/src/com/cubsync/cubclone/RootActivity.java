@@ -165,12 +165,13 @@ public class RootActivity extends Activity {
     /**
      * 「插件功能」栏的版本状态，一行说清现在跑的是哪一版：
      * <ul>
-     *   <li>运行中 → 绿色「增强插件 1.0.7 运行中」；</li>
-     *   <li>已装新版但没重启 → 「装的是 1.0.7，运行中还是 1.0.6，重启后生效」——
+     *   <li>运行中 → 绿色「增强插件 1.0.8 运行中」；</li>
+     *   <li>已装新版但没重启 → 「装的是 1.0.8，运行中还是 1.0.7，重启后生效」——
      *       以前重装完界面毫无变化，看不出升没升、也看不出要不要重启；</li>
+     *   <li>1.0.7 及更早的模块不上报版本 → 「运行中（旧版）」；</li>
      *   <li>已装未生效 / 没装 → 灰色，指路 LSPosed 启用。</li>
      * </ul>
-     * 运行版本来自 hook 启动时上报的 `sys.cubclone.hook.ver`（system_server 重启才更新），
+     * 运行版本来自 hook 启动时上报的 {@code sys.cubclone.hook.ver}（system_server 重启才更新），
      * 已装版本读模块 APK 的 versionName（重装立刻变）。两者不同就是「待重启」。
      */
     private void renderPluginState() {
@@ -181,16 +182,22 @@ public class RootActivity extends Activity {
         }
         new Thread(new Runnable() {
             public void run() {
-                final String run = CloneStore.hookRunningVersion();
+                final boolean active = CloneStore.hookActive();
+                final String run = active ? CloneStore.hookRunningVersion() : null;
                 final String ins = CloneStore.hookInstalledVersion();
                 runOnUiThread(new Runnable() {
                     public void run() {
                         if (isFinishing() || rtPluginState == null) return;
-                        if (run != null && ins != null && !ins.equals(run)) {
+                        if (active && run != null && ins != null && !ins.equals(run)) {
+                            // 装了新版但 system_server 还在跑旧的
                             rtPluginState.setText(getString(R.string.plugin_state_pending, ins, run));
                             rtPluginState.setTextColor(sec);
-                        } else if (run != null) {
+                        } else if (active && run != null) {
                             rtPluginState.setText(getString(R.string.plugin_state_running, run));
+                            rtPluginState.setTextColor(Theme.green(RootActivity.this));
+                        } else if (active) {
+                            // 1.0.7 及更早的模块不上报版本
+                            rtPluginState.setText(R.string.plugin_state_running_old);
                             rtPluginState.setTextColor(Theme.green(RootActivity.this));
                         } else if (ins != null) {
                             rtPluginState.setText(getString(R.string.plugin_state_installed, ins));

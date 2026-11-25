@@ -63,6 +63,7 @@
     <string name="plugin_title">Plugin features</string>
     <string name="plugin_hint">The features below come from the unlock plugin (LSPosed module) and do nothing without it. Reboot once after changing them when asked.</string>
     <string name="plugin_state_running">Enhancement plugin %1$s running</string>
+    <string name="plugin_state_running_old">Enhancement plugin active (older build, reinstall and reboot to show its version)</string>
     <string name="plugin_state_pending">Enhancement plugin %1$s installed, %2$s still running — reboot to apply</string>
     <string name="plugin_state_installed">Enhancement plugin %1$s installed but not active (enable it in LSPosed, then reboot)</string>
     <string name="plugin_state_none">Enhancement plugin not installed</string>

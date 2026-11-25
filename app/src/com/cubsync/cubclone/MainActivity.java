@@ -137,7 +137,11 @@ public class MainActivity extends Activity {
      * 上千应用 × 十几个空间也只占这一份，内存不随分身数增长。
      */
     private final android.util.LruCache<String, Drawable> iconCache =
-            new android.util.LruCache<String, Drawable>(150);
+            new android.util.LruCache<String, Drawable>(800);
+    /** 滑动/惯性中：只显示已缓存的图标，新任务等停稳再排（见 OnScrollListener） */
+    private volatile boolean iconHold;
+    /** 取不到图标时的占位底：所有图标位尺寸相同，共用一份 */
+    private android.graphics.drawable.GradientDrawable placeholderBg;
     private final Map<String, String> labelCache = new HashMap<String, String>();
     /** 图标异步加载：只做 Binder 取图标（毫秒级），绘制交给系统 RenderThread，后台线程不碰 Canvas */
     private final java.util.concurrent.ExecutorService iconLoader =
@@ -235,7 +239,20 @@ public class MainActivity extends Activity {
         appList.setAdapter(appAdapter);
         appList.setSelector(new android.graphics.drawable.ColorDrawable(0));   // 行自己带背景，别叠系统选中色
         appList.setOnScrollListener(new android.widget.AbsListView.OnScrollListener() {
-            public void onScrollStateChanged(android.widget.AbsListView v, int s) { }
+            public void onScrollStateChanged(android.widget.AbsListView v, int s) {
+                // 只在惯性滑动（手指抬起后的 fling）期间暂停排新图标任务：fling 会扫过
+                // 几百行，每行都提交会把单线程队列塞满，停稳后集中回调又卡一下
+                // （系统应用多时最明显，就是「快停下顿一下」）。手指拖动不暂停 ——
+                // 那时速度慢、用户在看清图标。停稳后 invalidateViews 只重绑可见项
+                // （View 已复用，不重建），把缺的图标补上。
+                boolean hold = s == android.widget.AbsListView.OnScrollListener.SCROLL_STATE_FLING;
+                if (iconHold && !hold) {
+                    iconHold = false;
+                    appList.invalidateViews();
+                }
+                iconHold = hold;
+            }
+
             public void onScroll(android.widget.AbsListView v, int first, int visible, int total) {
                 if (first > 0) collapseSearchIfIdle();   // 往上滚才收起搜索（和以前一致）
             }
@@ -1145,37 +1162,58 @@ public class MainActivity extends Activity {
         btnGrid.setContentDescription(getString(on ? R.string.list_view : R.string.grid_view));
     }
 
-    /** 一个格子的内容与交互（点开 / 长按出菜单） */
-    private void bindCell(View v, final FlatItem it) {
+    /**
+     * 一个格子的控件引用。以前每次 bind 都 findViewById 两次、new 两个 listener；
+     * 网格滚动时一屏 25 个格子就是 50 次查找 + 50 个对象，纯属白烧。
+     */
+    private final class GridCell {
+        final View v;
+        final View icon;
+        final TextView name;
+        FlatItem item;
+
+        GridCell(View v) {
+            this.v = v;
+            this.icon = v.findViewById(R.id.grid_icon);
+            this.name = v.findViewById(R.id.grid_name);
+            v.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View vv) {
+                    if (item != null) onGridClick(item);
+                }
+            });
+            v.setOnLongClickListener(new View.OnLongClickListener() {
+                public boolean onLongClick(View vv) {
+                    if (item != null) onGridLongClick(item);
+                    return true;
+                }
+            });
+        }
+    }
+
+    /** 一个格子的内容（点开 / 长按出菜单） */
+    private void bindCell(GridCell cell, final FlatItem it) {
         final Group g = it.g;
-        View icon = v.findViewById(R.id.grid_icon);
-        TextView name = v.findViewById(R.id.grid_name);
+        cell.item = it;
         int nameColor = Theme.fg(this);
         if (it.c == null) {
-            setIcon(icon, g.pkg, 0);
-            name.setText(g.label);
-            name.setTextColor(nameColor);
-            icon.setAlpha(1f);
+            setIcon(cell.icon, g.pkg, 0);
+            cell.name.setText(g.label);
+            cell.name.setTextColor(nameColor);
+            cell.icon.setAlpha(1f);
         } else {
             final Clone c = it.c;
-            setIcon(icon, g.pkg, c.uid);
+            setIcon(cell.icon, g.pkg, c.uid);
             String nm = g.label + suffixOf(c.uid, g.pkg, it.idx);
             if (c.off) {
                 nm = nm + " · " + getString(R.string.clone_hidden);
-                name.setTextColor(Theme.dim(this));
-                icon.setAlpha(0.4f);
+                cell.name.setTextColor(Theme.dim(this));
+                cell.icon.setAlpha(0.4f);
             } else {
-                name.setTextColor(nameColor);
-                icon.setAlpha(1f);
+                cell.name.setTextColor(nameColor);
+                cell.icon.setAlpha(1f);
             }
-            name.setText(nm);
+            cell.name.setText(nm);
         }
-        v.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View vv) { onGridClick(it); }
-        });
-        v.setOnLongClickListener(new View.OnLongClickListener() {
-            public boolean onLongClick(View vv) { onGridLongClick(it); return true; }
-        });
     }
 
     private void onGridClick(FlatItem it) {
@@ -1260,151 +1298,299 @@ public class MainActivity extends Activity {
                 + " take=" + (android.os.SystemClock.uptimeMillis() - renderT0) + "ms");
     }
 
+    // ── View 复用 ─────────────────────────────────────────────────────────
     /**
-     * 列表模式的一张卡片：主应用一行 + 它的每个分身一行。
-     * 只对屏幕上可见的卡片调用（ListView 的 getView），行数再多也只建一屏。
+     * 复用改造（2026-11-25）：以前 getView 每次都 inflate 一整张卡片
+     * （主身份行 + N 个分身行），ListView 的 convertView 只复用了最外层 FrameLayout，
+     * 里面照样全新建。用户应用几十个时看不出来，系统应用两百多个就露馅 ——
+     * 快速滑动时 ListView 把 bind 攒到停下那次 layout 一起做，一屏 8 张卡、
+     * 每张若干次 inflate + findViewById + new listener，直接掉帧，
+     * 表现就是「快停下时突然顿一下」。现在控件只找一次、listener 只挂一次，
+     * 复用时只改文字/图标/可见性；卡片结构与行数都没变时零 inflate。
      */
-    private View buildCard(final Group g) {
+
+    /** 列表卡片里的一行（主身份行 / 某个分身行）。 */
+    private final class CardRow {
+        final View row;
+        final View icon;
+        final TextView name;
+        final TextView uid;
+        final ImageView pin, open, rename, del;
+        final android.widget.CheckBox check;
+        final android.widget.Button add;
+        Group group;
+        Clone clone;
+        int idx;
+
+        CardRow(View row, boolean baseRow) {
+            this.row = row;
+            if (baseRow) {
+                icon = row.findViewById(R.id.base_icon);
+                name = (TextView) row.findViewById(R.id.base_name);
+                check = row.findViewById(R.id.base_check);
+                add = row.findViewById(R.id.action_add);
+                uid = null;
+                pin = null;
+                open = null;
+                rename = null;
+                del = null;
+            } else {
+                icon = row.findViewById(R.id.clone_icon);
+                name = (TextView) row.findViewById(R.id.clone_name);
+                uid = (TextView) row.findViewById(R.id.clone_uid);
+                pin = row.findViewById(R.id.clone_pin);
+                open = row.findViewById(R.id.clone_open);
+                rename = row.findViewById(R.id.clone_rename);
+                del = row.findViewById(R.id.clone_delete);
+                check = null;
+                add = null;
+            }
+        }
+    }
+
+    private final class CardHolder {
+        final LinearLayout card;
+        final CardRow base;
+        final ArrayList<CardRow> children = new ArrayList<CardRow>();
+        /** 卡片/按钮上的静态配色只在主题变了才重设，滚动时一次都不碰 */
+        int themeKey;
+        Group group;
+
+        CardHolder(LinearLayout card, CardRow base) {
+            this.card = card;
+            this.base = base;
+        }
+    }
+
+    private CardHolder createCard() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setBackgroundResource(R.drawable.bg_card);
-        if (card.getBackground() != null) card.getBackground().setTint(Theme.card(this));
         card.setPadding(0, dp(2), 0, dp(2));
         LayoutInflater inf = LayoutInflater.from(this);
-        int btnBg = Theme.chipBg(this);
-        int btnText = Theme.chipFg(this);
+        CardRow base = new CardRow(inf.inflate(R.layout.item_clone_base, card, false), true);
+        ripple(base.row);
+        card.addView(base.row);
+        CardHolder h = new CardHolder(card, base);
+        hookBase(h);
+        return h;
+    }
+
+    /** 主身份行的交互：只挂一次，读 holder 里当前绑定的 group。 */
+    private void hookBase(final CardHolder h) {
+        final CardRow b = h.base;
+        b.row.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if (h.group == null) return;
+                if (multi) {
+                    boolean on = !selected.contains(h.group.pkg);
+                    if (on) selected.add(h.group.pkg);
+                    else selected.remove(h.group.pkg);
+                    b.check.setChecked(on);
+                    updateCount();
+                } else {
+                    openPrimary(h.group);
+                }
+            }
+        });
+        b.row.setOnLongClickListener(new View.OnLongClickListener() {
+            public boolean onLongClick(View v) {
+                if (multi || h.group == null) return false;
+                baseMenu(h.group);
+                return true;
+            }
+        });
+        b.add.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if (h.group != null) createClone(h.group);
+            }
+        });
+        b.add.setOnLongClickListener(new View.OnLongClickListener() {
+            public boolean onLongClick(View v) {
+                if (h.group != null) pickSpaceFor(h.group);
+                return true;
+            }
+        });
+        b.check.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if (h.group == null) return;
+                boolean on = !selected.contains(h.group.pkg);
+                if (on) selected.add(h.group.pkg);
+                else selected.remove(h.group.pkg);
+                b.check.setChecked(on);
+                updateCount();
+            }
+        });
+    }
+
+    /** 第 i 个分身行：没有就补一行（含 listener），有就直接复用。 */
+    private CardRow childAt(CardHolder h, int i) {
+        while (h.children.size() <= i) {
+            View row = LayoutInflater.from(this).inflate(R.layout.item_clone_child, h.card, false);
+            ripple(row);
+            CardRow r = new CardRow(row, false);
+            hookChild(r);
+            tintRowIcons(r, Theme.sec(this));
+            h.card.addView(row);
+            h.children.add(r);
+        }
+        return h.children.get(i);
+    }
+
+    private void hookChild(final CardRow r) {
+        r.row.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if (r.clone == null || r.group == null) return;
+                if (r.clone.off) {
+                    toast(getString(R.string.clone_hidden_hint));
+                    return;
+                }
+                launch(r.clone, r.group);
+            }
+        });
+        r.row.setOnLongClickListener(new View.OnLongClickListener() {
+            public boolean onLongClick(View v) {
+                if (r.clone != null && r.group != null) cloneMenu(r.clone, r.group);
+                return true;
+            }
+        });
+        if (r.pin != null) {
+            r.pin.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    if (r.clone == null || r.group == null) return;
+                    pinShortcut(MainActivity.this, r.clone.uid, r.group.pkg,
+                            r.group.label + suffixOf(r.clone.uid, r.group.pkg, r.idx),
+                            r.group.icon, CloneStore.nameOf(MainActivity.this, r.clone.uid));
+                }
+            });
+        }
+        if (r.open != null) {
+            r.open.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    if (r.clone != null && r.group != null) launch(r.clone, r.group);
+                }
+            });
+        }
+        if (r.rename != null) {
+            r.rename.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    if (r.clone != null && r.group != null) askRename(r.clone, r.group, r.idx);
+                }
+            });
+        }
+        if (r.del != null) {
+            r.del.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    if (r.clone != null && r.group != null) confirmRemove(r.clone, r.group);
+                }
+            });
+        }
+    }
+
+    private void tintRowIcons(CardRow r, int color) {
+        if (r.pin != null) r.pin.setColorFilter(color);
+        if (r.open != null) r.open.setColorFilter(color);
+        if (r.rename != null) r.rename.setColorFilter(color);
+        if (r.del != null) r.del.setColorFilter(color);
+    }
+
+    /** 卡片上的静态配色指纹：主题/纯黑切换后必须重设，滚动时跳过。 */
+    private int themeKey() {
+        return (Theme.card(this) * 31 + Theme.chipBg(this)) * 31 + Theme.chipFg(this);
+    }
+
+    /** 列表模式的一张卡片：主应用一行 + 它的每个分身一行 */
+    private void bindCard(CardHolder h, final Group g) {
+        h.group = g;
+        CardRow b = h.base;
+        b.group = g;
+        b.clone = null;
         int nameColor = Theme.fg(this);
 
-        // 第一行：主身份那份 + 「创建分身」
-        View base = inf.inflate(R.layout.item_clone_base, card, false);
-        ripple(base);
-        View bi = base.findViewById(R.id.base_icon);
-        setIcon(bi, g.pkg, 0);
-        ((TextView) base.findViewById(R.id.base_name)).setText(g.label);
-        ((TextView) base.findViewById(R.id.base_name)).setTextColor(nameColor);
-        final android.widget.CheckBox baseCheck = base.findViewById(R.id.base_check);
-        android.widget.Button act = base.findViewById(R.id.action_add);
-        act.setBackgroundTintList(android.content.res.ColorStateList.valueOf(btnBg));
-        act.setTextColor(btnText);
-        if (multi) {
-            // 多选模式：显示勾选框，点行切换选中，隐藏「创建分身」按钮
-            baseCheck.setVisibility(View.VISIBLE);
-            act.setVisibility(View.GONE);
-            baseCheck.setChecked(selected.contains(g.pkg));
-            base.setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) {
-                    boolean on = !selected.contains(g.pkg);
-                    if (on) selected.add(g.pkg);
-                    else selected.remove(g.pkg);
-                    baseCheck.setChecked(on);
-                    updateCount();
-                }
-            });
-            base.setOnLongClickListener(null);
-        } else {
-            // 普通模式：整行点开原应用，长按进入多选
-            baseCheck.setVisibility(View.GONE);
-            act.setVisibility(View.VISIBLE);
-            act.setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) { createClone(g); }
-            });
-            // 长按：自己挑装到哪个空间（点＝自动挑最老的空闲空间）
-            act.setOnLongClickListener(new View.OnLongClickListener() {
-                public boolean onLongClick(View v) { pickSpaceFor(g); return true; }
-            });
-            base.setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) { openPrimary(g); }
-            });
-            base.setOnLongClickListener(new View.OnLongClickListener() {
-                public boolean onLongClick(View v) { baseMenu(g); return true; }
-            });
+        int tk = themeKey();
+        if (h.themeKey != tk) {
+            h.themeKey = tk;
+            if (h.card.getBackground() != null) h.card.getBackground().setTint(Theme.card(this));
+            b.add.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Theme.chipBg(this)));
+            b.add.setTextColor(Theme.chipFg(this));
+            int iconTint = Theme.sec(this);
+            for (CardRow r : h.children) tintRowIcons(r, iconTint);
         }
-        card.addView(base);
 
-        // 下面：每个分身一行（多选批量创建时不显示分身行，只留主应用行）
-        for (int i = 0; i < g.clones.size() && !multi; i++) {
+        setIcon(b.icon, g.pkg, 0);
+        b.name.setText(g.label);
+        b.name.setTextColor(nameColor);
+        b.check.setVisibility(multi ? View.VISIBLE : View.GONE);
+        b.add.setVisibility(multi ? View.GONE : View.VISIBLE);
+        if (multi) b.check.setChecked(selected.contains(g.pkg));
+
+        // 多选批量创建时只留主应用行
+        int shown = 0;
+        int n = multi ? 0 : g.clones.size();
+        for (int i = 0; i < n; i++) {
             final Clone c = g.clones.get(i);
             if (CloneStore.isHidden(c.uid, g.pkg)) continue;   // 隐藏的分身不显示（主应用仍在）
-            View row = inf.inflate(R.layout.item_clone_child, card, false);
-            ripple(row);
-            View ci = row.findViewById(R.id.clone_icon);
-            setIcon(ci, g.pkg, c.uid);
-            TextView cn = row.findViewById(R.id.clone_name);
-            String nm = g.label + suffixOf(c.uid, g.pkg, i);
-            if (c.off) {
-                // 被隐藏的分身仍在列表里，只是灰掉 —— 免得用户以为它消失了，
-                // 也留一条「长按启用」的路（万一那个系统应用其实还需要）
-                nm = nm + " · " + getString(R.string.clone_hidden);
-                cn.setTextColor(Theme.dim(this));
-                ci.setAlpha(0.4f);
-            } else {
-                cn.setTextColor(nameColor);
-            }
-            cn.setText(nm);
-            // 跑马灯只对 selected 的 TextView 生效；超长名字（比如改成了长串）就自己滚。
-            cn.setSingleLine(true);
-            cn.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
-            cn.setSelected(true);
-            cn.post(new Runnable() {
-                public void run() { cn.setSelected(true); }
-            });
-            TextView cu = row.findViewById(R.id.clone_uid);
-            if (cu != null) cu.setText(getString(R.string.uid_tag, c.uid));
-            row.setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) {
-                    if (c.off) {
-                        toast(getString(R.string.clone_hidden_hint));
-                        return;
-                    }
-                    launch(c, g);
-                }
-            });
-            row.setOnLongClickListener(new View.OnLongClickListener() {
-                public boolean onLongClick(View v) {
-                    cloneMenu(c, g);
-                    return true;
-                }
-            });
-            final int idx = i;
-            // 系统自带空间：**永远不给改名** —— 名字是用户分辨「哪个是系统自带、哪个是我们建的」
-            // 的唯一线索，改过之后就分不清，容易误删系统分身。
-            // 移除应用/删空间仍按「管理非自建空间」开关放开（用户确实需要管理自带空间）。
-            if (c.foreign) {
-                row.findViewById(R.id.clone_rename).setVisibility(View.GONE);
-                if (!sp().getBoolean("manage_foreign", false)) {
-                    row.findViewById(R.id.clone_delete).setVisibility(View.GONE);
-                }
-            }
-            int iconTint = Theme.sec(this);
-            for (int rid : new int[]{R.id.clone_pin, R.id.clone_open,
-                    R.id.clone_rename, R.id.clone_delete}) {
-                ImageView iv = row.findViewById(rid);
-                if (iv != null) iv.setColorFilter(iconTint);
-            }
-            row.findViewById(R.id.clone_pin).setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) {
-                    pinShortcut(MainActivity.this, c.uid, g.pkg,
-                            g.label + suffixOf(c.uid, g.pkg, idx),
-                            g.icon, CloneStore.nameOf(MainActivity.this, c.uid));
-                }
-            });
-            ImageView open = row.findViewById(R.id.clone_open);
-            open.setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) { launch(c, g); }
-            });
-            row.findViewById(R.id.clone_rename).setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) { askRename(c, g, idx); }
-            });
-            row.findViewById(R.id.clone_delete).setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) { confirmRemove(c, g); }
-            });
-            card.addView(row);
+            CardRow r = childAt(h, shown);
+            bindChild(r, c, g, i, nameColor);
+            r.row.setVisibility(View.VISIBLE);
+            shown++;
         }
-        return card;
+        for (int i = shown; i < h.children.size(); i++) {
+            h.children.get(i).row.setVisibility(View.GONE);
+        }
+    }
+
+    private void bindChild(CardRow r, final Clone c, final Group g, int idx, int nameColor) {
+        r.group = g;
+        r.clone = c;
+        r.idx = idx;
+        setIcon(r.icon, g.pkg, c.uid);
+        String nm = g.label + suffixOf(c.uid, g.pkg, idx);
+        if (c.off) {
+            // 被隐藏的分身仍在列表里，只是灰掉 —— 免得用户以为它消失了，
+            // 也留一条「长按启用」的路（万一那个系统应用其实还需要）
+            nm = nm + " · " + getString(R.string.clone_hidden);
+            r.name.setTextColor(Theme.dim(this));
+            r.icon.setAlpha(0.4f);
+        } else {
+            r.name.setTextColor(nameColor);
+            r.icon.setAlpha(1f);
+        }
+        r.name.setText(nm);
+        r.name.setSingleLine(true);
+        r.name.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
+        // 跑马灯只对 selected 的 TextView 生效；超长名字（比如改成了长串）就自己滚。
+        r.name.setSelected(true);
+        if (r.uid != null) r.uid.setText(getString(R.string.uid_tag, c.uid));
+        // 系统自带空间：**永远不给改名** —— 名字是用户分辨「哪个是系统自带、哪个是我们建的」
+        // 的唯一线索，改过之后就分不清，容易误删系统分身。
+        // 移除应用/删空间仍按「管理非自建空间」开关放开（用户确实需要管理自带空间）。
+        if (r.rename != null) r.rename.setVisibility(c.foreign ? View.GONE : View.VISIBLE);
+        if (r.del != null) {
+            r.del.setVisibility(c.foreign && !sp().getBoolean("manage_foreign", false)
+                    ? View.GONE : View.VISIBLE);
+        }
+    }
+
+    // ── 网格行复用 ────────────────────────────────────────────────────────
+
+    private final class GridRowHolder {
+        final LinearLayout row;
+        final ArrayList<GridCell> cells = new ArrayList<GridCell>();
+
+        GridRowHolder(LinearLayout row) {
+            this.row = row;
+        }
+    }
+
+    private GridRowHolder createGridRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        return new GridRowHolder(row);
     }
 
     /** 网格模式的一行：横向 cols 个格子，最后一行不满也靠左（跟启动器一致） */
-    private View buildGridRow(int first) {
+    private void bindGridRow(GridRowHolder h, int first) {
         int cols = effCols();
         // 可用宽 = 列表宽 - 外层 FrameLayout 的 8dp 内边距（appList 自己不再加 padding）
         int base = appList.getWidth() > 0 ? appList.getWidth()
@@ -1412,16 +1598,34 @@ public class MainActivity extends Activity {
         int avail = base - dp(8) * 2;
         int cellW = avail > 0 ? avail / cols : dp(80);
         if (cellW < 1) cellW = 1;
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        LayoutInflater inf = LayoutInflater.from(this);
-        for (int p = first; p < Math.min(first + cols, flatItems.size()); p++) {
-            View cell = inf.inflate(R.layout.item_grid, row, false);
-            bindCell(cell, flatItems.get(p));
-            cell.setLayoutParams(new LinearLayout.LayoutParams(cellW, gridItemH));
-            row.addView(cell);
+        if (h.cells.size() != cols) {
+            h.row.removeAllViews();
+            h.cells.clear();
+            LayoutInflater inf = LayoutInflater.from(this);
+            for (int i = 0; i < cols; i++) {
+                View cell = inf.inflate(R.layout.item_grid, h.row, false);
+                cell.setLayoutParams(new LinearLayout.LayoutParams(cellW, gridItemH));
+                h.row.addView(cell);
+                h.cells.add(new GridCell(cell));
+            }
+        } else {
+            for (GridCell c : h.cells) {
+                ViewGroup.LayoutParams lp = c.v.getLayoutParams();
+                if (lp == null || lp.width != cellW || lp.height != gridItemH) {
+                    c.v.setLayoutParams(new LinearLayout.LayoutParams(cellW, gridItemH));
+                }
+            }
         }
-        return row;
+        for (int i = 0; i < cols; i++) {
+            GridCell cell = h.cells.get(i);
+            int p = first + i;
+            if (p < flatItems.size()) {
+                cell.v.setVisibility(View.VISIBLE);
+                bindCell(cell, flatItems.get(p));
+            } else {
+                cell.v.setVisibility(View.INVISIBLE);   // 末行不满：占位保持列宽、靠左
+            }
+        }
     }
 
     /**
@@ -1449,7 +1653,6 @@ public class MainActivity extends Activity {
             android.widget.FrameLayout wrap;
             if (cv instanceof android.widget.FrameLayout && type.equals(cv.getTag())) {
                 wrap = (android.widget.FrameLayout) cv;
-                wrap.removeAllViews();
             } else {
                 wrap = new android.widget.FrameLayout(MainActivity.this);
                 wrap.setTag(type);
@@ -1457,9 +1660,31 @@ public class MainActivity extends Activity {
                 if (grid) wrap.setPadding(dp(8), 0, dp(8), 0);
                 else wrap.setPadding(dp(16), 0, dp(16), dp(8));
             }
-            View content = grid ? buildGridRow(pos * effCols()) : buildCard(shownGroups.get(pos));
-            wrap.addView(content, new android.widget.FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            // 复用：wrap 里那个 child 的 tag 就是 holder，类型对得上就直接改内容
+            View child = wrap.getChildCount() > 0 ? wrap.getChildAt(0) : null;
+            if (grid) {
+                GridRowHolder h = child != null && child.getTag() instanceof GridRowHolder
+                        ? (GridRowHolder) child.getTag() : null;
+                if (h == null) {
+                    wrap.removeAllViews();
+                    h = createGridRow();
+                    h.row.setTag(h);
+                    wrap.addView(h.row, new android.widget.FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                }
+                bindGridRow(h, pos * effCols());
+            } else {
+                CardHolder h = child != null && child.getTag() instanceof CardHolder
+                        ? (CardHolder) child.getTag() : null;
+                if (h == null) {
+                    wrap.removeAllViews();
+                    h = createCard();
+                    h.card.setTag(h);
+                    wrap.addView(h.card, new android.widget.FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                }
+                bindCard(h, shownGroups.get(pos));
+            }
             return wrap;
         }
     }
@@ -1641,11 +1866,17 @@ public class MainActivity extends Activity {
         Drawable d = iconCache.get(pkg);
         if (d != null) { iv.setBackground(null); iv.setImageDrawable(d); return; }
         iv.setImageDrawable(null);
-        // 占位底色：有些系统应用/精简包取不到图标，别留一块空白看着像丢数据
-        android.graphics.drawable.GradientDrawable ph = new android.graphics.drawable.GradientDrawable();
-        ph.setColor(Theme.row(this));
-        ph.setCornerRadius(dp(10));
-        iv.setBackground(ph);
+        // 占位底色：有些系统应用/精简包取不到图标，别留一块空白看着像丢数据。
+        // 所有占位块尺寸一样，共用一份 drawable，滚动时不再每行 new 一个。
+        if (placeholderBg == null) {
+            android.graphics.drawable.GradientDrawable ph =
+                    new android.graphics.drawable.GradientDrawable();
+            ph.setColor(Theme.row(this));
+            ph.setCornerRadius(dp(10));
+            placeholderBg = ph;
+        }
+        iv.setBackground(placeholderBg);
+        if (iconHold) return;   // 还在滑：停稳后 invalidateViews 再补
         // 不去重：每个图标位都提交任务，任务内部先查缓存——否则刷新重建后，
         // 新图标位会被「正在加载」去重挡掉，回调又更新的是旧控件，图标就丢了
         iconLoader.execute(new Runnable() {

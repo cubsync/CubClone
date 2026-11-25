@@ -257,6 +257,8 @@ public class BackupActivity extends Activity {
                         all.clear();
                         all.addAll(r);
                         refilter();
+                        // 当前目录空、默认目录还有备份：提示一次，别让「显示空」被当成数据丢了
+                        if (ok && r.isEmpty()) offerMigrateOld();
                     }
                 });
             }
@@ -1234,16 +1236,103 @@ public class BackupActivity extends Activity {
         useDir(path);
     }
 
-    /** 换目录：旧目录里的备份一起搬过来，免得列表突然空了、东西还散在两处 */
+    /** 换目录：先数旧目录的备份，有就问一句 —— 不搬的话新目录看着是空的，用户会以为备份丢了 */
     private void useDir(final String dir) {
         final String old = AppData.root();
         if (dir.equals(old)) return;
+        new Thread(new Runnable() {
+            public void run() {
+                final int n = AppData.countBackups(old);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (n <= 0) {
+                            switchDir(dir, false);
+                            return;
+                        }
+                        Theme.dialog(BackupActivity.this)
+                                .setTitle(R.string.dir_move_title)
+                                .setMessage(getString(R.string.dir_move_msg, n))
+                                .setPositiveButton(R.string.dir_move_yes,
+                                        new DialogInterface.OnClickListener() {
+                                            public void onClick(DialogInterface d, int w) {
+                                                switchDir(dir, true);
+                                            }
+                                        })
+                                .setNegativeButton(R.string.dir_move_no,
+                                        new DialogInterface.OnClickListener() {
+                                            public void onClick(DialogInterface d, int w) {
+                                                switchDir(dir, false);
+                                            }
+                                        })
+                                .show();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    /** 真正切目录；move=true 时把旧目录的备份一起搬过去 */
+    private void switchDir(final String dir, final boolean move) {
+        final String old = AppData.root();
         sp().edit().putString("backup_dir", dir).apply();
         AppData.setRoot(dir);
         renderDir();
+        if (!move) {
+            boot();
+            return;
+        }
         new Thread(new Runnable() {
             public void run() {
                 final String r = AppData.moveBackups(old, dir);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        toast(r.startsWith("OK ")
+                                ? getString(R.string.backup_dir_ok, r.substring(3).trim())
+                                : getString(R.string.backup_fail, r));
+                        boot();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    /**
+     * 当前目录是空的、默认目录还躺着备份 —— 多半是以前改目录时没搬成。
+     * 问一次要不要搬过来；点「不搬」记标记，别每次进页面都弹。
+     */
+    private void offerMigrateOld() {
+        final String root = AppData.root();
+        if (AppData.DEFAULT_ROOT.equals(root)) return;
+        if (sp().getBoolean("dir_migrate_asked", false)) return;
+        new Thread(new Runnable() {
+            public void run() {
+                final int n = AppData.countBackups(AppData.DEFAULT_ROOT);
+                if (n <= 0) return;
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        sp().edit().putBoolean("dir_migrate_asked", true).apply();
+                        Theme.dialog(BackupActivity.this)
+                                .setTitle(R.string.dir_migrate_title)
+                                .setMessage(getString(R.string.dir_migrate_msg, n))
+                                .setPositiveButton(R.string.dir_move_yes,
+                                        new DialogInterface.OnClickListener() {
+                                            public void onClick(DialogInterface d, int w) {
+                                                moveFromDefault();
+                                            }
+                                        })
+                                .setNegativeButton(R.string.dir_move_no, null)
+                                .show();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void moveFromDefault() {
+        final String to = AppData.root();
+        new Thread(new Runnable() {
+            public void run() {
+                final String r = AppData.moveBackups(AppData.DEFAULT_ROOT, to);
                 runOnUiThread(new Runnable() {
                     public void run() {
                         toast(r.startsWith("OK ")

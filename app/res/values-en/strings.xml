@@ -263,6 +263,12 @@ Owner data is not touched.</string>
     <string name="backup_dir_up">Up</string>
     <string name="backup_dir_use">Use this folder</string>
     <string name="backup_dir_ok">Moved %1$s backup(s) to the new folder</string>
+    <string name="dir_move_title">Old folder still has backups</string>
+    <string name="dir_move_msg">%1$d backup(s) are still in the old folder. Move them to the new one?\nIf not, they stay where they are and will not show up here.</string>
+    <string name="dir_move_yes">Move them</string>
+    <string name="dir_move_no">Not now</string>
+    <string name="dir_migrate_title">Older backups found</string>
+    <string name="dir_migrate_msg">The default folder still has %1$d backup(s). Move them to the current folder?</string>
     <string name="backup_dir_note">Backups are packed straight into this folder and restored from it; any file manager can browse or copy them.</string>
     <string name="rc_title">Delete clones</string>
     <string name="rc_need_shell">Root or Shizuku needed: listing and deleting clones both use shell privileges. Grant one and reopen this page.</string>

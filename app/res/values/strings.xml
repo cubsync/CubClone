@@ -263,6 +263,12 @@
     <string name="backup_dir_up">上一级</string>
     <string name="backup_dir_use">用这个目录</string>
     <string name="backup_dir_ok">已把 %1$s 份备份搬到新目录</string>
+    <string name="dir_move_title">旧目录还有备份</string>
+    <string name="dir_move_msg">旧目录里还有 %1$d 个备份，要一起搬到新目录吗？\n不搬的话，新目录里看不到它们，文件仍然留在原处。</string>
+    <string name="dir_move_yes">搬过去</string>
+    <string name="dir_move_no">不搬</string>
+    <string name="dir_migrate_title">发现旧备份</string>
+    <string name="dir_migrate_msg">默认目录里还有 %1$d 个备份，要搬到当前目录吗？</string>
     <string name="backup_dir_note">备份会直接打包到这个目录，恢复也从这里读；文件管理器能直接看、能拷走。</string>
     <string name="rc_title">删除分身</string>
     <string name="rc_need_shell">这一页要 Root 或 Shizuku 授权：列出分身、删除分身都用 shell 权限。授权后重新进入即可。</string>

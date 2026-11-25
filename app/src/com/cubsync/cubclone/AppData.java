@@ -1094,6 +1094,18 @@ public final class AppData {
         }
     }
 
+    /** 数一个目录里有多少个备份包（只认 .tar / .tar.zst / .tar.gz / .tar.bz2） */
+    public static int countBackups(String dir) {
+        if (dir == null || dir.length() == 0) return 0;
+        String out = Shell.exec("ls '" + dir + "' 2>/dev/null"
+                + " | grep -cE '\\.tar(\\.zst|\\.gz|\\.bz2)?$'");
+        try {
+            return Integer.parseInt(out.trim());
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
     public static String moveBackups(String from, String to) {
         if (from == null || to == null || from.length() == 0 || from.equals(to)) return "OK 0";
         StringBuilder s = new StringBuilder();

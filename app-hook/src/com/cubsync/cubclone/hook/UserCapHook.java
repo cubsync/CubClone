@@ -71,6 +71,55 @@ final class UserCapHook {
         } catch (Throwable t) {
             Log.w(TAG, "max users hook failed: " + t);
         }
+        n += hookUserLimitReached(cl);
         return n;
+    }
+
+    /**
+     * 兜底：直接改判 {@code isUserLimitReached()}。
+     * services 是 AOT 编译的，静态方法有可能在调用点留着内联副本（A16 上踩过），
+     * 这条路一断还有这里 —— 它自己就是判断函数，改成「现存活用户 &lt; 上限」即可。
+     */
+    private int hookUserLimitReached(ClassLoader cl) {
+        try {
+            Class<?> ums = Class.forName("com.android.server.pm.UserManagerService", false, cl);
+            Method cnt;
+            try {
+                cnt = ums.getDeclaredMethod("getAliveUsersExcludingGuestsCountLU");
+                cnt.setAccessible(true);
+            } catch (Throwable t) {
+                cnt = null;
+            }
+            final Method countM = cnt;
+            for (Method m : ums.getDeclaredMethods()) {
+                if (!"isUserLimitReached".equals(m.getName())
+                        || m.getParameterTypes().length != 0) {
+                    continue;
+                }
+                try {
+                    xp.deoptimize(m);
+                } catch (Throwable ignored) {
+                }
+                xp.hook(m)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(chain -> {
+                            if (countM != null) {
+                                try {
+                                    int alive = ((Integer) countM.invoke(chain.getThisObject())).intValue();
+                                    boolean reached = alive >= HookMain.readLimit();
+                                    HookMain.mark(PROP_LAST, "alive=" + alive + ",reached=" + reached);
+                                    return Boolean.valueOf(reached);
+                                } catch (Throwable ignored) {
+                                }
+                            }
+                            return chain.proceed();
+                        });
+                Log.i(TAG, "isUserLimitReached hooked");
+                return 1;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "isUserLimitReached hook failed: " + t);
+        }
+        return 0;
     }
 }

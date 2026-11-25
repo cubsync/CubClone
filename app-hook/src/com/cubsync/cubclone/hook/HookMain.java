@@ -65,6 +65,8 @@ public final class HookMain extends XposedModule {
     private static final AtomicInteger HITS = new AtomicInteger();
     /** rewrite 会被多个构造器各触发一次，只有第一次的前后值有参考意义。 */
     private static final AtomicInteger FIRST = new AtomicInteger();
+    /** 缓存 SystemProperties.getInt 的 Method（readLimit 会被反复调用）。 */
+    private static volatile Method SP_GET_INT;
 
     @Override
     public void onSystemServerStarting(SystemServerStartingParam param) {
@@ -195,8 +197,13 @@ public final class HookMain extends XposedModule {
     static int readLimit() {
         int v = DEFAULT_LIMIT;
         try {
-            Class<?> sp = Class.forName("android.os.SystemProperties");
-            Method get = sp.getMethod("getInt", String.class, int.class);
+            // 缓存 Method：getMaxSupportedUsers 的 hook 里每次都读上限，别每次反射找一遍
+            Method get = SP_GET_INT;
+            if (get == null) {
+                Class<?> sp = Class.forName("android.os.SystemProperties");
+                get = sp.getMethod("getInt", String.class, int.class);
+                SP_GET_INT = get;
+            }
             // 用户选的值走 persist 属性（重启不丢）；没有才退回运行时属性，最后用默认值
             int p = ((Integer) get.invoke(null, PROP_LIMIT_PERSIST, Integer.valueOf(-1))).intValue();
             v = p > 0 ? p

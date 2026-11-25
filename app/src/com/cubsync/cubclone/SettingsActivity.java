@@ -58,6 +58,12 @@ public class SettingsActivity extends Activity {
     private TextView spaceTitle, spaceLimit, aboutVer, aboutNote;
     private TextView btnRecheck, btnShizuku, btnNewSpace, btnRefreshSpace, btnManageSpaces;
     private LinearLayout spaceList;
+    private boolean creating;   // 建号进行中：防重复点（G7 上曾因界面没反馈一次连建 5 个）
+    /**
+     * 刚建好、还在准备的空间：建号 1 秒就返回，扫描要等系统把新用户列出来（几秒到几十秒，
+     * settle 还在等存储），这期间界面必须已经能看到这一行，否则用户会以为没建成功。
+     */
+    private final java.util.LinkedHashMap<Integer, String> pendingNames = new java.util.LinkedHashMap<Integer, String>();
     private TextView hiddenCount;
     private TextView imePickCount;
     /** 需要 root 的两个入口：备份列表按 Root 开关决定出不出现 */
@@ -717,7 +723,8 @@ public class SettingsActivity extends Activity {
     private void loadSpaces() {
         if (loading) { pendingReload = true; return; }
         loading = true;
-        spaceLimit.setText(R.string.loading);
+        // 建号期间这句不能被「读取中…」盖掉：用户要知道是自己刚点的创建还在跑
+        spaceLimit.setText(creating ? R.string.creating : R.string.loading);
         if (!Shell.ready()) {
             spaceLimit.setText(R.string.need_perm);
             loading = false;
@@ -744,6 +751,30 @@ public class SettingsActivity extends Activity {
                 });
             }
         }).start();
+    }
+
+    /** 「准备中」行：刚建好、还在等存储和预处理，只在本地显示；准备完就换成正常行 */
+    private View pendingRow(final int uid, String name) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(8), 0, dp(8));
+
+        TextView tv = new TextView(this);
+        tv.setText(getString(R.string.sp_row_preparing2, name, uid));
+        tv.setTextSize(14);
+        tv.setSingleLine(true);
+        tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        tv.setTextColor(fgColor);
+        row.addView(tv);
+
+        TextView st = new TextView(this);
+        st.setText(R.string.sp_preparing);
+        st.setTextSize(13);
+        st.setTextColor(secColor);
+        st.setPadding(dp(12), 0, dp(4), 0);
+        row.addView(st);
+        return row;
     }
 
     private static int num(String line) {
@@ -798,7 +829,16 @@ public class SettingsActivity extends Activity {
         // 我们既不报也不用用户管，列表里已经把它过滤掉了。
         spaceLimit.setText(sb.toString());
 
-        if (uids.isEmpty()) {
+        // 刚建好、还在准备的空间：本地先插一行，不等扫描（扫描要等系统把新用户列出来）
+        java.util.List<java.util.Map.Entry<Integer, String>> pend;
+        synchronized (pendingNames) {
+            pend = new java.util.ArrayList<java.util.Map.Entry<Integer, String>>(pendingNames.entrySet());
+        }
+        for (java.util.Map.Entry<Integer, String> e : pend) {
+            spaceList.addView(pendingRow(e.getKey().intValue(), e.getValue()));
+        }
+
+        if (uids.isEmpty() && pend.isEmpty()) {
             TextView tv = new TextView(this);
             tv.setText(R.string.space_empty);
             tv.setTextSize(13);
@@ -813,6 +853,7 @@ public class SettingsActivity extends Activity {
         final int shown = Math.min(uids.size(), 3);
         for (int i = 0; i < shown; i++) {
             final int uid = uids.get(i);
+            if (CloneStore.isPending(uid)) continue;   // 已由上面那一行代表，别画两遍
             int n = counts.get(i).size();
 
             LinearLayout row = new LinearLayout(this);
@@ -822,8 +863,10 @@ public class SettingsActivity extends Activity {
 
             TextView tv = new TextView(this);
             // 计数＝空间里 enabled 的三方数，和主页显示一致，不再靠登记表求交。
-            tv.setText(getString(R.string.space_row2,
-                    CloneStore.nameOf(this, uid), uid, n));
+            // 刚建好、还在预处理的空间没有应用列表，写「0 个」会让人以为建空了。
+            tv.setText(CloneStore.isPending(uid)
+                    ? getString(R.string.sp_row_preparing2, CloneStore.nameOf(this, uid), uid)
+                    : getString(R.string.space_row2, CloneStore.nameOf(this, uid), uid, n));
             tv.setTextSize(14);
             tv.setSingleLine(true);
             tv.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
@@ -1845,7 +1888,11 @@ public class SettingsActivity extends Activity {
     }
 
     private void createSpace(final String name) {
-        // 持续显示「创建中」：start+prune 可能要好几秒，短 toast 早没了会让用户以为卡住
+        if (creating) return;
+        creating = true;
+        btnNewSpace.setEnabled(false);
+        // 建号只花 1 秒，剩下的是等存储 + 预处理系统应用。这期间按钮禁用、状态常驻，
+        // 用户不会因为「点了没反应」反复点。
         spaceLimit.setText(getString(R.string.creating));
         CloneStore.markSpacesDirty(this);   // 建号要几秒，先置位：用户可能等不到就跑回主页
         new Thread(new Runnable() {
@@ -1853,18 +1900,8 @@ public class SettingsActivity extends Activity {
                 String out = Shell.exec(CloneStore.createCmd(SettingsActivity.this, CloneStore.cloneName(name)));
                 Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
                 final int uid = m.find() ? Integer.parseInt(m.group(1)) : -1;
-                if (uid > 0) {
-                    // 先标记归属：startSpace 等待期间 onResume/手动刷新会跑 batch，
-                    // 归属没标记，这个新空间就会被判成「系统空间」显示。
-                    CloneStore.markOurs(uid);
-                    // 再 start 让存储就绪（/data/user/N、/data/media/N）——createProfileForUser
-                    // 只建号不建存储，不 start 的话备份还原会报「目录不存在」。
-                    CloneStore.startSpace(uid);
-                    CloneStore.ensureIme(uid);   // 装主空间输入法并抄一份设置（词库各自独立）
-                }
-
-                final String msg;
                 if (uid <= 0) {
+                    final String msg;
                     if (out.contains("Cannot add more") || out.contains("returned null")) {
                         // 提示里必须给真实生效的那道闸：perParent 被 hook 放到 100、
                         // mMaxAllowed 还是 3 时，写 100 只会让人更懵
@@ -1874,29 +1911,56 @@ public class SettingsActivity extends Activity {
                     } else {
                         msg = getString(R.string.create_failed, out.trim());
                     }
-                } else {
-                    msg = out.contains("MODE=nofs")
-                            ? getString(R.string.space_created_private, uid)
-                            : getString(R.string.space_created, uid);
-                    CloneStore.markSpacesDirty(SettingsActivity.this);   // 空间变了重扫空间状态；主身份清单没变，不重载
-                }
-                // ⚠回执和列表刷新必须放在 prune 之前：prune 要逐包 pm disable，G7 上 245 个
-                // 系统包能跑一两分钟，压在后面用户看到的就是「点了完全没反应」（G7 实测）。
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        toast(msg);
-                        loadSpaces();
-                    }
-                });
-                if (uid > 0 && CloneStore.pruneSys(SettingsActivity.this)) {
-                    CloneStore.pruneSpace(SettingsActivity.this, uid, true);
-                    // prune 会改「空间里剩几个应用」，跑完再刷一次
                     runOnUiThread(new Runnable() {
                         public void run() {
+                            creating = false;
+                            btnNewSpace.setEnabled(true);
+                            toast(msg);
                             loadSpaces();
                         }
                     });
+                    return;
                 }
+
+                // 建号成功：先标记归属（扫描立刻认得它）并置「准备中」，
+                // 列表马上出这一行，不等存储、不等预处理。
+                CloneStore.markOurs(uid);
+                CloneStore.markPending(uid);
+                synchronized (pendingNames) {
+                    pendingNames.put(Integer.valueOf(uid), CloneStore.cloneName(name));
+                }
+                final String shown = CloneStore.cloneName(name);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        toast(getString(R.string.space_created, uid));
+                        // 先本地插一行：扫描要跑一两秒（settle 期间更慢），
+                        // 等它回来再画，用户会以为没建成
+                        try {
+                            spaceList.addView(pendingRow(uid, shown), 0);
+                            android.util.Log.i("CubClone", "pending row uid=" + uid
+                                    + " rows=" + spaceList.getChildCount());
+                        } catch (Throwable t) {
+                            android.util.Log.w("CubClone", "pending row failed", t);
+                        }
+                        // 建号后不立刻重扫：扫描和 settle 会抢 su，两边都变慢。
+                        // 「准备中」这一行已经画出来了，扫描等 settle 完再做。
+                    }
+                });
+
+                // 后台继续：等共享存储（最长 25 秒）→ 输入法 → 预处理系统应用。
+                boolean shared = CloneStore.prepareSpace(SettingsActivity.this, uid);
+                synchronized (pendingNames) {
+                    pendingNames.remove(Integer.valueOf(uid));
+                }
+                CloneStore.markSpacesDirty(SettingsActivity.this);   // 空间变了重扫空间状态
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        creating = false;
+                        btnNewSpace.setEnabled(true);
+                        if (!shared) toast(getString(R.string.space_created_private, uid));
+                        loadSpaces();
+                    }
+                });
             }
         }).start();
     }

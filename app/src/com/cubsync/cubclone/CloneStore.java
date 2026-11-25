@@ -733,6 +733,33 @@ public final class CloneStore {
     }
 
     /**
+     * 等新空间的共享存储挂好（CLI settle，最长 25 秒，跑在后台线程）。
+     * 建号已经返回了，这一步只影响「相册/文件能不能和主空间共用」，不挡界面。
+     */
+    static boolean settleSpace(Context c, int uid) {
+        attach(c);
+        return Shell.exec(CLI + " settle " + uid).contains("MODE=shared");
+    }
+
+    /**
+     * 建号之后的收尾：等存储 → 输入法 → 预处理系统应用，最后摘掉「准备中」。
+     * 跑在后台线程。无论成功失败都要摘标记，否则这个空间在本进程里永远显示准备中、
+     * 扫描也不拉应用列表。
+     */
+    static boolean prepareSpace(Context c, int uid) {
+        boolean shared = false;
+        try {
+            shared = settleSpace(c, uid);
+            markOurs(uid);
+            ensureIme(uid);
+            if (pruneSys(c)) pruneSpace(c, uid, true);
+        } finally {
+            clearPending(uid);
+        }
+        return shared;
+    }
+
+    /**
      * 本机分身存储状态：
      * 0＝本机不需要（内核没有 sdcardfs 驱动）
      * 1＝需要修（有 sdcardfs 驱动，且 vold 真的在用 → 分身卷 unmountable）
@@ -1483,7 +1510,12 @@ public final class CloneStore {
         ensureMarks();
         // 刷新系统名缓存：改名后（系统名变了）不刷这里，界面就还是旧名
         listSpaceUids();
-        for (Integer u : markedUids()) startSpace(u.intValue());
+        // 刚建好、还在 prepareSpace 里的空间别在这里再 start：它会白等 spaceReady，
+        // 让整次扫描卡十几秒（界面一直「读取中」）。
+        for (Integer u : markedUids()) {
+            if (isPending(u.intValue())) continue;
+            startSpace(u.intValue());
+        }
 
         String out = Shell.exec(listBatch(c)
                 + "dumpsys user | sed -n '/android.os.usertype.profile.CLONE:/,/^$/p'");

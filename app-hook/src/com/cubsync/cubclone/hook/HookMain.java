@@ -137,8 +137,17 @@ public final class HookMain extends XposedModule {
         } catch (Throwable t) {
             Log.w(TAG, "launcher hook failed: " + t);
         }
+        // 装包/卸包回调：clone 是 user 0 的 profile，isEnabledProfileOf 恒真，
+        // launcher 收到 PACKAGE_ADDED 就直接加图标（OP12 实测）。这里把它对我们空间关掉。
+        int la = 0;
+        try {
+            la = new LauncherAppsHook(this).apply(cl);
+        } catch (Throwable t) {
+            Log.w(TAG, "launcher apps hook failed: " + t);
+        }
         mark(PROP_APPLY, "ctor=" + ctors + ",m=" + methods + ",i=" + install
-                + ",u=" + cap + ",f=" + flyme + ",w=" + wm + ",l=" + lock + ",lp=" + lp);
+                + ",u=" + cap + ",f=" + flyme + ",w=" + wm + ",l=" + lock + ",lp=" + lp
+                + ",la=" + la);
         if (ctors > 0 || methods > 0) {
             mark(PROP, "1");
         }

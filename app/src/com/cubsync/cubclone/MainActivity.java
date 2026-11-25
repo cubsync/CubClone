@@ -1843,9 +1843,11 @@ public class MainActivity extends Activity {
                     if (m.find()) got = Integer.parseInt(m.group(1));
                     if (got > 0) {
                         CloneStore.markOurs(got);
+                        CloneStore.markPending(got);
                         Launcher.hideSelfFrom(got);
                         t.add(Integer.valueOf(got));
-                        if (CloneStore.pruneSys(MainActivity.this)) CloneStore.pruneSpace(MainActivity.this, got, true);
+                        // 装应用前必须等存储挂上；预处理系统应用一并在这里做完
+                        CloneStore.prepareSpace(MainActivity.this, got);
                     } else {
                         newErr = out.contains("Cannot add more")
                                 ? getString(R.string.space_limit_one)
@@ -2038,6 +2040,15 @@ public class MainActivity extends Activity {
                         public void run() { say(msg); }
                     });
                     return;
+                }
+                // 建号成功：先标记归属与「准备中」，装应用要等存储挂上（最长 25 秒），
+                // 这期间扫描不会把这个空间的应用列出来。
+                CloneStore.markOurs(uid);
+                CloneStore.markPending(uid);
+                try {
+                    CloneStore.settleSpace(MainActivity.this, uid);
+                } finally {
+                    CloneStore.clearPending(uid);
                 }
                 installIntoClone(g, uid, false, name, true);
             }

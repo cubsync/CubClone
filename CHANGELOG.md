@@ -7,6 +7,17 @@
 ## [Unreleased]
 
 ### 修复
+- **新建空间时界面像卡死**：建号本身 1 秒完成，但命令行卡在等存储（最长 25 秒），这期间界面只
+  有一句「创建中」、按钮还能再点，用户在 G7 上因此一次连建了 5 个空间。现在建号完成立刻返回，
+  列表当场插入一行「空间 N · 准备中」，存储和系统应用预处理全部转到后台；按钮在创建期间禁用。
+  准备完成后这一行自动换成正常的应用数，存储没挂上时提示「存储未就绪」。
+- **建空间时列表先闪一屏系统应用再消失**：新空间在预处理完成前不拉应用列表，只显示「准备中」。
+- **桌面（launcher）把分身应用摆上桌面**：AOSP 的 `getUserProfiles()` 定义就是「当前用户 + 同组
+  所有用户」，clone 正好在同一组，于是每个分身应用都被当成自己的摆上去（Flyme、ColorOS、
+  AOSP Launcher3 同一套）。增强插件 1.1.2 起在 launcher 拉 profile 列表时过滤掉我们建的空间；
+  1.1.4 补上装包回调这一路（`LauncherAppsService.isEnabledProfileOf`），装进分身的应用不会再
+  触发桌面加图标。系统自带分身（Flyme 999、ColorOS MultiApp/system_clone）不受影响。
+- **分身应用打不开**：clone 建号时没带父用户（见下）。
 - **分身应用打不开**：clone 建号时没带父用户，`profileGroupId` 没落盘，系统只把它当成带 PROFILE
   标志的孤儿用户 —— 解锁正常、task 也建出来，但 Activity 永远停在 INITIALIZING、进程不建、
   `visible=false`。现在建号强制 `createProfileForUser(parentId=0)`，建完读 `dumpsys user` 校验

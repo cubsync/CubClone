@@ -45,6 +45,7 @@ public final class CubClone {
             switch (cmd) {
                 case "list":    list(); break;
                 case "create":  create(args[1], args.length > 2 ? args[2].split(",") : null); break;
+                case "settle":  settle(Integer.parseInt(args[1])); break;
                 case "start":   sh("am", "start-user", args[1]); break;
                 case "remove":  remove(Integer.parseInt(args[1])); break;
                 case "rename":  rename(Integer.parseInt(args[1]), args[2]); break;
@@ -151,9 +152,21 @@ public final class CubClone {
         // 先把 uid 报给插件再 start-user：launcher 收到 USER_ADDED 就会拉 profile 列表，
         // 那时属性里没有这个 uid 的话，桌面照样会摆出分身应用（G7 实测）。
         addHookSpace(uid);
+        markOwned(uid);
         sh("am", "start-user", String.valueOf(uid));
-        // 存储是异步挂的，25 秒内没起来就如实上报；绝对不再降级成 full.SECONDARY：
-        // full 是独立用户，AOSP 必须切用户才显示，建了也打不开（G7 实测）。
+        // 建号只花 1 秒，等存储最长 25 秒。以前在这里死等，界面就一直是「创建中」，
+        // 用户以为卡住会反复点（G7 上一次连建 5 个）。现在建完立刻返回，
+        // 等存储交给 settle 子命令，App 在后台跑。
+        say("MODE=pending");
+    }
+
+    /**
+     * 等存储就绪（建号后异步挂载，最长 25 秒）。
+     * 绝对不再降级成 full.SECONDARY：full 是独立用户，AOSP 必须切用户才显示，
+     * 建了也打不开（G7 实测）。
+     */
+    private static void settle(int uid) throws Exception {
+        if (bfu()) return;
         boolean storage = waitStorage(uid, 25000);
         markOwned(uid);
         say(storage ? "MODE=shared" : "MODE=nofs");
@@ -199,10 +212,12 @@ public final class CubClone {
     /** 等某个用户的 emulated 卷变成 mounted；超时返回 false */
     private static boolean waitStorage(int uid, long ms) {
         long end = System.currentTimeMillis() + ms;
+        // 轮询别太密：每次都是一次 su fork，0.4 秒一次会把同期 App 的扫描/刷新全挤慢
+        // （G7 实测建号后列表「读取中」卡二十多秒）。1.5 秒足够，存储挂载本来就要几秒。
         while (System.currentTimeMillis() < end) {
             if (sh("sm", "list-volumes").contains("emulated;" + uid + " mounted")) return true;
             try {
-                Thread.sleep(400);
+                Thread.sleep(1500);
             } catch (InterruptedException e) {
                 return false;
             }

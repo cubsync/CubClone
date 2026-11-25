@@ -166,6 +166,9 @@
     <string name="prune_failed">，还有 %1$s 个应用没清掉</string>
     <string name="space_row2">%1$s · uid %2$d · %3$d 个分身应用</string>
     <string name="space_row2_foreign">%1$s · uid %2$d</string>
+    <string name="sp_row_preparing">%1$s · uid %2$d · 准备中</string>
+    <string name="sp_row_preparing2">%1$s · uid %2$d</string>
+    <string name="sp_preparing">准备中</string>
     <string name="space_deleted_reboot">已删除空间 uid %1$d，重启后彻底消失</string>
     <string name="refresh">刷新</string>
     <string name="refreshing">正在刷新列表…</string>

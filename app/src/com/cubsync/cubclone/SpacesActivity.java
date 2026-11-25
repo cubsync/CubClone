@@ -196,7 +196,10 @@ public class SpacesActivity extends Activity {
         }
 
         TextView tv = new TextView(this);
-        tv.setText(getString(R.string.sp_row, CloneStore.nameOf(this, uid), uid, apps));
+        // 刚建好、还在预处理的空间没有应用列表，标「准备中」而不是「0 个应用」
+        tv.setText(CloneStore.isPending(uid)
+                ? getString(R.string.sp_row_preparing, CloneStore.nameOf(this, uid), uid)
+                : getString(R.string.sp_row, CloneStore.nameOf(this, uid), uid, apps));
         tv.setTextSize(14);
         tv.setSingleLine(true);
         tv.setEllipsize(android.text.TextUtils.TruncateAt.END);

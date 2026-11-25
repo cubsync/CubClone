@@ -108,15 +108,17 @@ release 点成正式。
 | 平台 | 产物 |
 |---|---|
 | Android（收版） | `dist/CubClone-<版本号>-arm64-v8a.apk` + `dist/CubClone-<版本号>-universal.apk`（预发布带后缀，如 `CubClone-0.7.0-beta.1-arm64-v8a.apk`），签名用仓库外的密钥库（见 build.sh 的 `$CUBCLONE_SIGNING`） |
-| Android（测试包） | `dist/CubClone-<版本号>+<短提交号>-<abi|universal>.apk` —— 版本号部分与应用内「关于」显示的 `versionName` 完全一致 |
+| Android（测试包） | `dist/CubClone-<版本号>+b<构建号>.<短提交号>-<abi|universal>.apk` —— 版本号部分与应用内「关于」显示的 `versionName` 完全一致 |
 | 桌面 | 暂无 |
 
 产物名带版本号，出到仓库根的 `dist/`；`build/` 放中间件。两者都在 `.gitignore` 里，不入库。
 每出一个测试包，同版本的旧 `+*.apk` 当场删掉；手机 `Download` 里也只留最新那一个。
 
-预发布与开发期构建在 `versionName` 末尾追加 `+<短提交号>`（SemVer §5 的构建元数据，如 `0.6.52+d5940d7`，
-有未提交改动时带 `-dirty`）。设置页「关于」直接读 `versionName`，所以设备上一眼能看出装的是哪次提交。
-它**不占**版本号、不影响 `versionCode`、不参与版本优先级。
+预发布与开发期构建在 `versionName` 末尾追加 `+b<构建号>.<短提交号>`（SemVer §5 的构建元数据，如
+`0.8.0-dev.1+b167.7569020`，有未提交改动时末尾带 `-dirty`）。构建号取 `git rev-list --count HEAD`，
+单调递增——哈希看不出先后，`b167` 一定比 `b166` 新。设置页「关于」直接读 `versionName`，
+所以设备上一眼能看出装的是第几版、哪次提交。
+它**不占**版本号、不影响 `versionCode`、不参与版本优先级；`-dev.N` 的 N 仍然只在验证通过后才递增。
 
 **正式版不带构建标记**：发给用户的包 `versionName` 必须干净（`0.7.0`），「关于」里不许出现 `+6b0d837` 这类编号。
 要确认线上包对应哪次提交，看 tag 与 Release 页的提交记录，不靠应用内版本号。

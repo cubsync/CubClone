@@ -90,8 +90,11 @@ echo "    版本 $VNAME  versionCode $VCODE（由 versionName 推导）"
 # 用来认出「设备上这一版是哪次提交」。正式版必须保持干净版本号——用户点「关于」看到的只能是 0.7.0。
 if [ -n "$PRE" ]; then
   SHA=$(git -C .. rev-parse --short HEAD 2>/dev/null || echo nogit)
+  # 提交哈希看不出先后，加一个单调递增的构建号：b167 一定比 b166 新。
+  # 它只是 SemVer §5 的 build metadata，不占版本号、不影响 versionCode 与优先级。
+  CNT=$(git -C .. rev-list --count HEAD 2>/dev/null || echo 0)
   if ! git -C .. diff --quiet 2>/dev/null; then SHA="$SHA-dirty"; fi
-  BUILDV="$VNAME+$SHA"
+  BUILDV="$VNAME+b$CNT.$SHA"
   echo "    构建标记 $BUILDV"
 else
   BUILDV="$VNAME"

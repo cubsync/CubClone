@@ -41,9 +41,6 @@ public class RootActivity extends Activity {
     private ImageButton btnBack;
     private TextView rtLimitSec, rtLimitState, rtLimitHint, rtLimitInstall, rtLimitTune;
     private TextView rtPluginState;
-    private TextView rtPluginAction;
-    /** 插件动作：0=重装 1=更新 2=待重启（只弹提示，不装） */
-    private int pluginActionMode;
     private LinearLayout rtLimitCard;
     private TextView rtInstallLabel, rtInstallState, rtInstallHint;
     private LinearLayout rtInstallCard;
@@ -90,10 +87,6 @@ public class RootActivity extends Activity {
 
         rtLimitSec = findViewById(R.id.rt_limit_sec);
         rtPluginState = findViewById(R.id.rt_plugin_state);
-        rtPluginAction = findViewById(R.id.rt_plugin_action);
-        rtPluginAction.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { onPluginAction(); }
-        });
         rtLimitCard = findViewById(R.id.rt_limit_card);
         rtLimitState = findViewById(R.id.rt_limit_state);
         rtLimitHint = findViewById(R.id.rt_limit_hint);
@@ -215,13 +208,13 @@ public class RootActivity extends Activity {
      *   <li><b>已装</b>：模块 APK 的 versionName，装完立刻变；</li>
      *   <li><b>内嵌</b>：主应用 assets 里带的那一份，就是「可用的最新版」，不用联网。</li>
      * </ul>
-     * 四态：正常运行（绿）／有新版本（橙，可点更新）／已装新版待重启（橙）／未装未启用（灰）。
+     * 四态：正常运行（绿）／有新版本（橙）／已装新版待重启（橙）／未装未启用（灰）。
+     * 只写文字不给按钮：装插件用下面卡片里的「重装增强插件」，多一个入口是重复。
      */
     private void renderPluginState() {
         if (rtPluginState == null) return;
         if (!Shell.ready()) {
             rtPluginState.setText("");
-            if (rtPluginAction != null) rtPluginAction.setVisibility(View.GONE);
             return;
         }
         new Thread(new Runnable() {
@@ -233,7 +226,6 @@ public class RootActivity extends Activity {
                 runOnUiThread(new Runnable() {
                     public void run() {
                         if (isFinishing() || rtPluginState == null) return;
-                        int mode;   // 0=重装 1=更新 2=待重启
                         String text;
                         int color;
                         if (ins != null && bundled != null
@@ -245,62 +237,35 @@ public class RootActivity extends Activity {
                                     ? getString(R.string.plugin_state_new_idle, ins, bundled)
                                     : getString(R.string.plugin_state_new, run, ins, bundled);
                             color = Theme.warn(RootActivity.this);
-                            mode = 1;
                         } else if (active && run != null && ins != null && !ins.equals(run)) {
                             // 已装就是最新，但进程里还在跑旧的
                             text = getString(R.string.plugin_state_pending, run, ins);
                             color = Theme.warn(RootActivity.this);
-                            mode = 2;
                         } else if (active && run != null && ins != null) {
                             text = getString(R.string.plugin_state_running, run, ins);
                             color = Theme.green(RootActivity.this);
-                            mode = 0;
                         } else if (active && run != null) {
                             text = getString(R.string.plugin_state_running_only, run);
                             color = Theme.green(RootActivity.this);
-                            mode = 0;
                         } else if (active && ins != null) {
                             text = getString(R.string.plugin_state_running_old, ins);
                             color = Theme.green(RootActivity.this);
-                            mode = 0;
                         } else if (active) {
                             text = getString(R.string.plugin_state_active);
                             color = Theme.green(RootActivity.this);
-                            mode = 0;
                         } else if (ins != null) {
                             text = getString(R.string.plugin_state_installed, ins);
                             color = sec;
-                            mode = 0;
                         } else {
                             text = getString(R.string.plugin_state_none);
                             color = sec;
-                            mode = 0;
                         }
                         rtPluginState.setText(text);
                         rtPluginState.setTextColor(color);
-                        pluginActionMode = mode;
-                        if (rtPluginAction != null) {
-                            rtPluginAction.setVisibility(View.VISIBLE);
-                            rtPluginAction.setText(mode == 2 ? getString(R.string.plugin_action_reboot)
-                                    : mode == 1 ? getString(R.string.plugin_action_update, bundled)
-                                    : getString(R.string.plugin_action_reinstall));
-                            if (rtPluginAction.getBackground() != null) {
-                                rtPluginAction.getBackground().setTint(Theme.chipBg(RootActivity.this));
-                            }
-                            rtPluginAction.setTextColor(mode == 2 ? color : Theme.chipFg(RootActivity.this));
-                        }
                     }
                 });
             }
         }).start();
-    }
-
-    private void onPluginAction() {
-        if (pluginActionMode == 2) {
-            toast(getString(R.string.plugin_action_reboot));
-            return;
-        }
-        installModule();
     }
 
     /** 总开关关掉时，下面两个单项一起置灰但保留原值（重新打开总开关就恢复） */
@@ -385,17 +350,12 @@ public class RootActivity extends Activity {
     private void doInstallModule() {
         rtLimitInstall.setEnabled(false);
         rtLimitInstall.setText(R.string.limit_installing);
-        if (rtPluginAction != null) {
-            rtPluginAction.setEnabled(false);
-            rtPluginAction.setText(R.string.limit_installing);
-        }
         new Thread(new Runnable() {
             public void run() {
                 final String err = CloneStore.installUnlockModule(RootActivity.this);
                 runOnUiThread(new Runnable() {
                     public void run() {
                         rtLimitInstall.setEnabled(true);
-                        if (rtPluginAction != null) rtPluginAction.setEnabled(true);
                         toast(err == null ? getString(R.string.limit_install_ok)
                                 : getString(R.string.limit_install_fail, err));
                         renderLimit();

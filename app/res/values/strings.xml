@@ -69,9 +69,6 @@
     <string name="plugin_state_pending">插件运行 %1$s · 已装 %2$s · 重启生效</string>
     <string name="plugin_state_new">插件运行 %1$s · 已装 %2$s · 有新版本 %3$s</string>
     <string name="plugin_state_new_idle">插件 %1$s 已装 · 有新版本 %2$s</string>
-    <string name="plugin_action_reinstall">重装插件</string>
-    <string name="plugin_action_update">更新到 %1$s</string>
-    <string name="plugin_action_reboot">重启手机后生效</string>
     <string name="plugin_state_installed">插件 %1$s 已装 · 未运行（去 LSPosed 启用）</string>
     <string name="plugin_state_none">插件未安装</string>
     <string name="install_title">安装拦截</string>

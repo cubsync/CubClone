@@ -964,6 +964,14 @@ public class MainActivity extends Activity {
     /** 上一次 render 用的深浅色，用来判断 onResume 要不要重建列表 */
     private boolean lastDark, lastBlack;
 
+    /** 同一空间同一个包只画一个：PKG 行和 EXT 行会各来一条 */
+    private static boolean hasUid(List<Clone> l, int uid) {
+        for (Clone c : l) {
+            if (c.uid == uid) return true;
+        }
+        return false;
+    }
+
     private void refresh() {
         if (!Shell.ready()) {        // 权限还没探完，等探完再刷
             CloneStore.dirty = true;
@@ -993,11 +1001,19 @@ public class MainActivity extends Activity {
                 long t2 = android.os.SystemClock.uptimeMillis();
                 android.util.Log.i("CubClone", "refresh meta=" + (t1 - t0) + "ms scan=" + (t2 - t1) + "ms");
                 Set<Integer> alive = new LinkedHashSet<Integer>();
+                Set<Integer> ours = new HashSet<Integer>();
                 for (String line : out.split("\\n")) {
                     String t = line.trim();
-                    if (!t.startsWith("SPACE ")) continue;
-                    try { alive.add(Integer.valueOf(t.substring(6).trim())); }
-                    catch (Throwable ignored) { }
+                    // SPACE＝我们建的，FSPACE＝别人建的（Flyme 999 / ColorOS MultiApp）。
+                    // 两个都是真实存在的用户，必须都收：只收 SPACE 时，别人分身一旦被系统停掉
+                    // （query-activities 查不到 → 一行 EXT 都没有），它的应用就整片消失。
+                    if (!t.startsWith("SPACE ") && !t.startsWith("FSPACE ")) continue;
+                    try {
+                        int uid = Integer.parseInt(t.substring(t.indexOf(' ') + 1).trim());
+                        alive.add(Integer.valueOf(uid));
+                        if (t.startsWith("SPACE ")) ours.add(Integer.valueOf(uid));
+                    } catch (Throwable ignored) {
+                    }
                 }
 
                 Map<String, List<Clone>> map = new HashMap<String, List<Clone>>();
@@ -1017,13 +1033,14 @@ public class MainActivity extends Activity {
                         // 别人建的分身空间（一加自带 MultiApp）：只显示出来给用户看，
                         // 不参与任何清理，界面上也不给删除 —— 那是人家的地盘
                         // 归哪个页签按包本身判断：主身份认不出这个包时就当三方，别让它消失
+                        List<Clone> lo = map.get(pkg);
+                        if (lo == null) { lo = new ArrayList<Clone>(); map.put(pkg, lo); }
+                        if (hasUid(lo, uid.intValue())) continue;   // PKG 行已经加过同一个
                         Clone c = new Clone();
                         c.uid = uid.intValue();
                         c.profile = "space";
                         c.foreign = true;
                         allClones.put(uid + ":" + pkg, c);
-                        List<Clone> lo = map.get(pkg);
-                        if (lo == null) { lo = new ArrayList<Clone>(); map.put(pkg, lo); }
                         lo.add(c);
                         continue;
                     }
@@ -1034,11 +1051,14 @@ public class MainActivity extends Activity {
                     c.uid = uid.intValue();
                     c.profile = "space";
                     c.off = off;
+                    // 别人的分身（999 / MultiApp）只展示，不给改名/删除/钉图标
+                    c.foreign = !ours.contains(uid);
                     // 最近打开要反查「任何页签」的分身，所以先记全量，再按页签过滤进列表
                     allClones.put(uid + ":" + pkg, c);
                     if (!scope.contains(pkg)) continue;
                     List<Clone> l = map.get(pkg);
                     if (l == null) { l = new ArrayList<Clone>(); map.put(pkg, l); }
+                    if (hasUid(l, uid.intValue())) continue;   // EXT 行已经加过同一个
                     l.add(c);
                 }
 

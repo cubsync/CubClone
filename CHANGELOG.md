@@ -29,13 +29,19 @@
   挂不上时保留 clone，只提示「存储未就绪」，不再换号重建。
 - **建空间后桌面被塞满图标**：ColorOS 桌面收到 clone 用户的包变更广播后，不区分用户地对主空间跑
   一次全量刷新，把没摆上桌面的应用成批插入桌面库（OP12 实测 45 个，按包名字母序，还多出 2 个
-  空页）。增强插件 1.2.0 两处收口：`PackageUpdateReceiverUtil.handlePackageChanged` 按广播里的
-  `UserHandle` 跳过我们的空间；`OplusLauncherProvider.applyBatch` 把「单批 ≥20 条写桌面条目」
-  判定为全量铺设并整批丢弃，紧跟其后的写页操作一并跳过。系统自带分身（MultiApp / system_clone）
-  和日常装应用都是个位数批次，不受影响。
-- **插件版本显示不出运行版本**：`sys.cubclone.hook.ver` 以前只有 system_server 会写，system 没
-  加载模块时界面只能显示「已装未生效」。现在桌面进程加载后也上报版本，`hookActive()` 同时认
-  `sys.cubclone.hook.lw`；状态文案压成一行。
+  空页）。增强插件 1.2.0 只按**用户身份**拦，判据是「这次动作是不是发生在我们建的空间里」，
+  不猜条数、不猜时间窗 —— 一共四个入口：`PackageUpdateReceiverUtil.handlePackageChanged`
+  的第 3 参 `UserHandle`、`OplusLauncherModel.onPackageAdded` 的 `UserHandle`、
+  `PackageUpdatedTask.execute` 的 `mUser` 字段、`onBroadcastIntent` 的 `extra.USER`。
+  任一处是我们建的空间就整个方法不执行，主空间和系统自带分身（MultiApp / system_clone）原样放行。
+  四个入口按类名分别挂载，某个 ROM 没有的类直接跳过；一个都挂不上时 Root 功能页会显式报
+  「未生效 · 系统桌面可能已改版」，不会静默失效。
+- **插件版本提示看不出状态**：以前只显示运行版本，装完新版没重启时界面没变化。现在同时显示
+  「运行 X · 已装 Y」，并和主应用内嵌的插件版本比对：内嵌更新 → 橙色「有新版本 Z」+「更新到 Z」；
+  装完没重启 → 橙色「重启生效」；全部一致 → 绿色「运行 X · 已装 X」。点安装先弹确认框，
+  说明装完要重启。
+- **已装版本读成空**：`hookInstalledVersion()` 以前用普通应用身份跑 `dumpsys package`，
+  没有 DUMP 权限，返回空，界面出现「已装?」。改用 `PackageManager.getPackageInfo` 直接读。
 
 ### 新增
 - **空间管理页标注分身模式**：每行标「克隆型 / 独立型」。前者是 `profile.CLONE`（和主用户同组、
@@ -48,6 +54,9 @@
   （adb、系统安装器、三方商店）只装进主空间，不再一次铺到所有分身空间；显式指定空间的安装不受影响。
   开关每次安装现读属性，**改完立即生效、不用重启**。
 - Root 功能页把插件能力集中成「插件功能」一栏（空间上限 + 安装拦截），和手机自身的 root 开关分开。
+- **桌面防护开关**（Root 功能页「插件功能」栏，默认开启）：控制建空间时是否往主空间桌面补图标。
+  只作用于 ColorOS 那条私有链路；AOSP 的 profile 图标行为由框架层两条钩子负责，始终生效，不给开关
+  ——关掉等于把分身里的应用泄漏到主桌面。开关每次拦截现读属性，**改完立即生效、不用重启**。
 - 主页「应用清单」落盘快照：进页面先按上次结果铺列表（实测 2ms），真实数据后台刷新替换。
 
 ### 变更

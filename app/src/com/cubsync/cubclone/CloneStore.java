@@ -844,15 +844,102 @@ public final class CloneStore {
         return v.length() == 0 ? null : v;
     }
 
-    /** 设备上已安装的插件版本（模块 APK 的 versionName）；没装返回 null */
+    /**
+     * 设备上已安装的插件版本（模块 APK 的 versionName）；没装返回 null。
+     *
+     * <p>必须走 PackageManager：普通应用跑 {@code dumpsys package} 没有 DUMP 权限，
+     * 拿到的是空输出，之前就是这样把「已装版本」读成 null，界面显示成「已装?」。
+     */
     public static String hookInstalledVersion() {
-        String out = Shell.raw("dumpsys package " + HOOK_PKG);
-        int i = out.indexOf("versionName=");
-        if (i < 0) return null;
-        int s = i + "versionName=".length();
-        int e = out.indexOf('\n', s);
-        String v = (e < 0 ? out.substring(s) : out.substring(s, e)).trim();
-        return v.length() == 0 ? null : v;
+        try {
+            if (appCtx != null) {
+                android.content.pm.PackageInfo pi =
+                        appCtx.getPackageManager().getPackageInfo(HOOK_PKG, 0);
+                String v = pi.versionName == null ? "" : pi.versionName.trim();
+                return v.length() == 0 ? null : v;
+            }
+        } catch (Throwable ignored) {
+            // 没装 → NameNotFoundException；其它异常同样按「读不到」处理
+        }
+        return null;
+    }
+
+    /**
+     * 主应用里内嵌的插件版本（assets/CubCloneHook.apk）。它就是「可用的最新版」，
+     * 不需要联网：出主应用时带的就是哪一版。
+     */
+    public static String hookBundledVersion() {
+        if (appCtx == null) return null;
+        java.io.File f = new java.io.File(appCtx.getCacheDir(), "hook-bundled.apk");
+        try {
+            java.io.InputStream in = appCtx.getAssets().open("CubCloneHook.apk");
+            java.io.OutputStream out = new java.io.FileOutputStream(f);
+            try {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            } finally {
+                try { in.close(); } catch (Throwable ignored) { }
+                try { out.close(); } catch (Throwable ignored) { }
+            }
+            android.content.pm.PackageInfo pi = appCtx.getPackageManager()
+                    .getPackageArchiveInfo(f.getAbsolutePath(), 0);
+            String v = pi == null || pi.versionName == null ? "" : pi.versionName.trim();
+            return v.length() == 0 ? null : v;
+        } catch (Throwable t) {
+            return null;
+        } finally {
+            try { f.delete(); } catch (Throwable ignored) { }
+        }
+    }
+
+    /**
+     * 比较两个版本号：&gt;0 表示 a 比 b 新。
+     * 主段按数字比；后缀按 dev &lt; alpha &lt; beta &lt; rc &lt; 正式，同后缀比 N。
+     */
+    public static int verCmp(String a, String b) {
+        if (a == null) return b == null ? 0 : -1;
+        if (b == null) return 1;
+        String[] pa = a.split("-", 2);
+        String[] pb = b.split("-", 2);
+        String[] na = pa[0].split("\\.");
+        String[] nb = pb[0].split("\\.");
+        for (int i = 0; i < Math.max(na.length, nb.length); i++) {
+            int x = i < na.length ? toInt(na[i]) : 0;
+            int y = i < nb.length ? toInt(nb[i]) : 0;
+            if (x != y) return x < y ? -1 : 1;
+        }
+        int sa = suffixRank(pa.length > 1 ? pa[1] : null);
+        int sb = suffixRank(pb.length > 1 ? pb[1] : null);
+        if (sa != sb) return sa < sb ? -1 : 1;
+        int xa = suffixNum(pa.length > 1 ? pa[1] : null);
+        int xb = suffixNum(pb.length > 1 ? pb[1] : null);
+        if (xa != xb) return xa < xb ? -1 : 1;
+        return 0;
+    }
+
+    private static int toInt(String s) {
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    /** dev=0 alpha=1 beta=2 rc=3 正式=4 */
+    private static int suffixRank(String suf) {
+        if (suf == null || suf.length() == 0) return 4;
+        if (suf.startsWith("dev")) return 0;
+        if (suf.startsWith("alpha")) return 1;
+        if (suf.startsWith("beta")) return 2;
+        if (suf.startsWith("rc")) return 3;
+        return 4;
+    }
+
+    private static int suffixNum(String suf) {
+        if (suf == null) return 0;
+        int i = suf.indexOf('.');
+        return i < 0 ? 0 : toInt(suf.substring(i + 1));
     }
 
     /**
@@ -926,6 +1013,39 @@ public final class CloneStore {
         String v = Shell.raw("getprop", HOOK_INSTALL_PERSIST).trim();
         if (v.length() == 0) return Boolean.TRUE;
         return Boolean.valueOf(!"0".equals(v));
+    }
+
+    // ── 桌面防护（建空间不往主空间桌面补图标） ─────────────────────
+
+    public static final String HOOK_GUARD_PERSIST = "persist.sys.cubclone.guard";
+
+    /** 读桌面防护开关：属性没写过按「开」算（和插件缺省一致）。null ＝ 没 root。 */
+    public static Boolean guardOn() {
+        if (!Shell.ready()) return null;
+        String v = Shell.raw("getprop", HOOK_GUARD_PERSIST).trim();
+        if (v.length() == 0) return Boolean.TRUE;
+        return Boolean.valueOf(!"0".equals(v));
+    }
+
+    /** 写桌面防护开关。插件每次拦截现读，立即生效、不用重启桌面。 */
+    public static String writeGuard(boolean on) {
+        String val = on ? "1" : "0";
+        String out = Shell.exec("setprop " + HOOK_GUARD_PERSIST + " " + val);
+        String back = Shell.raw("getprop", HOOK_GUARD_PERSIST).trim();
+        if (!val.equals(back)) {
+            return out.length() == 0 ? "readback=" + back : out.trim();
+        }
+        return null;
+    }
+
+    /** 桌面进程里各挂载点的状态，如 {@code pc1,add1,task2,prov1,on1}；没跑起来返回空串。 */
+    public static String guardPoints() {
+        return Shell.raw("getprop", "sys.cubclone.hook.lw.pts").trim();
+    }
+
+    /** 桌面防护实际拦下的次数；0 表示从没触发过，空串表示属性没写。 */
+    public static String guardHits() {
+        return Shell.raw("getprop", "sys.cubclone.hook.lw.hits").trim();
     }
 
     /**

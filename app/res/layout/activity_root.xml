@@ -231,7 +231,21 @@
                 android:layout_marginStart="8dp"
                 android:layout_marginTop="6dp"
                 android:layout_marginEnd="8dp"
+                android:textSize="13sp" />
+
+            <!-- 插件动作：有新版本时是「更新到 X」，装完待重启时是「重启生效」，否则「重装插件」 -->
+            <TextView
+                android:id="@+id/rt_plugin_action"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="8dp"
+                android:layout_marginTop="6dp"
                 android:layout_marginBottom="8dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:gravity="center"
+                android:background="@drawable/bg_clone_button"
+                android:text="@string/plugin_action_reinstall"
                 android:textSize="13sp" />
 
             <LinearLayout
@@ -342,6 +356,52 @@
                     android:layout_marginTop="6dp"
                     android:lineSpacingExtra="3dp"
                     android:text="@string/install_hint"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/rt_guard_card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_card"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/rt_guard_label"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/guard_label"
+                        android:textSize="15sp" />
+
+                    <Switch
+                        android:id="@+id/rt_guard"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/rt_guard_state"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/rt_guard_hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text="@string/guard_hint"
                     android:textSize="12sp" />
             </LinearLayout>
         </LinearLayout>

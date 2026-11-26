@@ -125,12 +125,11 @@ public final class HookMain extends XposedModule {
                 return;
             }
             int lw = new LauncherAddHook(this).apply(cl);
-            int guard = new LauncherGuard(this).apply(cl);
-            Log.i(TAG, "lw(" + pkg + "): hooks=" + lw + " guard=" + guard);
-            mark("sys.cubclone.hook.lw", String.valueOf(lw + guard));
-            // 桌面进程也要上报版本：只靠 system_server 那一份的话，system 没加载模块时
-            // App 就只能看到「已装未生效」，看不出真正在跑哪一版。
-            mark("sys.cubclone.hook.ver", BuildVer.V);
+            Log.i(TAG, "launcher(" + pkg + "): hooks=" + lw);
+            mark("sys.cubclone.hook.lw", String.valueOf(lw));
+            // 桌面进程单独上报自己的版本：只重启桌面时，system_server 那份还是旧值，
+            // 两个属性分开写，界面才能分别说清「哪部分待重启」。
+            mark("sys.cubclone.hook.lw.ver", BuildVer.V);
         } catch (Throwable t) {
             Log.e(TAG, "launcher add init failed", t);
         }

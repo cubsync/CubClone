@@ -82,7 +82,13 @@ public final class HookMain extends XposedModule {
         }
     }
 
-    /** 常见桌面包名：只有这些进程里才装「禁止补图标」的钩子，别的应用进程一概不碰。 */
+    /**
+     * 运行时白名单：只有这些包进程里才装「禁止补图标」的钩子。
+     *
+     * <p>注意这和 {@code scope.list} 是两件事：scope.list 是**默认注入范围**，只列已经确认
+     * 有这套私有实现的桌面（ColorOS 系）；这里是**一旦被注入就尝试挂载**的范围，留给用户在
+     * LSPosed 里手动勾选的其它桌面。没被注入的包根本走不到这里，留着不会主动碰别人进程。
+     */
     private static final String[] LAUNCHERS = {
             "com.android.launcher",                  // ColorOS / 部分 AOSP 衍生
             "com.android.launcher3",                 // AOSP / LineageOS

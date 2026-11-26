@@ -236,18 +236,21 @@ public class RootActivity extends Activity {
                         int mode;   // 0=重装 1=更新 2=待重启
                         String text;
                         int color;
-                        if (active && run != null && ins != null && !ins.equals(run)) {
-                            // 装了新版但进程里还在跑旧的
+                        if (ins != null && bundled != null
+                                && CloneStore.verCmp(bundled, ins) > 0) {
+                            // 内嵌的比已装的新：先让用户能拿到新版。
+                            // 这条必须排在最前 —— 否则「已装 ≠ 运行」会先命中「重启生效」，
+                            // 用户永远看不到还有新版可装（魅族实测 reg=dev.5 / ins=dev.6 / 内嵌 dev.7）。
+                            text = run == null
+                                    ? getString(R.string.plugin_state_new_idle, ins, bundled)
+                                    : getString(R.string.plugin_state_new, run, ins, bundled);
+                            color = Theme.warn(RootActivity.this);
+                            mode = 1;
+                        } else if (active && run != null && ins != null && !ins.equals(run)) {
+                            // 已装就是最新，但进程里还在跑旧的
                             text = getString(R.string.plugin_state_pending, run, ins);
                             color = Theme.warn(RootActivity.this);
                             mode = 2;
-                        } else if (ins != null && bundled != null
-                                && CloneStore.verCmp(bundled, ins) > 0) {
-                            // 内嵌的比已装的新，可以更新
-                            text = getString(R.string.plugin_state_new,
-                                    run == null ? ins : run, ins, bundled);
-                            color = Theme.warn(RootActivity.this);
-                            mode = 1;
                         } else if (active && run != null && ins != null) {
                             text = getString(R.string.plugin_state_running, run, ins);
                             color = Theme.green(RootActivity.this);
@@ -371,25 +374,12 @@ public class RootActivity extends Activity {
     }
 
     /** 只负责装；LSPosed 里的启用和重启必须用户自己来，我们不改它的配置库 */
-    /** 装之前先弹确认：装完必须重启手机才生效，不能一句话不说就装。 */
     private void installModule() {
         if (!Shell.ready()) {
             toast(getString(R.string.limit_need_perm));
             return;
         }
-        final String ver = CloneStore.hookBundledVersion();
-        new android.app.AlertDialog.Builder(this)
-                .setTitle(ver == null ? getString(R.string.limit_install)
-                        : getString(R.string.plugin_install_confirm_title, ver))
-                .setMessage(R.string.plugin_install_confirm_msg)
-                .setPositiveButton(android.R.string.ok,
-                        new android.content.DialogInterface.OnClickListener() {
-                            public void onClick(android.content.DialogInterface d, int w) {
-                                doInstallModule();
-                            }
-                        })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
+        doInstallModule();
     }
 
     private void doInstallModule() {

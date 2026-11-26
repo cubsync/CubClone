@@ -99,6 +99,18 @@ else
   echo "    正式版，不加构建标记"
 fi
 
+# 同一个 dev.N 只出一次包：N 就是「这个版本号下第几次包」，重出会让两个不同的包撞号。
+# 已经存在同版本的包就停下，提示先 bump（确实要重出同一号：ALLOW_REBUILD=1 bash app/build.sh）。
+if [ -n "$PRE" ] && [ "${ALLOW_REBUILD:-0}" != "1" ]; then
+  PREV=$(ls -1 "$DIST"/CubClone-"$VNAME"+*.apk 2>/dev/null | head -1)
+  if [ -n "$PREV" ]; then
+    echo "    已存在同一版本的包：$(basename "$PREV")"
+    echo "    dev.N 只递增、不重出：先跑 bash app/bump.sh"
+    echo "    （确实要重出这一号：ALLOW_REBUILD=1 bash app/build.sh）"
+    exit 1
+  fi
+fi
+
 # 源码里的清单只写干净版本号；带构建标记的副本只落在 build/，不污染 AndroidManifest.xml
 sed "s|android:versionName=\"$VNAME\"|android:versionName=\"$BUILDV\"|" \
   AndroidManifest.xml > "$OUT/AndroidManifest.xml"

@@ -818,9 +818,20 @@ public final class CloneStore {
     /** 模块包名（增强插件是独立 APK，装在设备上但不显示图标） */
     static final String HOOK_PKG = "com.cubsync.cubclone.hook";
 
-    /** hook 是否已跑起来（system_server 里挂上了）。只有 hook 会写这个属性。 */
+    /**
+     * hook 是否已跑起来。两个证据任一成立即可：
+     * <ul>
+     *   <li>{@code sys.cubclone.hook}=1：system_server 里挂上了（数量上限）；</li>
+     *   <li>{@code sys.cubclone.hook.lw}>0：桌面进程里挂上了（禁用补图标）。</li>
+     * </ul>
+     * 只看前者的话，system 没加载、只有桌面进程加载时会被误判成「已装未生效」。
+     */
     public static boolean hookActive() {
-        return "1".equals(Shell.raw("getprop", "sys.cubclone.hook").trim());
+        if ("1".equals(Shell.raw("getprop", "sys.cubclone.hook").trim())) {
+            return true;
+        }
+        String lw = Shell.raw("getprop", "sys.cubclone.hook.lw").trim();
+        return lw.matches("\\d+") && Integer.parseInt(lw) > 0;
     }
 
     /**

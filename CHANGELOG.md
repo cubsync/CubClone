@@ -27,6 +27,15 @@
   `mFocusedApp` 指向分身应用、主用户始终是 0，没有切用户。
 - **删除 `full.SECONDARY` 降级**：full 是独立用户，AOSP 必须切用户才显示，建了也打不开。共享存储
   挂不上时保留 clone，只提示「存储未就绪」，不再换号重建。
+- **建空间后桌面被塞满图标**：ColorOS 桌面收到 clone 用户的包变更广播后，不区分用户地对主空间跑
+  一次全量刷新，把没摆上桌面的应用成批插入桌面库（OP12 实测 45 个，按包名字母序，还多出 2 个
+  空页）。增强插件 1.2.0 两处收口：`PackageUpdateReceiverUtil.handlePackageChanged` 按广播里的
+  `UserHandle` 跳过我们的空间；`OplusLauncherProvider.applyBatch` 把「单批 ≥20 条写桌面条目」
+  判定为全量铺设并整批丢弃，紧跟其后的写页操作一并跳过。系统自带分身（MultiApp / system_clone）
+  和日常装应用都是个位数批次，不受影响。
+- **插件版本显示不出运行版本**：`sys.cubclone.hook.ver` 以前只有 system_server 会写，system 没
+  加载模块时界面只能显示「已装未生效」。现在桌面进程加载后也上报版本，`hookActive()` 同时认
+  `sys.cubclone.hook.lw`；状态文案压成一行。
 
 ### 新增
 - **空间管理页标注分身模式**：每行标「克隆型 / 独立型」。前者是 `profile.CLONE`（和主用户同组、

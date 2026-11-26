@@ -40,7 +40,7 @@ import io.github.libxposed.api.XposedModule;
  */
 public final class HookMain extends XposedModule {
 
-    private static final String TAG = "CubCloneHook";
+    static final String TAG = "CubCloneHook";
     private static final String UMS = "com.android.server.pm.UserManagerService";
     private static final String METHOD = "canAddMoreProfilesToUser";
     private static final String CLONE = "android.os.usertype.profile.CLONE";
@@ -79,6 +79,60 @@ public final class HookMain extends XposedModule {
                 log(Log.ERROR, TAG, "init failed: " + t, t);
             } catch (Throwable ignored) {
             }
+        }
+    }
+
+    /** 常见桌面包名：只有这些进程里才装「禁止补图标」的钩子，别的应用进程一概不碰。 */
+    private static final String[] LAUNCHERS = {
+            "com.android.launcher",                  // ColorOS / 部分 AOSP 衍生
+            "com.android.launcher3",                 // AOSP / LineageOS
+            "com.android.launcher3u",                // AOSP 测试版
+            "com.oppo.launcher",                     // ColorOS 旧包名
+            "com.coloros.launcher",
+            "com.miui.home",                         // MIUI / HyperOS
+            "com.google.android.apps.nexuslauncher", // Pixel
+            "com.huawei.android.launcher",
+            "com.sec.android.app.launcher",          // One UI
+            "com.meizu.flyme.launcher",
+            "com.bbk.launcher2",                     // vivo
+    };
+
+    private static boolean isLauncher(String pkg) {
+        if (pkg == null) {
+            return false;
+        }
+        for (String k : LAUNCHERS) {
+            if (k.equals(pkg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 桌面进程的入口。普通应用进程不会走 {@link #onSystemServerStarting}，
+     * 必须在这里装「禁止把空间应用补到主空间桌面」的钩子（OP12 实测）。
+     */
+    @Override
+    public void onPackageLoaded(PackageLoadedParam param) {
+        try {
+            String pkg = param.getPackageName();
+            if (!isLauncher(pkg)) {
+                return;
+            }
+            ClassLoader cl = param.getDefaultClassLoader();
+            if (cl == null) {
+                return;
+            }
+            int lw = new LauncherAddHook(this).apply(cl);
+            int guard = new LauncherGuard(this).apply(cl);
+            Log.i(TAG, "lw(" + pkg + "): hooks=" + lw + " guard=" + guard);
+            mark("sys.cubclone.hook.lw", String.valueOf(lw + guard));
+            // 桌面进程也要上报版本：只靠 system_server 那一份的话，system 没加载模块时
+            // App 就只能看到「已装未生效」，看不出真正在跑哪一版。
+            mark("sys.cubclone.hook.ver", BuildVer.V);
+        } catch (Throwable t) {
+            Log.e(TAG, "launcher add init failed", t);
         }
     }
 
@@ -145,6 +199,8 @@ public final class HookMain extends XposedModule {
         } catch (Throwable t) {
             Log.w(TAG, "launcher apps hook failed: " + t);
         }
+        // 「禁止补桌面图标」的钩子装在桌面进程里（见 onPackageLoaded）：
+        // system_server 的 classloader 里没有 launcher 的类，这里不装。
         mark(PROP_APPLY, "ctor=" + ctors + ",m=" + methods + ",i=" + install
                 + ",u=" + cap + ",f=" + flyme + ",w=" + wm + ",l=" + lock + ",lp=" + lp
                 + ",la=" + la);

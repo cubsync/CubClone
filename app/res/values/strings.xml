@@ -90,7 +90,10 @@
     <string name="guard_state_on">已生效</string>
     <string name="guard_state_hits">已生效 · 已拦 %1$s 次</string>
     <string name="guard_state_off">已关闭</string>
-    <string name="guard_state_dead">未生效 · 系统桌面可能已改版</string>
+    <string name="guard_state_not_needed">本机桌面无此行为 · 无需防护</string>
+    <string name="guard_state_unloaded">未生效 · 桌面进程未加载插件</string>
+    <string name="guard_state_stale">未生效 · 桌面实现已变更</string>
+    <string name="guard_state_unknown">无法检测本机桌面</string>
     <string name="guard_on_toast">已开启：建空间不再往桌面补图标</string>
     <string name="guard_off_toast">已关闭：恢复系统桌面原行为</string>
     <string name="guard_hint">建空间、删空间、往空间里装应用时，主空间桌面不会多出图标；系统自带的应用分身照常建图标。开关立即生效、不用重启。</string>

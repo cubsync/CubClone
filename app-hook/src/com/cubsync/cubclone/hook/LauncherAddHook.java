@@ -38,6 +38,8 @@ final class LauncherAddHook {
 
     static final String PROP_HITS = "sys.cubclone.hook.lw.hits";
     static final String PROP_POINTS = "sys.cubclone.hook.lw.pts";
+    /** 模块进了桌面进程就写。界面靠它区分「桌面根本没加载插件」和「加载了但类没挂上」。 */
+    static final String PROP_ALIVE = "sys.cubclone.hook.lw.alive";
 
     private static final AtomicInteger HITS = new AtomicInteger();
 
@@ -48,6 +50,10 @@ final class LauncherAddHook {
     }
 
     int apply(ClassLoader cl) {
+        // 第一件事就报到：这行能执行，就证明模块真的进了桌面进程。
+        // 界面靠它把「桌面没加载插件」和「加载了但一个入口都没挂上（改版）」分开——
+        // 这两种情况的处理完全不同，不能都报成「未生效」。
+        mark(PROP_ALIVE, "1");
         // 钩子总是挂上，开关在拦截时现读属性 —— 用户在 Root 功能页关掉立刻生效，不用重启桌面。
         int pc = hookPackageChanged(cl);
         int add = hookOnPackageAdded(cl, "com.android.launcher3.OplusLauncherModel");

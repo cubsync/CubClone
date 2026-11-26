@@ -90,7 +90,10 @@
     <string name="guard_state_on">Active</string>
     <string name="guard_state_hits">Active · blocked %1$s times</string>
     <string name="guard_state_off">Off</string>
-    <string name="guard_state_dead">Not active · system launcher may have changed</string>
+    <string name="guard_state_not_needed">This launcher has no such behaviour · nothing to guard</string>
+    <string name="guard_state_unloaded">Not active · the module is not loaded in the launcher process</string>
+    <string name="guard_state_stale">Not active · the launcher implementation changed</string>
+    <string name="guard_state_unknown">Cannot inspect this launcher</string>
     <string name="guard_on_toast">On: no more icons added to the desktop when creating a space</string>
     <string name="guard_off_toast">Off: system launcher behaviour restored</string>
     <string name="guard_hint">Creating or removing a space, or installing apps into one, no longer adds icons to the main desktop. The system\'s own app cloning still adds its icons as usual. The switch takes effect immediately.</string>

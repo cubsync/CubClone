@@ -34,8 +34,14 @@
   的第 3 参 `UserHandle`、`OplusLauncherModel.onPackageAdded` 的 `UserHandle`、
   `PackageUpdatedTask.execute` 的 `mUser` 字段、`onBroadcastIntent` 的 `extra.USER`。
   任一处是我们建的空间就整个方法不执行，主空间和系统自带分身（MultiApp / system_clone）原样放行。
-  四个入口按类名分别挂载，某个 ROM 没有的类直接跳过；一个都挂不上时 Root 功能页会显式报
-  「未生效 · 系统桌面可能已改版」，不会静默失效。
+  四个入口按类名分别挂载，某个 ROM 没有的类直接跳过。
+- **桌面防护状态判错了对象**：以前只按「钩子挂没挂上」判断，魅族、AOSP 这类本来就没有补图标行为的
+  桌面会显示「未生效 · 系统桌面可能已改版」，像是坏了。现在按**本机桌面有没有这个行为**判断 ——
+  直接读默认桌面 APK 的 `classes*.dex`，里面没有 `PackageUpdateReceiverUtil` /
+  `OplusLauncherProvider` / `OplusPackageUpdatedTask` / `OplusLauncherModel` 就说明这台不需要防护，
+  显示「本机桌面无此行为 · 无需防护」。只有真有这套实现却没挂上时才报警，并区分两种原因：
+  模块没进桌面进程（「未生效 · 桌面进程未加载插件」）和类改名了（「未生效 · 桌面实现已变更」，
+  靠插件新上报的 `sys.cubclone.hook.lw.alive` 区分）。
 - **插件版本提示看不出状态**：以前只显示运行版本，装完新版没重启时界面没变化。现在同时显示
   「运行 X · 已装 Y」，并和主应用内嵌的插件版本比对：内嵌更新 → 橙色「有新版本 Z」+「更新到 Z」；
   装完没重启 → 橙色「重启生效」；全部一致 → 绿色「运行 X · 已装 X」。点安装先弹确认框，

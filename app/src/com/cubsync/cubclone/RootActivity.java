@@ -588,6 +588,11 @@ public class RootActivity extends Activity {
                 final boolean val = on == null || on.booleanValue();
                 final String pts = CloneStore.guardPoints();
                 final String hits = CloneStore.guardHits();
+                final String alive = CloneStore.guardAlive();
+                // 这台桌面自己有没有「建号后往主空间补图标」这条链路：看它 APK 里的类，
+                // 不看品牌。出厂就没这段代码的机器（魅族、AOSP）本来就不需要拦。
+                // 开关关着就不用扫，省一次一秒的 dex 读取。
+                final Boolean need = val ? CloneStore.guardNeeded() : null;
                 final boolean mod = CloneStore.hookLimit() != null;
                 runOnUiThread(new Runnable() {
                     public void run() {
@@ -601,24 +606,29 @@ public class RootActivity extends Activity {
                             // 插件没装/没生效
                             rtGuardState.setText(R.string.install_no_module);
                             rtGuardState.setTextColor(sec);
-                        } else if (pts.length() == 0) {
-                            // 插件在跑，但桌面进程还没加载过模块（或刚被杀）
-                            rtGuardState.setText(R.string.guard_state_dead);
-                            rtGuardState.setTextColor(sec);
                         } else if (!val) {
                             rtGuardState.setText(R.string.guard_state_off);
                             rtGuardState.setTextColor(sec);
-                        } else if (!anyPoint(pts)) {
-                            // 所有挂载点都是 0：桌面类改名了，或桌面还没加载模块
-                            rtGuardState.setText(R.string.guard_state_dead);
-                            rtGuardState.setTextColor(Theme.red(RootActivity.this));
-                        } else {
+                        } else if (anyPoint(pts)) {
+                            // 桌面进程里确实挂上了，这是最强的证据，优先于静态探测
                             String s = getString(R.string.guard_state_on);
                             if (hits.length() > 0 && !"0".equals(hits)) {
                                 s = getString(R.string.guard_state_hits, hits);
                             }
                             rtGuardState.setText(s);
                             rtGuardState.setTextColor(Theme.green(RootActivity.this));
+                        } else if (Boolean.FALSE.equals(need)) {
+                            // 本机桌面 APK 里根本没有那套实现 —— 这台不需要防护，不是坏了
+                            rtGuardState.setText(R.string.guard_state_not_needed);
+                            rtGuardState.setTextColor(sec);
+                        } else if (Boolean.TRUE.equals(need)) {
+                            // 有这行为却一个入口都没挂上：要么模块没进桌面进程，要么类改名了
+                            rtGuardState.setText(alive.length() > 0
+                                    ? R.string.guard_state_stale : R.string.guard_state_unloaded);
+                            rtGuardState.setTextColor(Theme.red(RootActivity.this));
+                        } else {
+                            rtGuardState.setText(R.string.guard_state_unknown);
+                            rtGuardState.setTextColor(sec);
                         }
                         applyChrome();
                     }

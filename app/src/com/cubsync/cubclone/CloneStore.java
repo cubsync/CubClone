@@ -1064,6 +1064,70 @@ public final class CloneStore {
         return Shell.raw("getprop", "sys.cubclone.hook.lw.pts").trim();
     }
 
+    /** 模块是否进过桌面进程（进过就写 1）。空串 = 从没加载过，和「加载了但没挂上」是两回事。 */
+    public static String guardAlive() {
+        return Shell.raw("getprop", "sys.cubclone.hook.lw.alive").trim();
+    }
+
+    /** 桌面 APK 里出现这些类，说明它有「包变更后把主空间应用全铺一遍」这条私有链路。 */
+    private static final String[] GUARD_CLASSES = {
+            "PackageUpdateReceiverUtil",
+            "OplusLauncherProvider",
+            "OplusPackageUpdatedTask",
+            "OplusLauncherModel",
+    };
+
+    /**
+     * 本机默认桌面自身有没有「建号后往主空间补图标」这条实现 —— 直接看它 APK 里的类，
+     * 不看品牌、不看系统版本：出厂就没这段代码的机器，本来就不需要防护。
+     *
+     * @return TRUE＝有这行为、需要拦；FALSE＝本机桌面没这段代码；null＝探不到（权限/工具缺失）
+     */
+    public static Boolean guardNeeded() {
+        if (!Shell.ready()) return null;
+        if (guardNeedVal != null) return guardNeedVal;
+        StringBuilder cmd = new StringBuilder();
+        cmd.append("p=$(cmd package resolve-activity -a android.intent.action.MAIN")
+                .append(" -c android.intent.category.HOME 2>/dev/null")
+                .append(" | grep -m1 packageName= | sed 's/.*packageName=//' | tr -d '\\r');")
+                .append(" [ -n \"$p\" ] || exit 3;")
+                .append(" command -v unzip >/dev/null 2>&1 || exit 4;")
+                .append(" n=0;")
+                .append(" for f in $(pm path $p 2>/dev/null | sed 's/package://'); do")
+                .append("   c=$(unzip -p \"$f\" 'classes*.dex' 2>/dev/null | grep -a -c");
+        for (String k : GUARD_CLASSES) {
+            cmd.append(" -e ").append(k);
+        }
+        cmd.append("); n=$((n+${c:-0})); done; echo \"NEED=$n\"");
+        String out = Shell.exec(cmd.toString());
+        int i = out.indexOf("NEED=");
+        if (i < 0) {
+            android.util.Log.i("CubClone", "guardNeeded: " + out.trim());
+            return null;
+        }
+        String num = out.substring(i + 5).trim();
+        int e = 0;
+        while (e < num.length() && num.charAt(e) >= '0' && num.charAt(e) <= '9') e++;
+        if (e == 0) return null;
+        Boolean v;
+        try {
+            v = Boolean.valueOf(Integer.parseInt(num.substring(0, e)) > 0);
+        } catch (Throwable t) {
+            return null;
+        }
+        // 桌面 APK 没变就一直用这次结果：扫一遍几十 MB 的 dex 要一秒，不必每次进页面都扫
+        guardNeedVal = v;
+        return v;
+    }
+
+    /** 探测结果（进程内缓存）。null ＝ 还没探过 / 探不到。 */
+    private static Boolean guardNeedVal;
+
+    /** 换桌面、升级桌面后要让下一次进页面重探。 */
+    public static void guardNeededReset() {
+        guardNeedVal = null;
+    }
+
     /** 桌面防护实际拦下的次数；0 表示从没触发过，空串表示属性没写。 */
     public static String guardHits() {
         return Shell.raw("getprop", "sys.cubclone.hook.lw.hits").trim();

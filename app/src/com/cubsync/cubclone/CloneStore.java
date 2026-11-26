@@ -1018,6 +1018,27 @@ public final class CloneStore {
     // ── 桌面防护（建空间不往主空间桌面补图标） ─────────────────────
 
     public static final String HOOK_GUARD_PERSIST = "persist.sys.cubclone.guard";
+    /** 主桌面是否隐藏我们建的空间（框架层两条钩子）：1=隐藏（默认），0=恢复原厂 */
+    public static final String HOOK_HIDE_PERSIST = "persist.sys.cubclone.hide";
+
+    /** 读「主桌面隐藏分身应用」开关：属性没写过按「开」算。null = 没 root。 */
+    public static Boolean hideOn() {
+        if (!Shell.ready()) return null;
+        String v = Shell.raw("getprop", HOOK_HIDE_PERSIST).trim();
+        if (v.length() == 0) return Boolean.TRUE;
+        return Boolean.valueOf(!"0".equals(v));
+    }
+
+    /** 写「主桌面隐藏分身应用」开关。插件每次判断现读，立即生效、不用重启。 */
+    public static String writeHide(boolean on) {
+        String val = on ? "1" : "0";
+        String out = Shell.exec("setprop " + HOOK_HIDE_PERSIST + " " + val);
+        String back = Shell.raw("getprop", HOOK_HIDE_PERSIST).trim();
+        if (!val.equals(back)) {
+            return out.length() == 0 ? "readback=" + back : out.trim();
+        }
+        return null;
+    }
 
     /** 读桌面防护开关：属性没写过按「开」算（和插件缺省一致）。null ＝ 没 root。 */
     public static Boolean guardOn() {

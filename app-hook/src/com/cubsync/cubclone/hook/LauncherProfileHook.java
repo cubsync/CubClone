@@ -91,6 +91,10 @@ final class LauncherProfileHook {
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(chain -> {
                             Object r = chain.proceed();
+                            // 开关关掉就完全恢复原厂：桌面能重新拿到我们建的空间
+                            if (!HookMain.propOn(LauncherAppsHook.PROP_ENABLE)) {
+                                return r;
+                            }
                             android.content.Context ctx = null;
                             try {
                                 ctx = contextOf(chain.getThisObject());

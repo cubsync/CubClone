@@ -385,4 +385,21 @@ public final class HookMain extends XposedModule {
         } catch (Throwable ignored) {
         }
     }
+
+    static String getProp(String key) {
+        try {
+            Class<?> sp = Class.forName("android.os.SystemProperties");
+            Method get = sp.getMethod("get", String.class);
+            Object v = get.invoke(null, key);
+            return v == null ? "" : ((String) v).trim();
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    /** 属性开关：没写过就是开，只有显式写 0 才关。 */
+    static boolean propOn(String key) {
+        String v = getProp(key);
+        return v.length() == 0 || !"0".equals(v);
+    }
 }

@@ -94,6 +94,12 @@
     <string name="guard_on_toast">已开启：建空间不再往桌面补图标</string>
     <string name="guard_off_toast">已关闭：恢复系统桌面原行为</string>
     <string name="guard_hint">建空间、删空间、往空间里装应用时，主空间桌面不会多出图标；系统自带的应用分身照常建图标。开关立即生效、不用重启。</string>
+    <string name="hide_label">主桌面不显示分身应用</string>
+    <string name="hide_state_on">已生效</string>
+    <string name="hide_state_off">已关闭 · 分身应用会出现在桌面</string>
+    <string name="hide_on_toast">已开启：桌面不再显示分身应用</string>
+    <string name="hide_off_toast">已关闭：分身应用会出现在桌面</string>
+    <string name="hide_hint">桌面的应用列表、搜索和文件夹里不出现分身里的应用；系统自带的应用分身不受影响。关掉后分身应用会照常摆上主桌面。开关立即生效。</string>
 
     <string name="limit_sys">系统默认 %1$d</string>
     <string name="limit_on">已解锁 %1$d</string>

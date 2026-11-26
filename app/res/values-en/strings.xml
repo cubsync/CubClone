@@ -94,6 +94,12 @@
     <string name="guard_on_toast">On: no more icons added to the desktop when creating a space</string>
     <string name="guard_off_toast">Off: system launcher behaviour restored</string>
     <string name="guard_hint">Creating or removing a space, or installing apps into one, no longer adds icons to the main desktop. The system\'s own app cloning still adds its icons as usual. The switch takes effect immediately.</string>
+    <string name="hide_label">Hide space apps from the main desktop</string>
+    <string name="hide_state_on">Active</string>
+    <string name="hide_state_off">Off · space apps will show on the desktop</string>
+    <string name="hide_on_toast">On: space apps no longer show on the desktop</string>
+    <string name="hide_off_toast">Off: space apps will show on the desktop</string>
+    <string name="hide_hint">Apps inside your spaces do not appear in the desktop app list, search or folders. The system\'s own app cloning is unaffected. Turning it off puts them back on the main desktop. Takes effect immediately.</string>
 
     <string name="limit_sys">System default %1$d</string>
     <string name="limit_on">Unlocked %1$d</string>

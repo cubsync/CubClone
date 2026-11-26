@@ -52,6 +52,9 @@ public class RootActivity extends Activity {
     private Switch swGuard;
     private LinearLayout rtGuardCard;
     private boolean guardBinding;
+    private TextView rtHideLabel, rtHideState, rtHideHint;
+    private Switch swHide;
+    private boolean hideBinding;
     /** 程序化 setChecked 会回调监听器，用这个挡住，免得自己把属性写一圈 */
     private boolean installBinding;
 
@@ -127,6 +130,17 @@ public class RootActivity extends Activity {
             }
         });
 
+        rtHideLabel = findViewById(R.id.rt_hide_label);
+        rtHideState = findViewById(R.id.rt_hide_state);
+        rtHideHint = findViewById(R.id.rt_hide_hint);
+        swHide = findViewById(R.id.rt_hide);
+        swHide.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton v, boolean checked) {
+                if (hideBinding) return;
+                saveHide(checked);
+            }
+        });
+
         btnBack.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { finish(); }
         });
@@ -163,6 +177,7 @@ public class RootActivity extends Activity {
         renderLimit();
         renderInstall();
         renderGuard();
+        renderHide();
         renderPluginState();
         // 直接进本页（不经设置页）时 Shell 还没探测过，ready() 是 false，
         // 两个插件区块会误报「需要先授权 root」。这里自己探一次再重画。
@@ -174,6 +189,7 @@ public class RootActivity extends Activity {
                         renderLimit();
                         renderInstall();
                         renderGuard();
+                        renderHide();
                         renderPluginState();
                     }
                 });
@@ -188,6 +204,7 @@ public class RootActivity extends Activity {
         renderLimit();
         renderInstall();
         renderGuard();
+        renderHide();
         renderPluginState();
     }
 
@@ -633,6 +650,86 @@ public class RootActivity extends Activity {
         return false;
     }
 
+    /**
+     * 主桌面是否隐藏分身应用（框架层 `LauncherAppsService.isEnabledProfileOf` +
+     * `UserManagerService.getProfileIds` 两条）。
+     *
+     * <p>和上面「建空间不补图标」是两件事：这一条在 system_server 里，任何 ROM 都走，
+     * 关掉的效果是分身应用照常出现在主桌面的应用列表 / 搜索 / 文件夹里。
+     */
+    private void renderHide() {
+        if (rtHideState == null) return;
+        if (!Shell.ready()) {
+            rtHideState.setText(R.string.install_need_perm);
+            rtHideState.setTextColor(sec);
+            hideBinding = true;
+            swHide.setChecked(false);
+            hideBinding = false;
+            swHide.setEnabled(false);
+            return;
+        }
+        rtHideState.setText(R.string.loading);
+        rtHideState.setTextColor(sec);
+        new Thread(new Runnable() {
+            public void run() {
+                final Boolean on = CloneStore.hideOn();
+                if (Shell.raw("getprop", CloneStore.HOOK_HIDE_PERSIST).trim().length() == 0) {
+                    CloneStore.writeHide(on == null || on.booleanValue());
+                }
+                final boolean val = on == null || on.booleanValue();
+                final boolean mod = CloneStore.hookLimit() != null;
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (isFinishing() || rtHideState == null) return;
+                        hideBinding = true;
+                        swHide.setChecked(val);
+                        hideBinding = false;
+                        swHide.setEnabled(true);
+                        if (!mod) {
+                            rtHideState.setText(R.string.install_no_module);
+                            rtHideState.setTextColor(sec);
+                        } else if (val) {
+                            rtHideState.setText(R.string.hide_state_on);
+                            rtHideState.setTextColor(Theme.green(RootActivity.this));
+                        } else {
+                            rtHideState.setText(R.string.hide_state_off);
+                            rtHideState.setTextColor(sec);
+                        }
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void saveHide(final boolean on) {
+        if (!Shell.ready()) {
+            hideBinding = true;
+            swHide.setChecked(!on);
+            hideBinding = false;
+            toast(getString(R.string.install_need_perm));
+            return;
+        }
+        new Thread(new Runnable() {
+            public void run() {
+                final String err = CloneStore.writeHide(on);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (err != null) {
+                            hideBinding = true;
+                            swHide.setChecked(!on);
+                            hideBinding = false;
+                            toast(getString(R.string.install_save_fail, err));
+                        } else {
+                            toast(on ? getString(R.string.hide_on_toast)
+                                    : getString(R.string.hide_off_toast));
+                        }
+                        renderHide();
+                    }
+                });
+            }
+        }).start();
+    }
+
     private void saveGuard(final boolean on) {
         if (!Shell.ready()) {
             guardBinding = true;
@@ -656,6 +753,7 @@ public class RootActivity extends Activity {
                                     : getString(R.string.guard_off_toast));
                         }
                         renderGuard();
+                        renderHide();
                     }
                 });
             }
@@ -703,6 +801,8 @@ public class RootActivity extends Activity {
         if (rtInstallHint != null) rtInstallHint.setTextColor(sec);
         if (rtGuardLabel != null) rtGuardLabel.setTextColor(fg);
         if (rtGuardHint != null) rtGuardHint.setTextColor(sec);
+        if (rtHideLabel != null) rtHideLabel.setTextColor(fg);
+        if (rtHideHint != null) rtHideHint.setTextColor(sec);
         int btnBg = Theme.chipBg(this);
         int btnFg = Theme.chipFg(this);
         for (TextView t : new TextView[]{rtLimitInstall, rtLimitTune}) {

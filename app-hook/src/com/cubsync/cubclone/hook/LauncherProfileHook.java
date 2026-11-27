@@ -5,38 +5,38 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Binder;
+import android.os.UserHandle;
 import android.util.Log;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import io.github.libxposed.api.XposedInterface;
 
 /**
- * 让系统桌面（launcher）看不到我们建的空间。
+ * 让系统桌面（launcher）看不到我们建的空间里的应用。
  *
  * <p>现象（G7 实测，2026-11-25）：建一个 clone 空间并装进应用后，桌面自动多出一页——
- * 空间里的电话/设置/图库/CubDesk 全被摆上去了，点开就是那个空间的数据。
- * launcher 的 {@code app_icons.db} 里能查到 {@code profileId=19} 与 {@code profileId=1022}
- * （19 是该空间的 userId，1022 是它的 serialNo）。
+ * 空间里的电话/设置/图库/CubDesk 全被摆上去了。根因是 {@code LauncherApps} 会把当前用户
+ * 同组的 profile 一起拉进来。
  *
- * <p>根因是 AOSP 语义而不是厂商特例：{@code UserManager.getUserProfiles()} 的定义就是
- * 「当前用户 + 同一个 profile 组里的所有用户」，而 clone profile 的 {@code profileGroupId}
- * 就是父用户 0。launcher 拿这个列表去 {@code LauncherApps} 拉应用，自然把分身应用也当自己的。
- * ColorOS / Flyme / AOSP Launcher3 走的是同一套接口。
+ * <h3>为什么要改拦截点（2026-11-27 回归）</h3>
+ * 之前 hook 的是 {@code UserManagerService.getProfileIds()}，按「调用者是桌面」把我们的 uid
+ * 从结果里剔掉。但 Flyme 的<b>最近任务也在桌面进程里</b>，它同样走这个方法拿 profile 列表，
+ * 结果任务卡片上的图标和名称全没了（{@code lp=3->2}、{@code hits=4668} 为证）。同一个进程、
+ * 同一个 API，靠调用者根本区分不出「拉桌面图标」和「画任务卡片」。
  *
- * <p>做法：hook {@code UserManagerService.getProfileIds()}，<b>只在调用者是桌面时</b>把返回数组里
- * 我们建的 uid 去掉。系统设置、权限管理、安装器拿这个列表不受影响；Flyme 自己的 999 和其他
- * 用户一律不动。
- *
- * <p>为什么不动 launcher：动它要么给它加模块作用域（违背零配置），要么改它的数据库
- * （每个 ROM 一套 schema，升级即碎）。这里改的是 system_server 里 AOSP 自己的返回值。
+ * <p>现在只拦 {@code LauncherAppsService.getActivityList(null, ...)}：包名为 {@code null}
+ * 表示「把这个用户的应用全给我」，正是桌面铺图标那一次调用；任务管理器按包名查单个应用的
+ * 标题/图标，包名非空，原样放行。{@code getProfileIds} 恢复系统原样，别的组件不再被误伤。
  */
 final class LauncherProfileHook {
 
     private static final String TAG = "CubCloneHook";
-    private static final String UMS = "com.android.server.pm.UserManagerService";
+    private static final String IMPL =
+            "com.android.server.pm.LauncherAppsService$LauncherAppsImpl";
 
     static final String PROP_HITS = "sys.cubclone.hook.lp.hits";
     static final String PROP_LAST = "sys.cubclone.hook.lp";
@@ -65,22 +65,33 @@ final class LauncherProfileHook {
     }
 
     int apply(ClassLoader cl) {
-        Class<?> ums;
+        Class<?> impl;
         try {
-            ums = Class.forName(UMS, false, cl);
+            impl = Class.forName(IMPL, false, cl);
         } catch (Throwable t) {
-            Log.w(TAG, "lp: no " + UMS);
+            Log.w(TAG, "lp: no " + IMPL);
             return 0;
         }
         int n = 0;
-        for (Method m : ums.getDeclaredMethods()) {
-            if (!"getProfileIds".equals(m.getName())) {
+        for (Method m : impl.getDeclaredMethods()) {
+            if (!"getActivityList".equals(m.getName())) {
                 continue;
             }
             Class<?>[] pt = m.getParameterTypes();
-            if (pt.length < 2 || pt[0] != int.class) {
+            if (pt.length < 3 || pt[0] != String.class) {
                 continue;
             }
+            int userArg = -1;
+            for (int i = 1; i < pt.length; i++) {
+                if (pt[i] == UserHandle.class) {
+                    userArg = i;
+                    break;
+                }
+            }
+            if (userArg < 0) {
+                continue;
+            }
+            final int ua = userArg;
             try {
                 m.setAccessible(true);
                 try {
@@ -90,46 +101,34 @@ final class LauncherProfileHook {
                 xp.hook(m)
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(chain -> {
-                            Object r = chain.proceed();
-                            // 开关关掉就完全恢复原厂：桌面能重新拿到我们建的空间
-                            if (!HookMain.propOn(LauncherAppsHook.PROP_ENABLE)) {
-                                return r;
+                            // 按包名查单个应用（任务管理器取标题/图标）必须放行，
+                            // 否则最近任务又会变成没有名字的空白卡片。
+                            if (chain.getArg(0) != null) {
+                                return chain.proceed();
                             }
-                            android.content.Context ctx = null;
+                            if (!HookMain.propOn(LauncherAppsHook.PROP_ENABLE)) {
+                                return chain.proceed();
+                            }
+                            Object r = chain.proceed();
+                            Context ctx = null;
                             try {
-                                ctx = contextOf(chain.getThisObject());
+                                ctx = WmVisibleHook.ctxOf(chain.getThisObject());
                             } catch (Throwable ignored) {
                             }
-                            if (!(r instanceof int[])) {
+                            int uid = uidOf(chain.getArg(ua));
+                            if (uid <= 0 || !WmVisibleHook.ours(uid, ctx)) {
                                 return r;
                             }
-                            if (!fromLauncher(chain.getThisObject())) {
+                            if (!fromLauncher(ctx)) {
                                 return r;
-                            }
-                            int[] arr = (int[]) r;
-                            int kept = 0;
-                            for (int uid : arr) {
-                                if (!WmVisibleHook.ours(uid, ctx)) {
-                                    kept++;
-                                }
-                            }
-                            if (kept == arr.length) {
-                                return r;
-                            }
-                            int[] out = new int[kept];
-                            int i = 0;
-                            for (int uid : arr) {
-                                if (!WmVisibleHook.ours(uid, ctx)) {
-                                    out[i++] = uid;
-                                }
                             }
                             int k = HITS.incrementAndGet();
                             HookMain.mark(PROP_HITS, String.valueOf(k));
-                            HookMain.mark(PROP_LAST, arr.length + "->" + out.length);
+                            HookMain.mark(PROP_LAST, "empty uid=" + uid);
                             if (k == 1) {
-                                Log.i(TAG, "lp: launcher profile list " + arr.length + " -> " + kept);
+                                Log.i(TAG, "lp: hide activity list of uid " + uid);
                             }
-                            return out;
+                            return emptyList(r);
                         });
                 n++;
             } catch (Throwable t) {
@@ -140,40 +139,44 @@ final class LauncherProfileHook {
         return n;
     }
 
-    /** 当前 Binder 调用者是不是桌面 */
-    private static boolean fromLauncher(Object ums) {
+    /**
+     * 把结果清空。返回类型各版本不同（{@code List} 或 {@code ParceledListSlice}），
+     * 统一按「原来的对象、清掉里面的列表」处理，类型一定对得上；失败就原样返回（等于没拦，
+     * 但不会崩）。
+     */
+    private static Object emptyList(Object r) {
+        if (r == null) {
+            return null;
+        }
+        try {
+            if (r instanceof List) {
+                ((List<?>) r).clear();
+                return r;
+            }
+            Method get = r.getClass().getMethod("getList");
+            Object list = get.invoke(r);
+            if (list instanceof List) {
+                ((List<?>) list).clear();
+                return r;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "lp: clear list failed: " + t);
+        }
+        return r;
+    }
+
+    /** 当前 Binder 调用者是不是桌面。 */
+    private static boolean fromLauncher(Context ctx) {
         int uid = Binder.getCallingUid();
-        int home = homeUid(ums);
+        int home = homeUid(ctx);
         if (home > 0 && uid == home) {
             return true;
         }
-        return isKnownLauncher(ums, uid);
-    }
-
-    private static int homeUid(Object ums) {
-        int v = homeUid;
-        if (v != -2) {
-            return v;
+        if (ctx == null) {
+            return false;
         }
         try {
-            PackageManager pm = contextOf(ums).getPackageManager();
-            Intent i = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
-            ResolveInfo ri = pm.resolveActivity(i, PackageManager.MATCH_DEFAULT_ONLY);
-            if (ri != null && ri.activityInfo != null) {
-                v = pm.getPackageUid(ri.activityInfo.packageName, 0);
-            } else {
-                v = -1;
-            }
-        } catch (Throwable t) {
-            v = -1;
-        }
-        homeUid = v;
-        return v;
-    }
-
-    private static boolean isKnownLauncher(Object ums, int uid) {
-        try {
-            String[] pkgs = contextOf(ums).getPackageManager().getPackagesForUid(uid);
+            String[] pkgs = ctx.getPackageManager().getPackagesForUid(uid);
             if (pkgs == null) {
                 return false;
             }
@@ -189,9 +192,45 @@ final class LauncherProfileHook {
         return false;
     }
 
-    private static Context contextOf(Object ums) throws Exception {
-        Field f = ums.getClass().getDeclaredField("mContext");
-        f.setAccessible(true);
-        return (Context) f.get(ums);
+    private static int homeUid(Context ctx) {
+        int v = homeUid;
+        if (v != -2) {
+            return v;
+        }
+        if (ctx == null) {
+            return -2;
+        }
+        try {
+            PackageManager pm = ctx.getPackageManager();
+            Intent i = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+            ResolveInfo ri = pm.resolveActivity(i, PackageManager.MATCH_DEFAULT_ONLY);
+            if (ri != null && ri.activityInfo != null) {
+                v = pm.getPackageUid(ri.activityInfo.packageName, 0);
+            } else {
+                v = -1;
+            }
+        } catch (Throwable t) {
+            v = -1;
+        }
+        homeUid = v;
+        return v;
+    }
+
+    private static volatile Method UID_OF;
+
+    private static int uidOf(Object userHandle) {
+        try {
+            if (!(userHandle instanceof UserHandle)) {
+                return 0;
+            }
+            Method m = UID_OF;
+            if (m == null) {
+                m = UserHandle.class.getMethod("getIdentifier");
+                UID_OF = m;
+            }
+            return ((Integer) m.invoke(userHandle)).intValue();
+        } catch (Throwable t) {
+            return 0;
+        }
     }
 }

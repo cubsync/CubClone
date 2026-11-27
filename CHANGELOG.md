@@ -7,6 +7,12 @@
 ## [Unreleased]
 
 ### 修复
+- **最近任务里空间应用的图标和名字消失**：`LauncherProfileHook` 以前 hook
+  `UserManagerService.getProfileIds()`，按「调用者是桌面」把我们的 uid 从 profile 列表里剔除。
+  但 Flyme 的最近任务也跑在桌面进程里、也走这个方法拿 profile 列表，于是 user 10 的任务卡片
+  取不到标题和图标（实测 `lp=3->2`、`hits=4668`）。现在改为只拦
+  `LauncherAppsService.getActivityList(null, …)` —— 包名为 null 就是桌面铺图标那次全量查询；
+  任务管理器按包名查单个应用，包名非空，原样放行。`getProfileIds` 恢复系统原样，别的组件不再被误伤。
 - **有新版本却提示「重启生效」**：版本状态的判断顺序错了 —— 先比「已装 ≠ 运行」再比「内嵌 > 已装」，
   只要进程里跑的不是刚装的那版，就永远显示「重启生效」，看不到还有新版可装。现在先比内嵌版本：
   有新版本就显示「有新版本 X」，装完才轮到「重启生效」。未启用插件时文案是

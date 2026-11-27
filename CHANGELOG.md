@@ -11,6 +11,14 @@
   其余系统应用可以额外勾选一起预装。底线取自 `CloneStore.essentialPkgs()`，按包名特征探测，
   换 ROM 不会漏（Flyme 的文件选择器叫 `com.meizu.picker`，AOSP 叫 `documentsui`）。
 
+### 新增（增强插件，仅 root + LSPosed）
+- **空间应用能用输入法**：AOSP 的 IMS 会拒绝对「后台用户」的输入法请求
+  （`A background user is requesting window. Hiding IME.`），自建空间不在当前 profile 列表里，
+  于是点输入框没反应。插件现在 hook `InputMethodSettings.isCurrentProfile(int)` 放行我们自己的空间，
+  实测空间里的应用（含 DocumentsUI 搜索框）能正常弹出输入法、`mInputShown=true`。
+  另有两层 hook（`queryMethodMapForUser`、`bindServiceAsUser`）为「空间不装输入法、直接用主空间那份」准备，
+  目前只验证到第一层生效，后两层尚未打通，暂不当作已完成能力。
+
 ### 修复
 - **共享存储检测误判**：`sm list-volumes` 报 `mounted` 不代表该用户的目录存在——sdcardfs 模式的
   挂载点由 vold 在「卷刚 MOUNTED」那一刻批量创建，运行期新建的用户赶不上。现在先看卷状态，

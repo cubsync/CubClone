@@ -204,11 +204,18 @@ public final class HookMain extends XposedModule {
         } catch (Throwable t) {
             Log.w(TAG, "launcher apps hook failed: " + t);
         }
+        // 输入法重定向：空间不装输入法，绑定到主用户那份（对应原生分身的 userId=0 处理）
+        int ime = 0;
+        try {
+            ime = new InputRedirectHook(this).apply(cl);
+        } catch (Throwable t) {
+            Log.w(TAG, "ime redirect hook failed: " + t);
+        }
         // 「禁止补桌面图标」的钩子装在桌面进程里（见 onPackageLoaded）：
         // system_server 的 classloader 里没有 launcher 的类，这里不装。
         mark(PROP_APPLY, "ctor=" + ctors + ",m=" + methods + ",i=" + install
                 + ",u=" + cap + ",f=" + flyme + ",w=" + wm + ",l=" + lock + ",lp=" + lp
-                + ",la=" + la);
+                + ",la=" + la + ",ime=" + ime);
         if (ctors > 0 || methods > 0) {
             mark(PROP, "1");
         }

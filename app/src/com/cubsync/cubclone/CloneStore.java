@@ -322,7 +322,15 @@ public final class CloneStore {
                     || p.equals("com.android.keychain")
                     || p.contains("soterserver")     // 支付安全组件
                     || p.contains("ifaa")
-                    || p.contains("providers.media")) {
+                    || p.contains("providers.media")
+                    // ↓ 缺了这三个，空间里的应用根本起不来（G7 实测 2026-11-27）
+                    || p.endsWith("providers.settings")   // Settings.Global 的提供者，
+                                                          // 少了它任何 Activity 在 PhoneWindow
+                                                          // 构造时就 NPE 闪退
+                    || p.endsWith("externalstorage")      // /storage 访问
+                    || p.endsWith("providers.downloads")  // 下载管理器
+                    || p.equals("com.android.settings")   // 「应用信息」页由它提供
+                    ) {
                 out.add(p);
             }
         }
@@ -342,8 +350,10 @@ public final class CloneStore {
      * <p>禁用清单要排除在「不装」之外：它们是「装了但不给用」，得先装进去再禁用。
      */
     static Set<String> notInstallSet(Context c) {
-        Set<String> all = systemPkgs();
         Set<String> out = new HashSet<String>();
+        // 总开关：关掉＝三个清单都不执行，建号就是系统默认行为（全装）
+        if (!pruneSys(c)) return out;
+        Set<String> all = systemPkgs();
         if (all.isEmpty()) return out;          // 查不到就传空，退回老行为（不误伤）
         Set<String> keep = essentialPkgs(c);
         keep.addAll(extraDisable(c));
@@ -843,9 +853,11 @@ public final class CloneStore {
      */
     static int cleanSpace(Context c, int uid) {
         try {
-            ensureIme(uid);
-            applyDisableList(c, uid);
-            applyHideList(c);
+            ensureIme(uid);                     // 输入法是「空间能用」的前提，不受清单开关管
+            if (pruneSys(c)) {                  // 总开关：关掉＝禁用清单和隐藏清单都不执行
+                applyDisableList(c, uid);
+                applyHideList(c);
+            }
         } catch (Throwable ignored) {
         }
         return 0;

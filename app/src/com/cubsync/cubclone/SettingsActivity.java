@@ -185,6 +185,7 @@ public class SettingsActivity extends Activity {
         lineLook = findViewById(R.id.line_look);
         swAll = findViewById(R.id.sw_all);
         swIcon = findViewById(R.id.sw_icon);
+        swKeepSys = findViewById(R.id.sw_keep_sys);
         swManageForeign = findViewById(R.id.sw_manage_foreign);
         findViewById(R.id.keep_extra_entry).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { showDisableExtra(); }
@@ -297,6 +298,14 @@ public class SettingsActivity extends Activity {
             }
         });
 
+        swKeepSys.setChecked(CloneStore.pruneSys(this));
+        swKeepSys.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(android.widget.CompoundButton v, boolean checked) {
+                sp().edit().putBoolean("prune_sys", checked).apply();
+                CloneStore.dirty = true;
+            }
+        });
+
         swManageForeign.setChecked(sp().getBoolean("manage_foreign", false));
         swManageForeign.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(android.widget.CompoundButton v, boolean checked) {
@@ -370,7 +379,7 @@ public class SettingsActivity extends Activity {
                 recentRowsLabel, recentColsLabel};
         for (TextView t : mains) if (t != null) t.setTextColor(fgColor);
         // 开关旁边的文字（recent/keep_sys/manage_foreign/space_badge/show_disabled）也要跟主题色，否则默认灰色
-        for (int id : new int[]{R.id.recent_show_label,
+        for (int id : new int[]{R.id.recent_show_label, R.id.sys_keep_label,
                 R.id.manage_foreign_label,
                 R.id.space_badge_label, R.id.show_disabled_label,
                 R.id.keep_extra_label, R.id.uninstall_extra_label, R.id.hidden_sys_label,
@@ -385,6 +394,8 @@ public class SettingsActivity extends Activity {
         if (sbh != null) sbh.setTextColor(secColor);
         TextView sdh = findViewById(R.id.show_disabled_hint);
         if (sdh != null) sdh.setTextColor(secColor);
+        TextView ksh = findViewById(R.id.keep_sys_hint);
+        if (ksh != null) ksh.setTextColor(secColor);
         TextView keh = findViewById(R.id.keep_extra_hint);
         if (keh != null) keh.setTextColor(secColor);
         TextView ueh = findViewById(R.id.uninstall_extra_hint);

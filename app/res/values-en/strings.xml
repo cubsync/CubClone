@@ -128,7 +128,9 @@ Requires root + LSPosed: enable the module in LSPosed, then reboot once.</string
     <string name="delete_space_msg">Deleting space uid %1$d removes all cloned apps and their data inside it. The copy in the primary space is not affected.\n\nOwner data is never touched.</string>
     <string name="delete_space_msg_foreign">⚠️ This is a system clone space, not created by this app. Deleting it removes all apps and their data inside, and cannot be undone.\n\nDelete space uid %1$d?</string>
     <string name="new_space_name">Space name (optional)</string>
-    <string name="creating">Creating space and preprocessing system apps, this may take a while…</string>
+    <string name="creating">Creating space…</string>
+    <string name="stage_ime">Setting up input methods…</string>
+    <string name="stage_done">Space ready: uid %1$d</string>
     <string name="create_failed">Failed: %1$s</string>
     <string name="loading">Loading…</string>
 

@@ -1866,7 +1866,7 @@ public class MainActivity extends Activity {
                         CloneStore.markPending(got);
                         Launcher.hideSelfFrom(got);
                         t.add(Integer.valueOf(got));
-                        // 装应用前必须就绪；预处理系统应用一并做完
+                        // 装应用前必须就绪；系统应用建号时已排除，收尾只装输入法 + 勾选的禁用项
                         CloneStore.readySpace(MainActivity.this, got);
                         CloneStore.cleanSpace(MainActivity.this, got);
                     } else {
@@ -2067,6 +2067,11 @@ public class MainActivity extends Activity {
                 CloneStore.markOurs(uid);
                 CloneStore.markPending(uid);
                 CloneStore.readySpace(MainActivity.this, uid);
+                // 系统应用已在建号时排除（CloneStore.notInstallSet），这里只剩输入法和
+                // 你勾过的禁用项，一两秒内结束；给一句阶段提示，别让人以为卡住。
+                runOnUiThread(new Runnable() {
+                    public void run() { say(getString(R.string.stage_ime)); }
+                });
                 CloneStore.cleanSpace(MainActivity.this, uid);
                 installIntoClone(g, uid, false, name, true);
             }
@@ -2216,10 +2221,12 @@ public class MainActivity extends Activity {
         // 老空间再装：只有这次装的正好是输入法时才同步——否则包进去了，但
         // enabled_input_methods 里没有它，键盘列表里根本选不到（看着就是「没装上」）。
         if (!reused || CloneStore.isIme(g.pkg)) CloneStore.ensureIme(uid);
-        // 新空间会被系统灌进主身份里的全部应用（OP12 上 25 个三方全来了、红米 184 个包），
-        // 一加桌面会把它们整个摆出来 ⇒ 建完立刻按登记表清掉，只留刚装进去的这个
+        // 新空间建号时已经把不要的系统应用排除在外（见 CloneStore.notInstallSet），
+        // 正常情况下这里不需要再扫。只有「不装集合算不出来」（shell 查询失败）时
+        // 才退回老的全量清理兜底，避免把一屏系统应用留给用户。
         int left = 0;
-        if (!reused && installed && CloneStore.pruneSys(MainActivity.this)) {
+        if (!reused && installed && CloneStore.notInstallSet(MainActivity.this).isEmpty()
+                && CloneStore.pruneSys(MainActivity.this)) {
             left = CloneStore.pruneSpace(MainActivity.this, uid, true);
         }
         final int fu = uid;

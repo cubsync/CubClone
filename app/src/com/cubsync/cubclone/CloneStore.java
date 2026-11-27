@@ -95,6 +95,9 @@ public final class CloneStore {
     /** 三方包集合的副本：设置页要按它数「这个空间里有几个三方应用」（不额外起 shell） */
     static volatile Set<String> THIRD = new HashSet<String>();
 
+    /** 主空间系统包集合缓存（建空间算「不装集合」用；`pm list packages -s` 一次 86ms） */
+    private static volatile Set<String> SYS_PKGS;
+
     /** 主界面数据变更标志：建/删/装/精简空间后置 true，onResume 重拉 */
     static volatile boolean dirty = true;
     /** 应用元信息（图标/名字）变更标志 */
@@ -265,18 +268,85 @@ public final class CloneStore {
         return sb.toString() + SCAN;
     }
 
-    /** 建空间命令：把「不装清单」一起带给 CLI，新空间建号时就不装这些应用 */
+    /** 建空间命令：算出「不装集合」一起带给 CLI，新空间建号时就不装这些应用 */
     static String createCmd(Context c, String name) {
         attach(c);
         StringBuilder sb = new StringBuilder(CLI).append(" create '")
                 .append(name.replace("'", "")).append("'");
         StringBuilder ni = new StringBuilder();
-        for (String p : extraUninstall(c)) {
+        for (String p : notInstallSet(c)) {
             if (ni.length() > 0) ni.append(',');
             ni.append(p);
         }
         if (ni.length() > 0) sb.append(" '").append(ni).append("'");
         return sb.toString();
+    }
+
+    /** 主空间全部系统包（缓存；失败返回空集，调用方按「没算出来」处理） */
+    static Set<String> systemPkgs() {
+        Set<String> s = SYS_PKGS;
+        if (s != null) return s;
+        Set<String> out = new HashSet<String>();
+        String r = Shell.exec("pm list packages -s 2>/dev/null");
+        for (String line : r.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("package:")) out.add(t.substring(8).trim());
+        }
+        if (!out.isEmpty()) SYS_PKGS = out;
+        return out;
+    }
+
+    /**
+     * 空间跑起来的最低要求：这些包必须装进去，其余系统包一律不装。
+     *
+     * <p>不硬编码整份清单：按包名特征匹配主空间实际存在的包，ROM 换了也不会漏
+     * （实测魅族文件选择器叫 {@code com.meizu.picker}，AOSP 叫 {@code documentsui}）。
+     * 三家参考实现的分身用户只有 8–10 个包，共同项只有 android / WebView / GMS。
+     */
+    static Set<String> essentialPkgs(Context c) {
+        Set<String> out = new HashSet<String>();
+        out.add("android");
+        Set<String> all = systemPkgs();
+        for (String p : all) {
+            if (p.endsWith(".documentsui")          // AOSP 文件选择器
+                    || p.contains("picker")          // 厂商文件选择器
+                    || p.contains("permissioncontroller")
+                    || p.contains("packageinstaller")
+                    || p.endsWith(".ext.services")
+                    || p.equals("com.android.phone")
+                    || p.equals("com.android.keychain")
+                    || p.contains("soterserver")     // 支付安全组件
+                    || p.contains("ifaa")
+                    || p.contains("providers.media")) {
+                out.add(p);
+            }
+        }
+        out.addAll(mustKeep(c));      // WebView + 全部输入法
+        out.addAll(defaultKeep(c));   // GMS / GSF / Vending
+        out.addAll(resolverPkgs(c));  // 打开网页/图片/分享文本的默认应用
+        return out;
+    }
+
+    /**
+     * 建号时要排除的包 = 主空间全部系统包 − 必需包 − 禁用清单 − 不装清单。
+     *
+     * <p>交给系统的 {@code createProfileForUser(..., disallowedPackages)} 一次生效：
+     * 建号那一刻这些包在这个用户里就是「未安装」，不需要建完再一个个禁用。
+     * G7 实测：传 249 个 → 新空间只剩 8 个包，与系统自带分身完全一致。
+     *
+     * <p>禁用清单要排除在「不装」之外：它们是「装了但不给用」，得先装进去再禁用。
+     */
+    static Set<String> notInstallSet(Context c) {
+        Set<String> all = systemPkgs();
+        Set<String> out = new HashSet<String>();
+        if (all.isEmpty()) return out;          // 查不到就传空，退回老行为（不误伤）
+        Set<String> keep = essentialPkgs(c);
+        keep.addAll(extraDisable(c));
+        keep.addAll(extraUninstall(c));
+        for (String p : all) {
+            if (!keep.contains(p)) out.add(p);
+        }
+        return out;
     }
 
     /** 某空间登记的包；null 表示老版本建的空间，没登记过 */
@@ -758,16 +828,39 @@ public final class CloneStore {
     }
 
     /**
-     * 建号后的收尾（慢，一两分钟）：装输入法 + 预处理系统应用。
-     * 界面这时已经可用了，只是空间里暂时没有键盘。
+     * 建号后的收尾：装输入法 + 只禁用你勾的那几个 + 执行隐藏清单。
+     *
+     * <p>系统应用在建号时就被排除了（见 {@link #notInstallSet}），这里**不再批量禁用**——
+     * 以前那套「先全装 237 个、再逐个 pm disable」是 11-05 走反了的路，三家参考实现
+     * 没有一家这么做，而且每个包起一次进程，24 个包就是 4–8 秒的 CPU 高峰。
+     *
+     * <p>没被排除掉的老空间仍可通过 {@link #pruneSpace} 手动重扫。
      */
     static int cleanSpace(Context c, int uid) {
         try {
             ensureIme(uid);
-            if (pruneSys(c)) return pruneSpace(c, uid, true);
+            applyDisableList(c, uid);
+            applyHideList(c);
         } catch (Throwable ignored) {
         }
         return 0;
+    }
+
+    /**
+     * 禁用清单：装了但不给用。先确保装上（万一被排除在「不装」之外算错了），再禁用。
+     * 只处理用户勾选的几个包，不是全量遍历。
+     */
+    static void applyDisableList(Context c, int uid) {
+        Set<String> dis = extraDisable(c);
+        if (dis.isEmpty() || !Launcher.safe(uid)) return;
+        StringBuilder sb = new StringBuilder();
+        for (String p : dis) {
+            sb.append("pm install-existing --user ").append(uid).append(' ').append(p)
+                    .append(" >/dev/null 2>&1; ");
+            sb.append("pm disable-user --user ").append(uid).append(' ').append(p)
+                    .append(" >/dev/null 2>&1; ");
+        }
+        Shell.exec(sb.toString());
     }
 
     /**

@@ -189,6 +189,7 @@
     <string name="space_full">分身空间用满了（本机最多 %1$s 个），删一个再建</string>
     <string name="hint_auto_icon">系统要求桌面确认一次才能加图标，这个开关只是省掉手动点＋号</string>
     <string name="install_failed">「%1$s」没装进分身：%2$s</string>
+    <string name="storage_not_ready">共享存储不可用：照片、下载、截图可能保存失败</string>
     <string name="prune_failed">，还有 %1$s 个应用没清掉</string>
     <string name="space_row2">%1$s · uid %2$d · %3$d 个分身应用</string>
     <string name="space_row2_foreign">%1$s · uid %2$d</string>

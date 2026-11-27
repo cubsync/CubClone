@@ -2250,6 +2250,9 @@ public class MainActivity extends Activity {
         // 以前只认 success ⇒ 每次创建都被当成失败：不登记、不清理、界面还报「没装进分身」
         final String low = ir.toLowerCase();
         final boolean installed = low.contains("installed") || low.contains("success");
+        // 存储就绪检测（ColorOS 的 isMultiAppExternalStorageReady 同思路）：
+        // 卷没挂上时应用能跑，但写 /sdcard 会失败，先在结果里说清楚
+        final boolean storageOk = CloneStore.storageReady(uid);
         // 登记：这个空间里「该有」的包。清理只认这张表，不再靠「三方还是系统」猜
         if (installed && claim) CloneStore.markKept(MainActivity.this, uid, g.pkg);
         // 新空间：装上主空间输入法并抄一份设置。
@@ -2279,6 +2282,7 @@ public class MainActivity extends Activity {
                         // 删不掉就照实说，别让用户以为清干净了
                         msg += getString(R.string.prune_failed, String.valueOf(fleft));
                     }
+                    if (!storageOk) msg += "\n" + getString(R.string.storage_not_ready);
                     say(msg);
                 }
                 refresh();

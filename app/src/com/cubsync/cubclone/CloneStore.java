@@ -657,6 +657,28 @@ public final class CloneStore {
     }
 
     /** 「建空间后禁用多余系统应用」开关（老 key keep_sys 语义相反，读到时迁移成 prune_sys） */
+    /**
+     * 共享存储是否真的能用：先看卷状态，再实地探一次目录。
+     * <p>卷报 mounted 不代表该用户的目录存在——sdcardfs 模式下挂载点由 vold 在
+     * 「卷刚 MOUNTED」那一刻批量创建，运行期新建的用户赶不上，目录永远不会出现。
+     * 所以只看 sm 的状态会误判为可用，必须再探 `/storage/emulated/&lt;uid&gt;`。
+     * <p>这里只做检测，供界面如实提示，不做修复。
+     */
+    static boolean storageReady(int uid) {
+        String out = Shell.exec("sm list-volumes all");
+        if (out != null && !out.startsWith("ERR_")) {
+            for (String line : out.split("\n")) {
+                String t = line.trim();
+                if (t.startsWith("emulated;" + uid + " ")) {
+                    if (!t.contains(" mounted")) return false;
+                    break;
+                }
+            }
+        }
+        String probe = Shell.exec("test -d /storage/emulated/" + uid + " && echo D_OK || echo D_NO");
+        return probe != null && probe.contains("D_OK");
+    }
+
     static boolean pruneSys(Context c) {
         SharedPreferences sp = c.getSharedPreferences("clone", Context.MODE_PRIVATE);
         if (sp.contains("keep_sys")) {

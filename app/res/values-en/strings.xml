@@ -189,6 +189,7 @@ Owner data is not touched.</string>
     <string name="space_full">No free space left (this device allows %1$s), delete one first</string>
     <string name="hint_auto_icon">Android requires a launcher confirmation once; this only saves you the + tap</string>
     <string name="install_failed">Could not install %1$s into the clone: %2$s</string>
+    <string name="storage_not_ready">Shared storage unavailable: photos, downloads and screenshots may fail to save</string>
     <string name="prune_failed">; %1$s app(s) could not be cleaned</string>
     <string name="space_row2">%1$s · uid %2$d · %3$d clone apps</string>
     <string name="space_row2_foreign">%1$s · uid %2$d</string>

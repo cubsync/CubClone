@@ -8,7 +8,6 @@ import android.os.Binder;
 import android.os.UserHandle;
 import android.util.Log;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -16,26 +15,35 @@ import java.util.concurrent.atomic.AtomicInteger;
 import io.github.libxposed.api.XposedInterface;
 
 /**
- * 让系统桌面（launcher）看不到我们建的空间里的应用。
+ * 让系统桌面（launcher）看不到我们建的空间里的应用，同时不影响最近任务。
  *
  * <p>现象（G7 实测，2026-11-25）：建一个 clone 空间并装进应用后，桌面自动多出一页——
  * 空间里的电话/设置/图库/CubDesk 全被摆上去了。根因是 {@code LauncherApps} 会把当前用户
  * 同组的 profile 一起拉进来。
  *
- * <h3>为什么要改拦截点（2026-11-27 回归）</h3>
- * 之前 hook 的是 {@code UserManagerService.getProfileIds()}，按「调用者是桌面」把我们的 uid
- * 从结果里剔掉。但 Flyme 的<b>最近任务也在桌面进程里</b>，它同样走这个方法拿 profile 列表，
- * 结果任务卡片上的图标和名称全没了（{@code lp=3->2}、{@code hits=4668} 为证）。同一个进程、
- * 同一个 API，靠调用者根本区分不出「拉桌面图标」和「画任务卡片」。
+ * <h3>拦截点怎么定的（2026-11-27，全部来自反编译）</h3>
+ * 桌面要「全量应用列表」和最近任务要「单个应用的图标/名字」走的是不同方法：
+ * <ul>
+ *   <li><b>全量列表</b>：Flyme 走 {@code queryIntentLauncherActivities(Intent, int, UserHandle)}
+ *       ——魅族桌面 dex 里 {@code queryIntentActivities} 出现 6 次、{@code getLauncherActivities} 0 次；
+ *       AOSP/ColorOS 走 {@code getActivityList}/{@code getLauncherActivities} 的
+ *       {@code packageName == null} 分支。这两条**清空结果**，桌面就看不到空间应用。</li>
+ *   <li><b>单包查询</b>：最近任务拿任务所属用户的图标和名字时，带包名调
+ *       {@code getLauncherActivities(pkg, …)}（实测打开最近任务 {@code hits} 从 6 涨到 23）。
+ *       这条**原样放行**，否则任务卡片的图标和标题会一起消失。</li>
+ * </ul>
  *
- * <p>现在只拦「拉全部可启动应用」那一次调用：包名为 {@code null} 时把结果清空。
- * 方法名各家不同 —— AOSP / ColorOS 是 {@code getActivityList}，Flyme 反编译出来是
- * {@code getLauncherActivities}（它的 services.jar 里根本没有 {@code getActivityList}），
- * 两个都挂，存在哪个挂哪个。任务管理器按包名查单个应用的标题/图标，包名非空，原样放行；
- * {@code getProfileIds} 恢复系统原样，别的组件不再被误伤。
+ * <p>所以别再按「调用者是桌面」一刀切：Flyme 的最近任务就跑在桌面进程里
+ * （{@code isHomeRecentsComponent=true}），按进程分不开，只能按方法分。
+ * {@code getProfileIds} / {@code UserManagerService} 一律不碰，系统其它组件不受影响。
  *
- * <p>代价：launcher 仍然知道那个 profile 存在（只是应用列表为空），极端情况下可能多出一个
- * 空的分页。这比「最近任务没有图标和名字」轻得多。
+ * <p>可调：{@code persist.sys.cubclone.lp.mode}
+ * <ul>
+ *   <li>0 = 全放行（对照用）</li>
+ *   <li>1 = 默认：全量列表清空 + 单包查询放行</li>
+ *   <li>2 = 激进：单包查询也清空（旧版行为，会伤最近任务）</li>
+ * </ul>
+ * 每次调用现读，改完立即生效。
  */
 final class LauncherProfileHook {
 
@@ -45,6 +53,11 @@ final class LauncherProfileHook {
 
     static final String PROP_HITS = "sys.cubclone.hook.lp.hits";
     static final String PROP_LAST = "sys.cubclone.hook.lp";
+    /** 全量列表被清空的次数（桌面铺图标） */
+    static final String PROP_HITS_LIST = "sys.cubclone.hook.lp.q";
+    /** 单包查询被清空的次数（只有 mode=2 才会涨） */
+    static final String PROP_HITS_ONE = "sys.cubclone.hook.lp.a";
+    static final String PROP_MODE = "persist.sys.cubclone.lp.mode";
 
     /** 默认 HOME 解析失败时兜底认这些包名 */
     private static final String[] KNOWN_LAUNCHERS = {
@@ -59,7 +72,17 @@ final class LauncherProfileHook {
             "com.sec.android.app.launcher",
     };
 
+    /** 全量列表接口：参数里带 UserHandle，结果里是该用户全部可启动应用 */
+    private static final String[] LIST_METHODS = {
+            "queryIntentLauncherActivities",      // Flyme：桌面抽屉
+            "queryActivitiesForUser",             // Flyme/AOSP：同上，上层封装
+            "getActivityList",                    // AOSP / ColorOS
+            "getLauncherActivities",              // Flyme 服务端方法名
+    };
+
     private static final AtomicInteger HITS = new AtomicInteger();
+    private static final AtomicInteger HITS_LIST = new AtomicInteger();
+    private static final AtomicInteger HITS_ONE = new AtomicInteger();
     /** -2 = 尚未解析；-1 = 解析失败；>0 = 桌面 uid */
     private static volatile int homeUid = -2;
 
@@ -79,19 +102,19 @@ final class LauncherProfileHook {
         }
         int n = 0;
         for (Method m : impl.getDeclaredMethods()) {
-            // 同一个用途各家名字不同：AOSP/ColorOS 是 getActivityList，
-            // Flyme 反编译出来是 getLauncherActivities（services.jar 里根本没有 getActivityList）。
-            // 两个都认，存在哪个挂哪个。
             String name = m.getName();
-            if (!"getActivityList".equals(name) && !"getLauncherActivities".equals(name)) {
+            if (!contains(LIST_METHODS, name)) {
                 continue;
             }
             Class<?>[] pt = m.getParameterTypes();
-            if (pt.length < 3 || pt[0] != String.class) {
-                continue;
+            if (pt.length < 2 || pt[0] != String.class) {
+                // queryIntentLauncherActivities 第一个参数是 Intent
+                if (pt.length < 2 || pt[0] != Intent.class) {
+                    continue;
+                }
             }
             int userArg = -1;
-            for (int i = 1; i < pt.length; i++) {
+            for (int i = 0; i < pt.length; i++) {
                 if (pt[i] == UserHandle.class) {
                     userArg = i;
                     break;
@@ -100,6 +123,8 @@ final class LauncherProfileHook {
             if (userArg < 0) {
                 continue;
             }
+            // 单包查询：带包名（String 第一个参数）的是最近任务那条，只有 mode=2 才拦
+            final boolean single = pt[0] == String.class;
             final int ua = userArg;
             try {
                 m.setAccessible(true);
@@ -110,12 +135,17 @@ final class LauncherProfileHook {
                 xp.hook(m)
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(chain -> {
-                            // 按包名查单个应用（任务管理器取标题/图标）必须放行，
-                            // 否则最近任务又会变成没有名字的空白卡片。
-                            if (chain.getArg(0) != null) {
+                            if (!HookMain.propOn(LauncherAppsHook.PROP_ENABLE)) {
                                 return chain.proceed();
                             }
-                            if (!HookMain.propOn(LauncherAppsHook.PROP_ENABLE)) {
+                            int mode = mode();
+                            if (mode <= 0) {
+                                return chain.proceed();
+                            }
+                            Object pkg = chain.getArg(0);
+                            boolean full = !single || pkg == null;
+                            if (single && !full && mode < 2) {
+                                // 最近任务按包名查图标/名字，必须放行
                                 return chain.proceed();
                             }
                             Object r = chain.proceed();
@@ -131,13 +161,21 @@ final class LauncherProfileHook {
                             if (!fromLauncher(ctx)) {
                                 return r;
                             }
-                            int k = HITS.incrementAndGet();
-                            HookMain.mark(PROP_HITS, String.valueOf(k));
-                            HookMain.mark(PROP_LAST, "empty uid=" + uid);
-                            if (k == 1) {
-                                Log.i(TAG, "lp: hide activity list of uid " + uid);
+                            int total = HITS.incrementAndGet();
+                            HookMain.mark(PROP_HITS, String.valueOf(total));
+                            if (full) {
+                                int k = HITS_LIST.incrementAndGet();
+                                HookMain.mark(PROP_HITS_LIST, String.valueOf(k));
+                            } else {
+                                int k = HITS_ONE.incrementAndGet();
+                                HookMain.mark(PROP_HITS_ONE, String.valueOf(k));
                             }
-                            return emptyList(r);
+                            HookMain.mark(PROP_LAST, (full ? "list " : "one ")
+                                    + name + " uid=" + uid);
+                            if (total == 1) {
+                                Log.i(TAG, "lp: hide " + name + " of uid " + uid);
+                            }
+                            return empty(r);
                         });
                 n++;
             } catch (Throwable t) {
@@ -148,17 +186,37 @@ final class LauncherProfileHook {
         return n;
     }
 
+    /** 0=全放行 1=默认 2=连单包查询也拦 */
+    private static int mode() {
+        String v = HookMain.getProp(PROP_MODE);
+        if (v.length() == 0) {
+            return 1;
+        }
+        try {
+            return Integer.parseInt(v.trim());
+        } catch (Throwable t) {
+            return 1;
+        }
+    }
+
+    private static boolean contains(String[] a, String s) {
+        for (String x : a) {
+            if (x.equals(s)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * 把结果清空。返回类型各版本不同（{@code List} 或 {@code ParceledListSlice}），
-     * 统一按「原来的对象、清掉里面的列表」处理，类型一定对得上；失败就原样返回（等于没拦，
-     * 但不会崩）。
+     * 优先按「同类型 + 空列表」新建一个（ParceledListSlice 的 mTotalCount 是构造时算的，
+     * 直接 clear 内部 list 会让计数和内容对不上）；失败就清原列表，再失败原样返回。
      */
-    private static Object emptyList(Object r) {
+    private static Object empty(Object r) {
         if (r == null) {
             return null;
         }
-        // 优先新建一个空对象：ParceledListSlice 的 mTotalCount 是构造时算的，
-        // 直接 clear 内部 list 会让计数和内容对不上。
         try {
             java.lang.reflect.Constructor<?> c = r.getClass().getConstructor(List.class);
             return c.newInstance(java.util.Collections.emptyList());

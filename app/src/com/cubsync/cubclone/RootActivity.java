@@ -41,9 +41,6 @@ public class RootActivity extends Activity {
     private ImageButton btnBack;
     private TextView rtLimitSec, rtLimitState, rtLimitHint, rtLimitInstall, rtLimitTune;
     private TextView rtPluginState;
-    private TextView rtPluginAction;
-    /** 插件动作：0=重装 1=更新 2=待重启（只弹提示，不装） */
-    private int pluginActionMode;
     private LinearLayout rtLimitCard;
     private TextView rtInstallLabel, rtInstallState, rtInstallHint;
     private LinearLayout rtInstallCard;
@@ -52,6 +49,9 @@ public class RootActivity extends Activity {
     private Switch swGuard;
     private LinearLayout rtGuardCard;
     private boolean guardBinding;
+    private TextView rtHideLabel, rtHideState, rtHideHint;
+    private Switch swHide;
+    private boolean hideBinding;
     /** 程序化 setChecked 会回调监听器，用这个挡住，免得自己把属性写一圈 */
     private boolean installBinding;
 
@@ -87,10 +87,6 @@ public class RootActivity extends Activity {
 
         rtLimitSec = findViewById(R.id.rt_limit_sec);
         rtPluginState = findViewById(R.id.rt_plugin_state);
-        rtPluginAction = findViewById(R.id.rt_plugin_action);
-        rtPluginAction.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { onPluginAction(); }
-        });
         rtLimitCard = findViewById(R.id.rt_limit_card);
         rtLimitState = findViewById(R.id.rt_limit_state);
         rtLimitHint = findViewById(R.id.rt_limit_hint);
@@ -124,6 +120,17 @@ public class RootActivity extends Activity {
             public void onCheckedChanged(CompoundButton v, boolean checked) {
                 if (guardBinding) return;
                 saveGuard(checked);
+            }
+        });
+
+        rtHideLabel = findViewById(R.id.rt_hide_label);
+        rtHideState = findViewById(R.id.rt_hide_state);
+        rtHideHint = findViewById(R.id.rt_hide_hint);
+        swHide = findViewById(R.id.rt_hide);
+        swHide.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton v, boolean checked) {
+                if (hideBinding) return;
+                saveHide(checked);
             }
         });
 
@@ -163,6 +170,7 @@ public class RootActivity extends Activity {
         renderLimit();
         renderInstall();
         renderGuard();
+        renderHide();
         renderPluginState();
         // 直接进本页（不经设置页）时 Shell 还没探测过，ready() 是 false，
         // 两个插件区块会误报「需要先授权 root」。这里自己探一次再重画。
@@ -174,6 +182,7 @@ public class RootActivity extends Activity {
                         renderLimit();
                         renderInstall();
                         renderGuard();
+                        renderHide();
                         renderPluginState();
                     }
                 });
@@ -188,6 +197,7 @@ public class RootActivity extends Activity {
         renderLimit();
         renderInstall();
         renderGuard();
+        renderHide();
         renderPluginState();
     }
 
@@ -198,13 +208,13 @@ public class RootActivity extends Activity {
      *   <li><b>已装</b>：模块 APK 的 versionName，装完立刻变；</li>
      *   <li><b>内嵌</b>：主应用 assets 里带的那一份，就是「可用的最新版」，不用联网。</li>
      * </ul>
-     * 四态：正常运行（绿）／有新版本（橙，可点更新）／已装新版待重启（橙）／未装未启用（灰）。
+     * 四态：正常运行（绿）／有新版本（橙）／已装新版待重启（橙）／未装未启用（灰）。
+     * 只写文字不给按钮：装插件用下面卡片里的「重装增强插件」，多一个入口是重复。
      */
     private void renderPluginState() {
         if (rtPluginState == null) return;
         if (!Shell.ready()) {
             rtPluginState.setText("");
-            if (rtPluginAction != null) rtPluginAction.setVisibility(View.GONE);
             return;
         }
         new Thread(new Runnable() {
@@ -216,71 +226,46 @@ public class RootActivity extends Activity {
                 runOnUiThread(new Runnable() {
                     public void run() {
                         if (isFinishing() || rtPluginState == null) return;
-                        int mode;   // 0=重装 1=更新 2=待重启
                         String text;
                         int color;
-                        if (active && run != null && ins != null && !ins.equals(run)) {
-                            // 装了新版但进程里还在跑旧的
+                        if (ins != null && bundled != null
+                                && CloneStore.verCmp(bundled, ins) > 0) {
+                            // 内嵌的比已装的新：先让用户能拿到新版。
+                            // 这条必须排在最前 —— 否则「已装 ≠ 运行」会先命中「重启生效」，
+                            // 用户永远看不到还有新版可装（魅族实测 reg=dev.5 / ins=dev.6 / 内嵌 dev.7）。
+                            text = run == null
+                                    ? getString(R.string.plugin_state_new_idle, ins, bundled)
+                                    : getString(R.string.plugin_state_new, run, ins, bundled);
+                            color = Theme.warn(RootActivity.this);
+                        } else if (active && run != null && ins != null && !ins.equals(run)) {
+                            // 已装就是最新，但进程里还在跑旧的
                             text = getString(R.string.plugin_state_pending, run, ins);
                             color = Theme.warn(RootActivity.this);
-                            mode = 2;
-                        } else if (ins != null && bundled != null
-                                && CloneStore.verCmp(bundled, ins) > 0) {
-                            // 内嵌的比已装的新，可以更新
-                            text = getString(R.string.plugin_state_new,
-                                    run == null ? ins : run, ins, bundled);
-                            color = Theme.warn(RootActivity.this);
-                            mode = 1;
                         } else if (active && run != null && ins != null) {
                             text = getString(R.string.plugin_state_running, run, ins);
                             color = Theme.green(RootActivity.this);
-                            mode = 0;
                         } else if (active && run != null) {
                             text = getString(R.string.plugin_state_running_only, run);
                             color = Theme.green(RootActivity.this);
-                            mode = 0;
                         } else if (active && ins != null) {
                             text = getString(R.string.plugin_state_running_old, ins);
                             color = Theme.green(RootActivity.this);
-                            mode = 0;
                         } else if (active) {
                             text = getString(R.string.plugin_state_active);
                             color = Theme.green(RootActivity.this);
-                            mode = 0;
                         } else if (ins != null) {
                             text = getString(R.string.plugin_state_installed, ins);
                             color = sec;
-                            mode = 0;
                         } else {
                             text = getString(R.string.plugin_state_none);
                             color = sec;
-                            mode = 0;
                         }
                         rtPluginState.setText(text);
                         rtPluginState.setTextColor(color);
-                        pluginActionMode = mode;
-                        if (rtPluginAction != null) {
-                            rtPluginAction.setVisibility(View.VISIBLE);
-                            rtPluginAction.setText(mode == 2 ? getString(R.string.plugin_action_reboot)
-                                    : mode == 1 ? getString(R.string.plugin_action_update, bundled)
-                                    : getString(R.string.plugin_action_reinstall));
-                            if (rtPluginAction.getBackground() != null) {
-                                rtPluginAction.getBackground().setTint(Theme.chipBg(RootActivity.this));
-                            }
-                            rtPluginAction.setTextColor(mode == 2 ? color : Theme.chipFg(RootActivity.this));
-                        }
                     }
                 });
             }
         }).start();
-    }
-
-    private void onPluginAction() {
-        if (pluginActionMode == 2) {
-            toast(getString(R.string.plugin_action_reboot));
-            return;
-        }
-        installModule();
     }
 
     /** 总开关关掉时，下面两个单项一起置灰但保留原值（重新打开总开关就恢复） */
@@ -354,41 +339,23 @@ public class RootActivity extends Activity {
     }
 
     /** 只负责装；LSPosed 里的启用和重启必须用户自己来，我们不改它的配置库 */
-    /** 装之前先弹确认：装完必须重启手机才生效，不能一句话不说就装。 */
     private void installModule() {
         if (!Shell.ready()) {
             toast(getString(R.string.limit_need_perm));
             return;
         }
-        final String ver = CloneStore.hookBundledVersion();
-        new android.app.AlertDialog.Builder(this)
-                .setTitle(ver == null ? getString(R.string.limit_install)
-                        : getString(R.string.plugin_install_confirm_title, ver))
-                .setMessage(R.string.plugin_install_confirm_msg)
-                .setPositiveButton(android.R.string.ok,
-                        new android.content.DialogInterface.OnClickListener() {
-                            public void onClick(android.content.DialogInterface d, int w) {
-                                doInstallModule();
-                            }
-                        })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
+        doInstallModule();
     }
 
     private void doInstallModule() {
         rtLimitInstall.setEnabled(false);
         rtLimitInstall.setText(R.string.limit_installing);
-        if (rtPluginAction != null) {
-            rtPluginAction.setEnabled(false);
-            rtPluginAction.setText(R.string.limit_installing);
-        }
         new Thread(new Runnable() {
             public void run() {
                 final String err = CloneStore.installUnlockModule(RootActivity.this);
                 runOnUiThread(new Runnable() {
                     public void run() {
                         rtLimitInstall.setEnabled(true);
-                        if (rtPluginAction != null) rtPluginAction.setEnabled(true);
                         toast(err == null ? getString(R.string.limit_install_ok)
                                 : getString(R.string.limit_install_fail, err));
                         renderLimit();
@@ -571,6 +538,11 @@ public class RootActivity extends Activity {
                 final boolean val = on == null || on.booleanValue();
                 final String pts = CloneStore.guardPoints();
                 final String hits = CloneStore.guardHits();
+                final String alive = CloneStore.guardAlive();
+                // 这台桌面自己有没有「建号后往主空间补图标」这条链路：看它 APK 里的类，
+                // 不看品牌。出厂就没这段代码的机器（魅族、AOSP）本来就不需要拦。
+                // 开关关着就不用扫，省一次一秒的 dex 读取。
+                final Boolean need = val ? CloneStore.guardNeeded() : null;
                 final boolean mod = CloneStore.hookLimit() != null;
                 runOnUiThread(new Runnable() {
                     public void run() {
@@ -584,24 +556,29 @@ public class RootActivity extends Activity {
                             // 插件没装/没生效
                             rtGuardState.setText(R.string.install_no_module);
                             rtGuardState.setTextColor(sec);
-                        } else if (pts.length() == 0) {
-                            // 插件在跑，但桌面进程还没加载过模块（或刚被杀）
-                            rtGuardState.setText(R.string.guard_state_dead);
-                            rtGuardState.setTextColor(sec);
                         } else if (!val) {
                             rtGuardState.setText(R.string.guard_state_off);
                             rtGuardState.setTextColor(sec);
-                        } else if (!anyPoint(pts)) {
-                            // 所有挂载点都是 0：桌面类改名了，或桌面还没加载模块
-                            rtGuardState.setText(R.string.guard_state_dead);
-                            rtGuardState.setTextColor(Theme.red(RootActivity.this));
-                        } else {
+                        } else if (anyPoint(pts)) {
+                            // 桌面进程里确实挂上了，这是最强的证据，优先于静态探测
                             String s = getString(R.string.guard_state_on);
                             if (hits.length() > 0 && !"0".equals(hits)) {
                                 s = getString(R.string.guard_state_hits, hits);
                             }
                             rtGuardState.setText(s);
                             rtGuardState.setTextColor(Theme.green(RootActivity.this));
+                        } else if (Boolean.FALSE.equals(need)) {
+                            // 本机桌面 APK 里根本没有那套实现 —— 这台不需要防护，不是坏了
+                            rtGuardState.setText(R.string.guard_state_not_needed);
+                            rtGuardState.setTextColor(sec);
+                        } else if (Boolean.TRUE.equals(need)) {
+                            // 有这行为却一个入口都没挂上：要么模块没进桌面进程，要么类改名了
+                            rtGuardState.setText(alive.length() > 0
+                                    ? R.string.guard_state_stale : R.string.guard_state_unloaded);
+                            rtGuardState.setTextColor(Theme.red(RootActivity.this));
+                        } else {
+                            rtGuardState.setText(R.string.guard_state_unknown);
+                            rtGuardState.setTextColor(sec);
                         }
                         applyChrome();
                     }
@@ -633,6 +610,86 @@ public class RootActivity extends Activity {
         return false;
     }
 
+    /**
+     * 主桌面是否隐藏分身应用（框架层 `LauncherAppsService.isEnabledProfileOf` +
+     * `UserManagerService.getProfileIds` 两条）。
+     *
+     * <p>和上面「建空间不补图标」是两件事：这一条在 system_server 里，任何 ROM 都走，
+     * 关掉的效果是分身应用照常出现在主桌面的应用列表 / 搜索 / 文件夹里。
+     */
+    private void renderHide() {
+        if (rtHideState == null) return;
+        if (!Shell.ready()) {
+            rtHideState.setText(R.string.install_need_perm);
+            rtHideState.setTextColor(sec);
+            hideBinding = true;
+            swHide.setChecked(false);
+            hideBinding = false;
+            swHide.setEnabled(false);
+            return;
+        }
+        rtHideState.setText(R.string.loading);
+        rtHideState.setTextColor(sec);
+        new Thread(new Runnable() {
+            public void run() {
+                final Boolean on = CloneStore.hideOn();
+                if (Shell.raw("getprop", CloneStore.HOOK_HIDE_PERSIST).trim().length() == 0) {
+                    CloneStore.writeHide(on == null || on.booleanValue());
+                }
+                final boolean val = on == null || on.booleanValue();
+                final boolean mod = CloneStore.hookLimit() != null;
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (isFinishing() || rtHideState == null) return;
+                        hideBinding = true;
+                        swHide.setChecked(val);
+                        hideBinding = false;
+                        swHide.setEnabled(true);
+                        if (!mod) {
+                            rtHideState.setText(R.string.install_no_module);
+                            rtHideState.setTextColor(sec);
+                        } else if (val) {
+                            rtHideState.setText(R.string.hide_state_on);
+                            rtHideState.setTextColor(Theme.green(RootActivity.this));
+                        } else {
+                            rtHideState.setText(R.string.hide_state_off);
+                            rtHideState.setTextColor(sec);
+                        }
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void saveHide(final boolean on) {
+        if (!Shell.ready()) {
+            hideBinding = true;
+            swHide.setChecked(!on);
+            hideBinding = false;
+            toast(getString(R.string.install_need_perm));
+            return;
+        }
+        new Thread(new Runnable() {
+            public void run() {
+                final String err = CloneStore.writeHide(on);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (err != null) {
+                            hideBinding = true;
+                            swHide.setChecked(!on);
+                            hideBinding = false;
+                            toast(getString(R.string.install_save_fail, err));
+                        } else {
+                            toast(on ? getString(R.string.hide_on_toast)
+                                    : getString(R.string.hide_off_toast));
+                        }
+                        renderHide();
+                    }
+                });
+            }
+        }).start();
+    }
+
     private void saveGuard(final boolean on) {
         if (!Shell.ready()) {
             guardBinding = true;
@@ -656,6 +713,7 @@ public class RootActivity extends Activity {
                                     : getString(R.string.guard_off_toast));
                         }
                         renderGuard();
+                        renderHide();
                     }
                 });
             }
@@ -703,6 +761,8 @@ public class RootActivity extends Activity {
         if (rtInstallHint != null) rtInstallHint.setTextColor(sec);
         if (rtGuardLabel != null) rtGuardLabel.setTextColor(fg);
         if (rtGuardHint != null) rtGuardHint.setTextColor(sec);
+        if (rtHideLabel != null) rtHideLabel.setTextColor(fg);
+        if (rtHideHint != null) rtHideHint.setTextColor(sec);
         int btnBg = Theme.chipBg(this);
         int btnFg = Theme.chipFg(this);
         for (TextView t : new TextView[]{rtLimitInstall, rtLimitTune}) {

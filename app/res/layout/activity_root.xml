@@ -223,29 +223,16 @@
                 android:text="@string/plugin_hint"
                 android:textSize="12sp" />
 
-            <!-- 插件版本状态：运行中的版本 / 已装待重启 / 未安装。一行说清，重装后能看出升没升 -->
+            <!-- 插件版本状态：运行中的版本 / 已装待重启 / 未安装。一行说清，重装后能看出升没升。
+                 这里不放按钮 —— 装插件用下面卡片里的「重装增强插件」，多一个入口是重复。 -->
             <TextView
                 android:id="@+id/rt_plugin_state"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
                 android:layout_marginTop="6dp"
-                android:layout_marginEnd="8dp"
-                android:textSize="13sp" />
-
-            <!-- 插件动作：有新版本时是「更新到 X」，装完待重启时是「重启生效」，否则「重装插件」 -->
-            <TextView
-                android:id="@+id/rt_plugin_action"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:layout_marginStart="8dp"
-                android:layout_marginTop="6dp"
                 android:layout_marginBottom="8dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:gravity="center"
-                android:background="@drawable/bg_clone_button"
-                android:text="@string/plugin_action_reinstall"
+                android:layout_marginEnd="8dp"
                 android:textSize="13sp" />
 
             <LinearLayout
@@ -402,6 +389,49 @@
                     android:layout_marginTop="6dp"
                     android:lineSpacingExtra="3dp"
                     android:text="@string/guard_hint"
+                    android:textSize="12sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="14dp"
+                    android:layout_marginBottom="12dp"
+                    android:background="?android:attr/listDivider" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/rt_hide_label"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/hide_label"
+                        android:textSize="15sp" />
+
+                    <Switch
+                        android:id="@+id/rt_hide"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/rt_hide_state"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/rt_hide_hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="3dp"
+                    android:text="@string/hide_hint"
                     android:textSize="12sp" />
             </LinearLayout>
         </LinearLayout>

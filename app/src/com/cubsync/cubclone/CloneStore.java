@@ -330,6 +330,11 @@ public final class CloneStore {
                     || p.endsWith("externalstorage")      // /storage 访问
                     || p.endsWith("providers.downloads")  // 下载管理器
                     || p.equals("com.android.settings")   // 「应用信息」页由它提供
+                    // ↓ 缺了它，空间里任何应用弹一次 Toast，SystemUI 就崩一次（G7 实测 2026-11-27）
+                    //   ToastUI.createContextAsUser(空间用户) 抛 Own package not found
+                    //   → SystemUI 进程重启 → 重启后第一屏就是锁屏，用户看到「点一下就锁屏」
+                    || p.equals("com.android.systemui")
+                    || p.contains("launcher")             // 空间自己的桌面，退出应用有地方可回
                     ) {
                 out.add(p);
             }

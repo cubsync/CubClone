@@ -36,8 +36,6 @@ final class LauncherAppsHook {
 
     static final String PROP_HITS = "sys.cubclone.hook.la.hits";
     static final String PROP_LAST = "sys.cubclone.hook.la";
-    /** 主桌面是否隐藏我们建的空间：1=隐藏（默认），0=恢复原厂（分身应用照常出现在桌面） */
-    static final String PROP_ENABLE = "persist.sys.cubclone.hide";
 
     private static final AtomicInteger HITS = new AtomicInteger();
 
@@ -75,10 +73,6 @@ final class LauncherAppsHook {
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(chain -> {
                             Object r = chain.proceed();
-                            // 开关关掉就完全恢复原厂：桌面照常收到我们空间的包变更
-                            if (!HookMain.propOn(PROP_ENABLE)) {
-                                return r;
-                            }
                             // 本来就不让看的（非本组 profile）直接放行
                             if (!Boolean.TRUE.equals(r)) {
                                 return r;

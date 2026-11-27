@@ -361,6 +361,7 @@ public final class CloneStore {
         Set<String> all = systemPkgs();
         if (all.isEmpty()) return out;          // 查不到就传空，退回老行为（不误伤）
         Set<String> keep = essentialPkgs(c);
+        keep.addAll(preinstallExtra(c));   // 预装清单里额外勾选的系统应用
         keep.addAll(extraDisable(c));
         keep.addAll(extraUninstall(c));
         for (String p : all) {
@@ -677,6 +678,16 @@ public final class CloneStore {
     static Set<String> extraUninstall(Context c) {
         Set<String> s = c.getSharedPreferences("clone", Context.MODE_PRIVATE)
                 .getStringSet("uninstall_extra", null);
+        return s == null ? new HashSet<String>() : new HashSet<String>(s);
+    }
+
+    /**
+     * 用户额外勾选的「预装」系统应用：本来会被排除，勾了就跟着底线一起装进新空间。
+     * 底线（{@link #essentialPkgs}）不可取消，不在这里。
+     */
+    static Set<String> preinstallExtra(Context c) {
+        Set<String> s = c.getSharedPreferences("clone", Context.MODE_PRIVATE)
+                .getStringSet("preinstall_extra", null);
         return s == null ? new HashSet<String>() : new HashSet<String>(s);
     }
 

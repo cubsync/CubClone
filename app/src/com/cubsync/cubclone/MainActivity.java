@@ -1323,7 +1323,16 @@ public class MainActivity extends Activity {
                 ? (recentShow() && refreshRecentHeader())
                 : (recentShow() && recentRow != null && recentRow.getChildCount() > 0);
         if (recentHeader != null) {
-            recentHeader.setVisibility(hasRecent ? View.VISIBLE : View.GONE);
+            // 表头本身不能设 GONE：ListView 的表头即使 GONE 也按上次量到的高度占位，
+            // 屏幕顶部就留一条空白（川 11-27 报「字都没了、留下一片空的」）。
+            // 表头常驻，只隐藏内容 —— LinearLayout 没有可见子视图时高度自然是 0。
+            recentHeader.setVisibility(View.VISIBLE);
+            if (recentTitle != null) {
+                recentTitle.setVisibility(hasRecent ? View.VISIBLE : View.GONE);
+            }
+            if (recentRow != null) {
+                recentRow.setVisibility(hasRecent ? View.VISIBLE : View.GONE);
+            }
         }
         TextView et = findViewById(R.id.empty_title);
         TextView eh = findViewById(R.id.empty_hint);
@@ -1833,7 +1842,7 @@ public class MainActivity extends Activity {
     /** 对「应用 × 空间」逐个安装，装过的跳过，最后汇总 */
     private void doBatch(final List<String> pkgs, final List<Integer> targets,
             final boolean wantNew) {
-        say(getString(R.string.batch_creating));
+        say(getString(R.string.batch_creating), true);
         multiBar.setEnabled(false);
         if (wantNew) {
             askSpaceName(new NameCb() {
@@ -1859,6 +1868,7 @@ public class MainActivity extends Activity {
                 final List<Integer> t = new ArrayList<Integer>(targets);
                 String newErr = null;
                 if (wantNew) {
+                    sayBg(getString(R.string.batch_new_space), true);
                     String out = Shell.exec(CloneStore.createCmd(MainActivity.this, CloneStore.cloneName(name)));
                     Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
                     int got = -1;
@@ -1869,6 +1879,7 @@ public class MainActivity extends Activity {
                         Launcher.hideSelfFrom(got);
                         t.add(Integer.valueOf(got));
                         // 装应用前必须就绪；系统应用建号时已排除，收尾只装输入法 + 勾选的禁用项
+                        sayBg(getString(R.string.batch_space_stage, got, getString(R.string.stage_ime)), true);
                         CloneStore.readySpace(MainActivity.this, got);
                         CloneStore.cleanSpace(MainActivity.this, got);
                     } else {
@@ -1878,8 +1889,15 @@ public class MainActivity extends Activity {
                     }
                 }
                 int ok = 0, skip = 0, fail = 0;
+                int total = pkgs.size() * t.size();
+                int done = 0;
                 for (String pkg : pkgs) {
+                    String label = labelCache.get(pkg);
+                    if (label == null) label = pkg;
                     for (int uid : t) {
+                        done++;
+                        // 每装一个都刷状态行：长操作中间必须看得见在动，不能只剩「root 就绪」
+                        sayBg(getString(R.string.batch_installing, done, total, label), true);
                         if (CloneStore.spaceHas(MainActivity.this, uid, pkg)) {
                             skip++;
                             continue;
@@ -1911,6 +1929,20 @@ public class MainActivity extends Activity {
                 });
             }
         }).start();
+    }
+
+    /** 后台线程改状态行：say 只许在主线程碰 View */
+    private void sayBg(final String s, final boolean sticky) {
+        runOnUiThread(new Runnable() {
+            public void run() {
+                if (status != null) {
+                    status.setText(s);
+                    statusSticky = sticky;
+                    ui.removeCallbacks(idle);
+                    if (!sticky) ui.postDelayed(idle, 4000);
+                }
+            }
+        });
     }
 
     /**
@@ -2068,12 +2100,11 @@ public class MainActivity extends Activity {
                 // unmountable 的机器会立刻返回，不再白等 25 秒。
                 CloneStore.markOurs(uid);
                 CloneStore.markPending(uid);
+                sayBg(getString(R.string.space_preparing, uid), true);
                 CloneStore.readySpace(MainActivity.this, uid);
                 // 系统应用已在建号时排除（CloneStore.notInstallSet），这里只剩输入法和
                 // 你勾过的禁用项，一两秒内结束；给一句阶段提示，别让人以为卡住。
-                runOnUiThread(new Runnable() {
-                    public void run() { say(getString(R.string.stage_ime)); }
-                });
+                sayBg(getString(R.string.batch_space_stage, uid, getString(R.string.stage_ime)), true);
                 CloneStore.cleanSpace(MainActivity.this, uid);
                 installIntoClone(g, uid, false, name, true);
             }
@@ -2209,6 +2240,8 @@ public class MainActivity extends Activity {
     private void installIntoClone(final Group g, final int uid, final boolean reused,
             final String name, final boolean claim) {
         if (claim) CloneStore.markOurs(uid);   // 归属登记：以后靠它 + 名字前缀认自己人
+        // 装应用 + 配输入法要几秒：状态行常驻显示在装什么，结束后由最终结果覆盖
+        sayBg(getString(R.string.clone_installing, g.label, uid), true);
         // 不主动 start：建号时系统已经把档案拉起来了，这里再 start 只会让桌面
         // 把「刚灌进来还没删的那批应用」bind 一遍
         if (claim) Launcher.hideSelfFrom(uid);   // 只动自己的空间；别人的空间不碰它的包
@@ -3317,22 +3350,28 @@ public class MainActivity extends Activity {
         say(s, false);
     }
 
+    /** 常驻提示期间（批量建分身/装应用），后台刷新结束时不许把状态行改回「root 就绪」 */
+    private boolean statusSticky;
+
     /** sticky=true 时不自动回落：创建空间这种长操作要用，否则 4 秒后提示消失、用户以为卡住 */
     private void say(String s, boolean sticky) {
         if (status == null) return;
         status.setText(s);
+        statusSticky = sticky;
         ui.removeCallbacks(idle);
         if (!sticky) ui.postDelayed(idle, 4000);
     }
 
     private final Runnable idle = new Runnable() {
         public void run() {
+            statusSticky = false;
             if (status != null) status.setText(idleText());
         }
     };
 
-    /** 状态行落回默认值（页面重进、权限就绪时调用） */
+    /** 状态行落回默认值（页面重进、权限就绪时调用）。长操作进行中不回落，见 statusSticky */
     private void settle() {
+        if (statusSticky) return;
         ui.removeCallbacks(idle);
         if (status != null) status.setText(idleText());
     }

@@ -20,6 +20,7 @@ import android.widget.TextView;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -195,6 +196,9 @@ public class SettingsActivity extends Activity {
         });
         findViewById(R.id.hidden_sys_entry).setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { showHiddenSys(); }
+        });
+        findViewById(R.id.preinstall_entry).setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { showPreinstall(); }
         });
         swAmoled = findViewById(R.id.sw_amoled);
         amoledLabel = findViewById(R.id.amoled_label);
@@ -383,6 +387,7 @@ public class SettingsActivity extends Activity {
                 R.id.manage_foreign_label,
                 R.id.space_badge_label, R.id.show_disabled_label,
                 R.id.keep_extra_label, R.id.uninstall_extra_label, R.id.hidden_sys_label,
+                R.id.preinstall_label,
                 R.id.hidden_entry_label, R.id.backup_entry_label, R.id.root_entry_label}) {
             TextView t = findViewById(id);
             if (t != null) t.setTextColor(fgColor);
@@ -402,6 +407,8 @@ public class SettingsActivity extends Activity {
         if (ueh != null) ueh.setTextColor(secColor);
         TextView hsh = findViewById(R.id.hidden_sys_hint);
         if (hsh != null) hsh.setTextColor(secColor);
+        TextView prh = findViewById(R.id.preinstall_hint);
+        if (prh != null) prh.setTextColor(secColor);
         TextView imh = findViewById(R.id.ime_hint);
         if (imh != null) imh.setTextColor(secColor);
         TextView ipl = findViewById(R.id.ime_pick_label);
@@ -719,12 +726,15 @@ public class SettingsActivity extends Activity {
     /** 同一时刻只允许一条 shell 在跑：onCreate/onResume 并发两条时，其中一条会拿到空结果 */
     private boolean loading;
     private boolean pendingReload;
+    /** 建空间的分步进度（准备存储 / 配输入法 / 完成）；非 null 时压过「正在创建空间…」 */
+    private String createStage;
 
     private void loadSpaces() {
         if (loading) { pendingReload = true; return; }
         loading = true;
         // 建号期间这句不能被「读取中…」盖掉：用户要知道是自己刚点的创建还在跑
-        spaceLimit.setText(creating ? R.string.creating : R.string.loading);
+        spaceLimit.setText(createStage != null ? createStage
+                : getString(creating ? R.string.creating : R.string.loading));
         if (!Shell.ready()) {
             spaceLimit.setText(R.string.need_perm);
             loading = false;
@@ -1268,6 +1278,138 @@ public class SettingsActivity extends Activity {
             public void afterTextChanged(android.text.Editable e) {
                 String kw = e.toString().trim().toLowerCase();
                 for (Map.Entry<String, CheckBox> en : optChecks.entrySet()) {
+                    String lb = labels.get(en.getKey());
+                    boolean match = kw.isEmpty()
+                            || (lb != null && lb.toLowerCase().contains(kw))
+                            || en.getKey().toLowerCase().contains(kw);
+                    en.getValue().setVisibility(match ? View.VISIBLE : View.GONE);
+                }
+            }
+        });
+    }
+
+    /**
+     * 预装清单：新空间一定会装哪些系统应用。
+     * 底线＝{@link CloneStore#essentialPkgs}，不可取消（少一个分身就起不来）；
+     * 其余系统应用可额外勾选，勾了就跟着底线一起装进新空间。
+     */
+    private void showPreinstall() {
+        PackageManager pm = getPackageManager();
+        Set<String> essential = CloneStore.essentialPkgs(this);
+        final Map<String, String> labels = new HashMap<String, String>();
+        // 不用 getInstalledApplications：Flyme 的「读取应用列表」隐私开关会因此每次弹系统授权框。
+        // 和主界面/不装清单一样走 queryIntentActivities，只拿有桌面入口的系统应用；
+        // 底线里没有桌面入口的（GMS/WebView 等）再单包查一次，实测不触发隐私弹框。
+        Intent i = new Intent(Intent.ACTION_MAIN, null);
+        i.addCategory(Intent.CATEGORY_LAUNCHER);
+        List<ResolveInfo> ris = pm.queryIntentActivities(i, 0);
+        if (ris == null) ris = new ArrayList<ResolveInfo>();
+        for (ResolveInfo ri : ris) {
+            String pkg = ri.activityInfo.packageName;
+            if (pkg == null || pkg.equals(getPackageName())) continue;
+            try {
+                ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+                if ((ai.flags & (ApplicationInfo.FLAG_SYSTEM
+                        | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) == 0) continue;
+                labels.put(pkg, String.valueOf(ri.loadLabel(pm)));
+            } catch (Throwable ignored) { }
+        }
+        for (String p : essential) {
+            if (labels.containsKey(p)) continue;
+            try {
+                ApplicationInfo ai = pm.getApplicationInfo(p, 0);
+                labels.put(p, String.valueOf(ai.loadLabel(pm)));
+            } catch (Throwable ignored) { }
+        }
+        final List<String> optional = new ArrayList<String>();
+        for (String p : labels.keySet()) {
+            if (!essential.contains(p) && !p.equals(getPackageName())) optional.add(p);
+        }
+        Collections.sort(optional, new Comparator<String>() {
+            public int compare(String a, String b) {
+                String la = labels.get(a), lb = labels.get(b);
+                return (la == null ? a : la).compareToIgnoreCase(lb == null ? b : lb);
+            }
+        });
+
+        final Set<String> checked = CloneStore.preinstallExtra(this);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(8), dp(16), 0);
+
+        final EditText search = makeSearchBox(R.string.search_sys_app);
+        root.addView(search);
+
+        ScrollView sv = new ScrollView(this);
+        sv.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(360)));
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+
+        TextView essTitle = new TextView(this);
+        essTitle.setText(getString(R.string.preinstall_essential, essential.size()));
+        essTitle.setTextSize(12);
+        essTitle.setTextColor(secColor);
+        essTitle.setPadding(0, dp(8), 0, dp(2));
+        list.addView(essTitle);
+        TextView essText = new TextView(this);
+        StringBuilder sb = new StringBuilder();
+        for (String p : essential) {
+            if (sb.length() > 0) sb.append(" · ");
+            String lb = labels.get(p);
+            sb.append(lb == null ? p : lb);
+        }
+        essText.setText(sb.toString());
+        essText.setTextSize(13);
+        essText.setTextColor(secColor);
+        essText.setAlpha(0.55f);
+        essText.setPadding(dp(4), dp(2), dp(4), dp(2));
+        list.addView(essText);
+
+        TextView optTitle = new TextView(this);
+        optTitle.setText(R.string.preinstall_optional);
+        optTitle.setTextSize(12);
+        optTitle.setTextColor(secColor);
+        optTitle.setPadding(0, dp(8), 0, dp(2));
+        list.addView(optTitle);
+
+        final Map<String, CheckBox> checks = new HashMap<String, CheckBox>();
+        for (String p : optional) {
+            CheckBox cb = new CheckBox(this);
+            String lb = labels.get(p);
+            cb.setText(lb == null ? p : lb);
+            cb.setTextSize(14);
+            cb.setTextColor(fgColor);
+            cb.setChecked(checked.contains(p));
+            checks.put(p, cb);
+            list.addView(cb);
+        }
+        sv.addView(list);
+        root.addView(sv);
+
+        Theme.dialog(this)
+                .setTitle(R.string.preinstall_title)
+                .setView(root)
+                .setPositiveButton(R.string.save, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        Set<String> saved = new HashSet<String>();
+                        for (Map.Entry<String, CheckBox> e : checks.entrySet()) {
+                            if (e.getValue().isChecked()) saved.add(e.getKey());
+                        }
+                        sp().edit().putStringSet("preinstall_extra", saved).apply();
+                        CloneStore.dirty = true;
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int a, int b2, int c) {}
+            public void onTextChanged(CharSequence s, int a, int b2, int c) {}
+            public void afterTextChanged(android.text.Editable e) {
+                String kw = e.toString().trim().toLowerCase();
+                for (Map.Entry<String, CheckBox> en : checks.entrySet()) {
                     String lb = labels.get(en.getKey());
                     boolean match = kw.isEmpty()
                             || (lb != null && lb.toLowerCase().contains(kw))
@@ -1903,7 +2045,8 @@ public class SettingsActivity extends Activity {
         btnNewSpace.setEnabled(false);
         // 建号只花 1 秒，剩下的是等存储 + 预处理系统应用。这期间按钮禁用、状态常驻，
         // 用户不会因为「点了没反应」反复点。
-        spaceLimit.setText(getString(R.string.creating));
+        createStage = getString(R.string.creating);
+        spaceLimit.setText(createStage);
         CloneStore.markSpacesDirty(this);   // 建号要几秒，先置位：用户可能等不到就跑回主页
         new Thread(new Runnable() {
             public void run() {
@@ -1940,8 +2083,10 @@ public class SettingsActivity extends Activity {
                     pendingNames.put(Integer.valueOf(uid), CloneStore.cloneName(name));
                 }
                 final String shown = CloneStore.cloneName(name);
+                createStage = getString(R.string.space_preparing, uid);
                 runOnUiThread(new Runnable() {
                     public void run() {
+                        spaceLimit.setText(createStage);
                         toast(getString(R.string.space_created, uid));
                         // 先本地插一行：扫描要跑一两秒（settle 期间更慢），
                         // 等它回来再画，用户会以为没建成
@@ -1959,26 +2104,30 @@ public class SettingsActivity extends Activity {
 
                 // 就绪：等存储（unmountable 会立刻返回）。「准备中」这一行不在这里摘——
                 // 等扫描能看见这个空间时由 renderSpaces 换成真实行，避免中间空窗。
-                boolean shared = CloneStore.readySpace(SettingsActivity.this, uid);
+                final boolean shared = CloneStore.readySpace(SettingsActivity.this, uid);
                 CloneStore.markSpacesDirty(SettingsActivity.this);   // 空间变了重扫空间状态
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        creating = false;
-                        btnNewSpace.setEnabled(true);
-                        if (!shared) toast(getString(R.string.space_created_private, uid));
-                        loadSpaces();
-                    }
-                });
+                if (!shared) {
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            toast(getString(R.string.space_created_private, uid));
+                        }
+                    });
+                }
                 // 收尾三步各有提示：装输入法 → 勾选的禁用清单 → 隐藏清单。
                 // 系统应用已在建号时排除，这里不再批量禁用，通常 1–3 秒结束。
+                createStage = getString(R.string.stage_ime);
                 runOnUiThread(new Runnable() {
                     public void run() {
+                        spaceLimit.setText(createStage);
                         toast(getString(R.string.stage_ime));
                     }
                 });
                 CloneStore.cleanSpace(SettingsActivity.this, uid);
+                createStage = null;
                 runOnUiThread(new Runnable() {
                     public void run() {
+                        creating = false;
+                        btnNewSpace.setEnabled(true);
                         toast(getString(R.string.stage_done, uid));
                         loadSpaces();
                     }

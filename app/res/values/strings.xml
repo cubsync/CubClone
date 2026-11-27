@@ -129,6 +129,7 @@
     <string name="delete_space_msg_foreign">⚠️ 这是系统自带的克隆空间，不是本应用创建的。删除会清掉里面所有应用及其数据，无法恢复。\n\n确认删除空间 uid %1$d？</string>
     <string name="new_space_name">空间名称（可留空）</string>
     <string name="creating">正在创建空间…</string>
+    <string name="space_preparing">空间 %1$d 已建，正在准备存储…</string>
     <string name="stage_ime">正在配置输入法…</string>
     <string name="stage_done">空间已就绪：uid %1$d</string>
     <string name="create_failed">创建失败：%1$s</string>
@@ -152,6 +153,7 @@
     <string name="empty_no_app">没有可分身的三方应用</string>
     <string name="creating_clone">正在为「%1$s」创建分身…</string>
     <string name="clone_created">「%1$s」的分身已就绪（uid %2$d）</string>
+    <string name="clone_installing">正在把「%1$s」装进空间 %2$d…</string>
     <string name="clone_reused">本机空间已满，「%1$s」装进了已有空间（uid %2$d）</string>
     <string name="clone_exists">本机只允许 1 个分身空间，「%1$s」已经有分身了，要再加只能先删掉那个</string>
     <string name="opening">打开空间%1$d:%2$s</string>
@@ -209,6 +211,10 @@
     <string name="hidden_sys_title">隐藏清单</string>
     <string name="hidden_sys_hint">隐藏清单里的应用建空间后隐藏（保持启用、只不显示）；下次建空间生效</string>
     <string name="hidden_sys_dialog_tip">勾选 = 建空间后隐藏（保持启用、只不显示）</string>
+    <string name="preinstall_title">预装清单</string>
+    <string name="preinstall_hint">新空间一定会装的应用：底线项不可取消，可额外勾选其它系统应用一起装</string>
+    <string name="preinstall_essential">底线 · 不可取消（%1$d 个，保证分身可用）</string>
+    <string name="preinstall_optional">额外预装 · 勾选后新空间也装</string>
     <string name="uninstall_optional">可选 · 勾选不安装</string>
     <string name="in_uninstall_list">已在不装清单</string>
     <string name="in_disable_list">已在禁用清单</string>
@@ -558,6 +564,9 @@
     <string name="action_back">返回</string>
     <string name="loading_spaces">正在读取分身空间…</string>
     <string name="batch_creating">正在批量创建分身…</string>
+    <string name="batch_new_space">正在创建新空间…</string>
+    <string name="batch_space_stage">空间 %1$d 已建，%2$s</string>
+    <string name="batch_installing">正在安装 %1$d/%2$d：%3$s</string>
     <string name="space_item_count_full">%1$s · %2$d 个分身</string>
     <string name="err_not_clone">uid %1$d 不是分身，拒绝操作</string>
     <string name="err_need_root">需要 root</string>

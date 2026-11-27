@@ -129,6 +129,7 @@ Requires root + LSPosed: enable the module in LSPosed, then reboot once.</string
     <string name="delete_space_msg_foreign">⚠️ This is a system clone space, not created by this app. Deleting it removes all apps and their data inside, and cannot be undone.\n\nDelete space uid %1$d?</string>
     <string name="new_space_name">Space name (optional)</string>
     <string name="creating">Creating space…</string>
+    <string name="space_preparing">Space %1$d created, preparing storage…</string>
     <string name="stage_ime">Setting up input methods…</string>
     <string name="stage_done">Space ready: uid %1$d</string>
     <string name="create_failed">Failed: %1$s</string>
@@ -152,6 +153,7 @@ Turn on "Show all clonable apps" above, then tap "Create clone".</string>
     <string name="empty_no_app">No third-party app to clone</string>
     <string name="creating_clone">Creating a clone for %1$s…</string>
     <string name="clone_created">Clone of %1$s is ready (uid %2$d)</string>
+    <string name="clone_installing">Installing %1$s into space %2$d…</string>
     <string name="clone_reused">Space is full, %1$s was installed into the existing space (uid %2$d)</string>
     <string name="clone_exists">Only 1 clone space is allowed, %1$s already has a clone. Delete it first.</string>
     <string name="opening">Opening space %1$d: %2$s</string>
@@ -209,6 +211,10 @@ Owner data is not touched.</string>
     <string name="hidden_sys_title">Hide list</string>
     <string name="hidden_sys_hint">Apps in the hide list are hidden when creating a space (stay enabled, just hidden); applies on next space</string>
     <string name="hidden_sys_dialog_tip">Check = hide when creating a space</string>
+    <string name="preinstall_title">Preinstall list</string>
+    <string name="preinstall_hint">Apps every new space gets: the essential set cannot be removed; check more system apps to include them</string>
+    <string name="preinstall_essential">Essential · locked (%1$d, keeps a space usable)</string>
+    <string name="preinstall_optional">Extra preinstall · checked = also install in new spaces</string>
     <string name="uninstall_optional">Optional · check to uninstall</string>
     <string name="in_uninstall_list">In uninstall list</string>
     <string name="in_disable_list">In disable list</string>
@@ -558,6 +564,9 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="action_back">Back</string>
     <string name="loading_spaces">Reading clone spaces…</string>
     <string name="batch_creating">Creating clones…</string>
+    <string name="batch_new_space">Creating a new space…</string>
+    <string name="batch_space_stage">Space %1$d created, %2$s</string>
+    <string name="batch_installing">Installing %1$d/%2$d: %3$s</string>
     <string name="space_item_count_full">%1$s · %2$d clones</string>
     <string name="err_not_clone">uid %1$d is not a clone; refusing</string>
     <string name="err_need_root">Root required</string>

@@ -28,9 +28,14 @@ import io.github.libxposed.api.XposedInterface;
  * 结果任务卡片上的图标和名称全没了（{@code lp=3->2}、{@code hits=4668} 为证）。同一个进程、
  * 同一个 API，靠调用者根本区分不出「拉桌面图标」和「画任务卡片」。
  *
- * <p>现在只拦 {@code LauncherAppsService.getActivityList(null, ...)}：包名为 {@code null}
- * 表示「把这个用户的应用全给我」，正是桌面铺图标那一次调用；任务管理器按包名查单个应用的
- * 标题/图标，包名非空，原样放行。{@code getProfileIds} 恢复系统原样，别的组件不再被误伤。
+ * <p>现在只拦「拉全部可启动应用」那一次调用：包名为 {@code null} 时把结果清空。
+ * 方法名各家不同 —— AOSP / ColorOS 是 {@code getActivityList}，Flyme 反编译出来是
+ * {@code getLauncherActivities}（它的 services.jar 里根本没有 {@code getActivityList}），
+ * 两个都挂，存在哪个挂哪个。任务管理器按包名查单个应用的标题/图标，包名非空，原样放行；
+ * {@code getProfileIds} 恢复系统原样，别的组件不再被误伤。
+ *
+ * <p>代价：launcher 仍然知道那个 profile 存在（只是应用列表为空），极端情况下可能多出一个
+ * 空的分页。这比「最近任务没有图标和名字」轻得多。
  */
 final class LauncherProfileHook {
 
@@ -74,7 +79,11 @@ final class LauncherProfileHook {
         }
         int n = 0;
         for (Method m : impl.getDeclaredMethods()) {
-            if (!"getActivityList".equals(m.getName())) {
+            // 同一个用途各家名字不同：AOSP/ColorOS 是 getActivityList，
+            // Flyme 反编译出来是 getLauncherActivities（services.jar 里根本没有 getActivityList）。
+            // 两个都认，存在哪个挂哪个。
+            String name = m.getName();
+            if (!"getActivityList".equals(name) && !"getLauncherActivities".equals(name)) {
                 continue;
             }
             Class<?>[] pt = m.getParameterTypes();
@@ -147,6 +156,13 @@ final class LauncherProfileHook {
     private static Object emptyList(Object r) {
         if (r == null) {
             return null;
+        }
+        // 优先新建一个空对象：ParceledListSlice 的 mTotalCount 是构造时算的，
+        // 直接 clear 内部 list 会让计数和内容对不上。
+        try {
+            java.lang.reflect.Constructor<?> c = r.getClass().getConstructor(List.class);
+            return c.newInstance(java.util.Collections.emptyList());
+        } catch (Throwable ignored) {
         }
         try {
             if (r instanceof List) {

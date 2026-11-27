@@ -1018,6 +1018,8 @@ public class MainActivity extends Activity {
 
                 Map<String, List<Clone>> map = new HashMap<String, List<Clone>>();
                 allClones.clear();
+                // 老空间补「用户设置完成」：缺这个标记，最近任务卡片不加载图标和标题
+                CloneStore.ensureSetupComplete(ours);
                 for (String line : out.split("\\n")) {
                     String t = line.trim();
                     final boolean off = t.startsWith("OFF ");

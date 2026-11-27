@@ -859,6 +859,7 @@ public final class CloneStore {
     static int cleanSpace(Context c, int uid) {
         try {
             ensureIme(uid);                     // 输入法是「空间能用」的前提，不受清单开关管
+            markSetupComplete(uid);             // 缺了它最近任务不给这个空间的应用加载图标和标题
             if (pruneSys(c)) {                  // 总开关：关掉＝禁用清单和隐藏清单都不执行
                 applyDisableList(c, uid);
                 applyHideList(c);
@@ -866,6 +867,34 @@ public final class CloneStore {
         } catch (Throwable ignored) {
         }
         return 0;
+    }
+
+    /**
+     * 标记「用户设置已完成」。缺了它，launcher 的最近任务不会给这个用户的应用加载
+     * 图标和标题（{@code Task.mUserSetupComplete=false}），卡片切走一次就消失。
+     *
+     * <p>AOSP 里这一步平时由 SetupWizard 做；我们用 {@code createProfileForUser} 直接建号，
+     * 没人做，所以从第一版起这个标记一直是 0（2026-11-27 G7 实测：系统分身 999 是 1，
+     * 自建空间是 0，同一张芝麻粒卡片在 999 里有图标名字、在我们空间里全空）。
+     */
+    static void markSetupComplete(int uid) {
+        if (!Shell.ready()) return;
+        if (!Launcher.safe(uid)) return;
+        Shell.exec("settings put --user " + uid + " secure user_setup_complete 1");
+    }
+
+    /** 老空间补「用户设置完成」标记：一次 shell 批量查，只对没置上的写。 */
+    static void ensureSetupComplete(Set<Integer> uids) {
+        if (uids == null || uids.isEmpty() || !Shell.ready()) return;
+        StringBuilder sb = new StringBuilder();
+        for (Integer u : uids) {
+            int uid = u.intValue();
+            if (!Launcher.safe(uid)) continue;
+            sb.append("v=$(settings get --user ").append(uid)
+                    .append(" secure user_setup_complete); [ \"$v\" = 1 ] || settings put --user ")
+                    .append(uid).append(" secure user_setup_complete 1; ");
+        }
+        if (sb.length() > 0) Shell.exec(sb.toString());
     }
 
     /**

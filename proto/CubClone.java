@@ -169,7 +169,20 @@ public final class CubClone {
         if (bfu()) return;
         boolean storage = waitStorage(uid, 12000);
         markOwned(uid);
+        setSetupComplete(uid);
         say(storage ? "MODE=shared" : "MODE=nofs");
+    }
+
+    /**
+     * 标记「用户设置已完成」。缺了它 launcher 的最近任务不给这个用户的应用加载图标和
+     * 标题（Task.mUserSetupComplete=false），卡片切走一次就消失。AOSP 里这一步平时由
+     * SetupWizard 做，createProfileForUser 建号没人做，所以从第一版起一直是 0。
+     */
+    private static void setSetupComplete(int uid) {
+        try {
+            sh("settings", "put", "--user", String.valueOf(uid), "secure", "user_setup_complete", "1");
+        } catch (Throwable ignored) {
+        }
     }
 
     /** 把新空间追加进插件用的属性（逗号分隔）；App 扫描后会整体覆盖，不冲突 */

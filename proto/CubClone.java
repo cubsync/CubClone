@@ -434,7 +434,25 @@ public final class CubClone {
         if (uid < 10) { say("REFUSED: uid<10 是机主/系统用户，不删"); return; }
         if (!isOurs(uid)) { say("REFUSED: " + uid + " 不是 CubClone 建的空间，不删"); return; }
         Object r = invoke(UM, "removeUser", new Class[]{int.class}, uid);
+        if (Boolean.TRUE.equals(r)) removeHookSpace(uid);
         say("removeUser(" + uid + ") -> " + r);
+    }
+
+    /** 删空间后从插件属性里摘掉这个 uid，否则媒体进程会一直带着一个不存在用户的派生组 */
+    private static void removeHookSpace(int uid) {
+        try {
+            String cur = sh("getprop", "persist.sys.cubclone.spaces").trim();
+            if (cur.isEmpty()) return;
+            StringBuilder sb = new StringBuilder();
+            for (String s : cur.split(",")) {
+                String t = s.trim();
+                if (t.isEmpty() || t.equals(String.valueOf(uid))) continue;
+                if (sb.length() > 0) sb.append(',');
+                sb.append(t);
+            }
+            sh("setprop", "persist.sys.cubclone.spaces", sb.toString());
+        } catch (Throwable ignored) {
+        }
     }
 
     private static boolean isOurs(int uid) throws Exception {

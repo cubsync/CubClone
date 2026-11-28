@@ -347,11 +347,33 @@ public final class CloneStore {
         }
     }
 
+    /**
+     * 系统里的桌面包＝注册了 HOME 的候选 ∩ 系统应用。
+     * 只按包名含 launcher 匹配会漏掉 com.miui.home 这类；HOME 候选全收又会把
+     * 自己申请了 HOME 的第三方工具收进空间，所以两条都要过。
+     */
+    static Set<String> homePkgs(Context c, Set<String> sysAll) {
+        Set<String> out = new HashSet<String>();
+        try {
+            Intent i = new Intent(Intent.ACTION_MAIN);
+            i.addCategory(Intent.CATEGORY_HOME);
+            List<ResolveInfo> ris = c.getPackageManager().queryIntentActivities(i, 0);
+            for (ResolveInfo ri : ris) {
+                if (ri == null || ri.activityInfo == null) continue;
+                String p = ri.activityInfo.packageName;
+                if (sysAll.contains(p)) out.add(p);
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
     static Set<String> essentialPkgs(Context c) {
         Set<String> out = new HashSet<String>();
         out.add("android");
         Set<String> all = systemPkgs();
         Set<String> pickers = filePickerPkgs(c);
+        Set<String> homes = homePkgs(c, all);
         for (String p : all) {
             if (p.endsWith(".documentsui")          // AOSP 文件选择器
                     || pickers.contains(p)          // 系统实际用来选文件的那个包
@@ -384,7 +406,10 @@ public final class CloneStore {
                     // ↓ 缺了它，系统桌面按用户查 AppFeatureProvider 抛 SecurityException →
                     //   桌面连续重启，每次重启把主空间应用重新铺一遍桌面（OP12 实测 2026-11-28）
                     || p.contains("oplus.customize")
-                    || p.contains("launcher")             // 空间自己的桌面，退出应用有地方可回
+                    || homes.contains(p)                  // 系统注册了 HOME 的桌面，退出应用有地方可回
+                    || (p.contains("launcher")            // 名字兜底：HOME 解析不到时别把桌面漏了
+                        && !p.endsWith(".overlay")
+                        && !p.contains("auto_generated_rro"))
                     ) {
                 out.add(p);
             }
@@ -1028,6 +1053,12 @@ public final class CloneStore {
         ensurePkg(uid, "com.oplus.customize.coreapp");
     }
 
+    /** 老空间补桌面：主空间后来多装了系统桌面，空间里也得有一份，切过去才有地方可回。 */
+    static void ensureHome(int uid) {
+        if (uid <= 0 || appCtx == null) return;
+        for (String p : homePkgs(appCtx, systemPkgs())) ensurePkg(uid, p);
+    }
+
     /** 进应用时把所有空间补一遍（老空间建号时还没有这些规则） */
     static void ensureSystemAll() {
         try {
@@ -1040,6 +1071,7 @@ public final class CloneStore {
                     ensureTelecom(u);
                     ensureNfc(u);
                     ensureOplusCoreApp(u);
+                    ensureHome(u);
                 }
             }
         } catch (Throwable ignored) {
@@ -1065,6 +1097,7 @@ public final class CloneStore {
         }
         ensureNfc(uid);
         ensureOplusCoreApp(uid);
+        ensureHome(uid);
         Shell.exec("am start-user " + uid);
         for (int i = 0; i < 20 && !spaceReady(uid); i++) {
             try { Thread.sleep(500); } catch (InterruptedException e) { break; }

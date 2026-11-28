@@ -15,6 +15,7 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <cerrno>
 #include <android/log.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -257,7 +258,14 @@ static bool clone_replacement(void *self, uint32_t userId) {
 typedef int (*setgroups_fn)(size_t, const gid_t *);
 static setgroups_fn g_origSetgroups = nullptr;
 
+// 只有「媒体存储」进程需要这份附加组。置位由 preAppSpecialize 完成（同进程、同线程，
+// setgroups 紧接在 specialize 里调用），其它进程一律原样透传，不扩大任何权限面。
+static bool g_groupsWanted = false;
+
 static int setgroups_replacement(size_t size, const gid_t *list) {
+    if (!g_groupsWanted) {
+        return g_origSetgroups ? g_origSetgroups(size, list) : -1;
+    }
     gid_t buf[128];
     size_t n = 0;
     for (size_t i = 0; i < size && n < 128; i++) buf[n++] = list[i];
@@ -282,8 +290,37 @@ static int setgroups_replacement(size_t size, const gid_t *list) {
     return g_origSetgroups ? g_origSetgroups(n, buf) : -1;
 }
 
-static void install_setgroups_hook() {
+/**
+ * 首选 Zygisk 自带的 PLT 钩：按 dev/inode 指定动态库，把该库对某符号的调用改到我们这里。
+ * 它由 Zygisk 实现，天然覆盖 arm64 / armv7 / x86_64 / x86，不需要我们自己写指令补丁。
+ *
+ * <p>目标选 libandroid_runtime.so：zygote 设置附加组走的是那里的
+ * {@code com_android_internal_os_Zygote.cpp:SetGids()}，它对 libc 的 setgroups 是 PLT 调用。
+ */
+static bool plt_setgroups_hook(zygisk::Api *api) {
+    const char *path = sizeof(void *) == 8 ? "/system/lib64/libandroid_runtime.so"
+                                           : "/system/lib/libandroid_runtime.so";
+    struct stat st{};
+    if (stat(path, &st) != 0) {
+        logi("plt: stat %s failed: %d", path, errno);
+        return false;
+    }
+    void *orig = nullptr;
+    api->pltHookRegister(st.st_dev, st.st_ino, "setgroups", (void *) setgroups_replacement, &orig);
+    if (!api->pltHookCommit() || !orig) {
+        logi("plt: commit failed (orig=%p)", orig);
+        return false;
+    }
+    g_origSetgroups = (setgroups_fn) orig;
+    logi("setgroups hooked via PLT in %s", path);
+    flog("setgroups hooked via PLT");
+    return true;
+}
+
+static void install_setgroups_hook(zygisk::Api *api) {
     if (g_origSetgroups) return;
+    if (api && plt_setgroups_hook(api)) return;
+    // 兜底：自己写指令补丁（arm64 已验证；其余架构编译通过但未实机验证）
     void *addr = dlsym(RTLD_DEFAULT, "setgroups");
     if (!addr) {
         logi("dlsym setgroups failed");
@@ -295,7 +332,7 @@ static void install_setgroups_hook() {
         return;
     }
     g_origSetgroups = (setgroups_fn) backup;
-    logi("setgroups hooked at %p", addr);
+    logi("setgroups hooked at %p (inline)", addr);
     flog("setgroups hooked");
 }
 
@@ -393,7 +430,9 @@ public:
             return;
         }
         // 这里还没落地 uid/gid，仍是 root，先把附加组的钩子装上。
-        install_setgroups_hook();
+        // 只对本进程置位：别的进程照旧把 setgroups 原样交给 libc。
+        g_groupsWanted = true;
+        install_setgroups_hook(api);
     }
 
     void postAppSpecialize(const zygisk::AppSpecializeArgs *) override {

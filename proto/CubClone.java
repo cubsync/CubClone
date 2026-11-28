@@ -23,8 +23,6 @@ import java.util.regex.Pattern;
 public final class CubClone {
 
     private static final String CLONE = "android.os.usertype.profile.CLONE";
-    /** 由主应用随 jar 一起释放到 /data/local/tmp，用来给目录加 POSIX ACL */
-    private static final String ACLTOOL = "/data/local/tmp/acltool";
     /**
      * 降级档：内核还编着 sdcardfs 的 ROM 上，vold 给 clone 用户 bind
      * `/mnt/user/<uid>/emulated/<uid>/Android/data` 时，MediaProvider 的 FUSE
@@ -158,7 +156,7 @@ public final class CubClone {
         // 附加组在进程启动时定死，新空间晚于媒体进程存在，必须让它重起一次才能带上
         // 这个用户的派生组。不做这一步，卷必然 unmountable（ACL / chgrp 都替代不了，
         // 2026-11-28 实测）。
-        reloadMediaProvider();
+        reloadMediaProvider(uid);
         sh("am", "start-user", String.valueOf(uid));
         // 建号只花 1 秒，等存储最长 25 秒。以前在这里死等，界面就一直是「创建中」，
         // 用户以为卡住会反复点（G7 上一次连建 5 个）。现在建完立刻返回，
@@ -172,41 +170,23 @@ public final class CubClone {
      * 不走 force-stop（那会把主空间的 FUSE 一起弄断）。
      */
     private static void reloadMediaProvider() {
-        String fs = "";
-        try {
-            fs = new String(java.nio.file.Files.readAllBytes(
-                    java.nio.file.Paths.get("/proc/filesystems")));
-        } catch (Throwable ignored) {
-        }
-        if (!fs.contains("sdcardfs")) return;
-        String pids = sh("pidof", "com.android.providers.media.module");
-        if (pids.isEmpty()) pids = sh("pidof", "com.android.providers.media");
-        if (pids.isEmpty()) { say("WARN 找不到媒体进程，跳过重起"); return; }
-        String first = pids.trim().split(" ")[0];
-        sh("su", "-c", "kill -TERM " + first);
-        for (int i = 0; i < 20; i++) {
-            try { Thread.sleep(250); } catch (InterruptedException e) { break; }
-            String now = sh("pidof", "com.android.providers.media.module");
-            if (now.isEmpty()) now = sh("pidof", "com.android.providers.media");
-            if (!now.isEmpty() && !now.trim().equals(first)) {
-                say("MEDIA reloaded " + first + " -> " + now.trim().split(" ")[0]);
-                return;
-            }
-        }
-        say("WARN 媒体进程未在 5 秒内回来，继续（存储可能仍不可用）");
+        reloadMediaProvider(-1);
     }
 
     /**
-     * 给媒体存储进程一条 ACL，让它可以穿过这个空间的 {@code /data/media/<uid>}。
+     * 让「主用户那份」媒体存储进程重起一次，重新读 {@code persist.sys.cubclone.spaces}。
      *
-     * <p>只在「内核带 sdcardfs」的设备上需要：那类机型该目录是 2770、组是用户自己的
-     * 派生组，媒体进程没有这个组，lstat 直接 EACCES，vold 绑 Android/data 前的
-     * umount2 失败，整卷回滚成 unmountable。纯 FUSE 机型系统自己就能挂，什么都不做。
+     * <p>为什么要挑主用户那份：vold 挂一个新用户的卷时，该用户自己的媒体进程还没起来，
+     * FUSE 会话由已在跑的那份服务；它没有新用户的派生组，自己 lstat
+     * {@code /storage/emulated/<uid>/Android} 就 EACCES，整卷回滚 unmountable。
      *
-     * <p>用 ACL 而不是往进程里补组：附加组在进程启动时定死，补组只能预先占号段，
-     * 空间一多就不成立。ACL 按 uid 授权，建多少空间都是同一个动作、同一份开销。
+     * <p>{@code pidof} 会返回多个实例（每个用户一份），杀错等于没杀——所以按
+     * {@code /proc/<pid>/status} 的 Uid 精确挑主用户那份，杀完再核对新实例的 Groups
+     * 是否真的带上了目标空间的派生组，不带就再来一次。
+     *
+     * @param spaceUid 需要其派生组的空间 uid；-1 表示只重启不校验
      */
-    private static void provisionStorage(int uid) {
+    private static void reloadMediaProvider(int spaceUid) {
         String fs = "";
         try {
             fs = new String(java.nio.file.Files.readAllBytes(
@@ -214,24 +194,83 @@ public final class CubClone {
         } catch (Throwable ignored) {
         }
         if (!fs.contains("sdcardfs")) return;
-        if (!new java.io.File(ACLTOOL).exists()) {
-            say("WARN 缺 " + ACLTOOL + "，本机存储授权未做");
-            return;
+
+        int need = spaceUid > 0 ? spaceUid * 100000 + 9997 : -1;
+        if (need > 0) {
+            int ok = pidWithGroup(need, true);
+            if (ok > 0) { say("MEDIA ready " + ok); return; }
         }
-        java.util.List<String> mp = mediaUids();
-        StringBuilder sb = new StringBuilder();
-        sb.append("D=/data/media/").append(uid).append("; ");
-        sb.append("mkdir -p $D/Android/data $D/Android/obb; ");
-        sb.append("chown 1023:1023 $D $D/Android $D/Android/data $D/Android/obb; ");
-        sb.append("chmod 2770 $D; chmod 2771 $D/Android $D/Android/data $D/Android/obb; ");
-        for (String u : mp) {
-            for (String p : new String[]{"$D", "$D/Android", "$D/Android/data", "$D/Android/obb"}) {
-                sb.append(ACLTOOL).append(" set ").append(p).append(' ').append(u).append(" 7; ");
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            int victim = mediaPidOfUid(MEDIA_UID_U0);
+            if (victim <= 0) {
+                java.util.List<Integer> all = mediaPids();
+                if (all.isEmpty()) { say("WARN 找不到媒体进程，跳过重起"); return; }
+                victim = all.get(0);
+            }
+            sh("su", "-c", "kill -TERM " + victim);
+            for (int i = 0; i < 48; i++) {
+                try { Thread.sleep(250); } catch (InterruptedException e) { break; }
+                if (need > 0) {
+                    int ok = pidWithGroup(need, true);
+                    if (ok > 0 && ok != victim) { say("MEDIA reloaded " + victim + " -> " + ok); return; }
+                } else {
+                    int fresh = mediaPidOfUid(MEDIA_UID_U0);
+                    if (fresh > 0 && fresh != victim) { say("MEDIA reloaded " + victim + " -> " + fresh); return; }
+                }
+            }
+            say("WARN 媒体进程未就绪，重试 " + attempt);
+        }
+        say("WARN 媒体进程仍缺目标空间的派生组");
+    }
+
+    /** 主用户那份媒体存储的 uid：AOSP 10+ 是 APEX 里那个包 */
+    private static final int MEDIA_UID_U0 = 10155;
+
+    private static java.util.List<Integer> mediaPids() {
+        java.util.List<Integer> out = new java.util.ArrayList<Integer>();
+        String s = sh("pidof", "com.android.providers.media.module");
+        if (s.trim().isEmpty()) s = sh("pidof", "com.android.providers.media");
+        for (String t : s.trim().split("\\s+")) {
+            try { out.add(Integer.valueOf(t.trim())); } catch (Throwable ignored) { }
+        }
+        return out;
+    }
+
+    private static int mediaPidOfUid(int uid) {
+        for (int p : mediaPids()) if (pidUid(p) == uid) return p;
+        return -1;
+    }
+
+    /** 找到一个带指定附加组的媒体进程；onlyU0 为真时只认主用户那份 */
+    private static int pidWithGroup(int gid, boolean onlyU0) {
+        for (int p : mediaPids()) {
+            if (onlyU0 && pidUid(p) != MEDIA_UID_U0) continue;
+            if (pidHasGroup(p, gid)) return p;
+        }
+        return -1;
+    }
+
+    private static int pidUid(int pid) {
+        for (String line : sh("cat", "/proc/" + pid + "/status").split("\n")) {
+            if (!line.startsWith("Uid:")) continue;
+            String[] f = line.trim().split("\\s+");
+            if (f.length > 1) {
+                try { return Integer.parseInt(f[1]); } catch (Throwable ignored) { }
             }
         }
-        String out = sh("su", "-c", sb.toString());
-        say("ACL uid=" + uid + " mp=" + mp + (out.isEmpty() ? "" : " out=" + out.replace('\n', ' ')));
+        return -1;
     }
+
+    private static boolean pidHasGroup(int pid, int gid) {
+        for (String line : sh("cat", "/proc/" + pid + "/status").split("\n")) {
+            if (!line.startsWith("Groups:")) continue;
+            for (String g : line.substring(7).trim().split("\\s+")) {
+                if (g.equals(String.valueOf(gid))) return true;
+            }
+        }
+        return false;
+    }
+
 
     /** 媒体存储的 uid：Android 10+ 是 .module（APEX），更早是 com.android.providers.media */
     private static java.util.List<String> mediaUids() {
@@ -255,7 +294,17 @@ public final class CubClone {
      */
     private static void settle(int uid) throws Exception {
         if (bfu()) return;
+        if (uid <= 0) { say("ERR uid"); return; }
+        // 卷是在用户启动时挂的，create 里的 start-user 不等结果，这里先确保用户真的起来了
+        sh("am", "start-user", "-w", String.valueOf(uid));
         boolean storage = waitStorage(uid, 12000);
+        if (!storage) {
+            // 自愈：媒体进程可能是在这个空间写进属性之前起的，缺它的派生组，
+            // 那一轮卷已经回滚成 unmountable。重启那份进程再看一次。
+            reloadMediaProvider(uid);
+            sh("am", "start-user", "-w", String.valueOf(uid));
+            storage = waitStorage(uid, 10000);
+        }
         markOwned(uid);
         setSetupComplete(uid);
         say(storage ? "MODE=shared" : "MODE=nofs");

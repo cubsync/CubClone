@@ -154,6 +154,11 @@
     <string name="creating_clone">正在为「%1$s」创建分身…</string>
     <string name="clone_created">「%1$s」的分身已就绪（uid %2$d）</string>
     <string name="clone_installing">正在把「%1$s」装进空间 %2$d…</string>
+    <!-- 主界面「新建空间并装应用」的四步进度：只有一个状态行，必须带步号才看得出还剩几步 -->
+    <string name="prog_create">正在创建空间…（1/4）</string>
+    <string name="prog_storage">空间 %1$d 已建，正在准备存储…（2/4）</string>
+    <string name="prog_ime">正在配置输入法…（3/4）</string>
+    <string name="prog_install">正在把「%1$s」装进空间 %2$d…（4/4）</string>
     <string name="clone_reused">本机空间已满，「%1$s」装进了已有空间（uid %2$d）</string>
     <string name="clone_exists">本机只允许 1 个分身空间，「%1$s」已经有分身了，要再加只能先删掉那个</string>
     <string name="opening">打开空间%1$d:%2$s</string>
@@ -600,7 +605,7 @@
     <string name="sp_deleted_n">已删除 %1$d / %2$d 个空间</string>
     <string name="sp_manage">管理</string>
     <string name="sp_view_all">查看全部 %1$d 个空间</string>
-    <string name="feature_title">功能开关</string>
+    <string name="feature_title">分身功能</string>
     <string name="feature_ime">输入法</string>
     <string name="feature_ime_hint">空间里不装输入法，直接用主空间那一个</string>
     <string name="feature_pick">文件选择器</string>

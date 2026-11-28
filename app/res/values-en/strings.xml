@@ -154,6 +154,10 @@ Turn on "Show all clonable apps" above, then tap "Create clone".</string>
     <string name="creating_clone">Creating a clone for %1$s…</string>
     <string name="clone_created">Clone of %1$s is ready (uid %2$d)</string>
     <string name="clone_installing">Installing %1$s into space %2$d…</string>
+    <string name="prog_create">Creating space… (1/4)</string>
+    <string name="prog_storage">Space %1$d created, preparing storage… (2/4)</string>
+    <string name="prog_ime">Setting up input methods… (3/4)</string>
+    <string name="prog_install">Installing %1$s into space %2$d… (4/4)</string>
     <string name="clone_reused">Space is full, %1$s was installed into the existing space (uid %2$d)</string>
     <string name="clone_exists">Only 1 clone space is allowed, %1$s already has a clone. Delete it first.</string>
     <string name="opening">Opening space %1$d: %2$s</string>
@@ -600,7 +604,7 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="sp_deleted_n">Deleted %1$d / %2$d spaces</string>
     <string name="sp_manage">Manage</string>
     <string name="sp_view_all">View all %1$d spaces</string>
-    <string name="feature_title">Feature switches</string>
+    <string name="feature_title">Space behaviour</string>
     <string name="feature_ime">Input method</string>
     <string name="feature_ime_hint">Spaces use the input method of the main space instead of installing their own</string>
     <string name="feature_pick">File picker</string>

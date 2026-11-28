@@ -28,7 +28,22 @@
   G7 实测：连续新建两个空间（12、14）均 `state=MOUNTED`、`settle` 返回 `MODE=shared`。
 
 ### 修复
-- **空间里输入法只解析不绑定**：`startInputUncheckedLocked` 在绑定前还要校验「客户端 uid 是否拥有该输入法包」
+- **Root 页卡片不跟应用主题**：卡片底色用 `@color/card_bg`（跟系统深浅），文字按应用内的
+  深/浅/纯黑算，两者不是同一套 —— 应用选浅色而系统是深色时，卡片还是深色、字却是深色。
+  现在 6 张卡片统一 `setTint(Theme.card())`。顺带补上 5 处从未取色的文本
+  （两张卡片标题、空列表提示、多选计数、备份进度），这些在同场景下也是看不清的。
+- **配色自检有盲区**：`app/tools/check-ui-colors.py` 只扫 `new TextView(...)`，XML 布局完全没查，
+  所以「功能开关」卡片的 7 个 TextView 漏检。现在同时检查布局：没写 `textColor` 的 TextView
+  必须有 id 且在代码里 setTextColor；带 `bg_card` 的卡片必须有 id 且 setTint 过。
+  实测 157 个布局文本、10 张卡片全部在列。
+- **预装清单把「Aicy Touch」当文件选择器**：它的包名是 `com.meizu.picker`，命中按名字含 `picker`
+  的猜测，被写进底线（红字）并默认勾选，点「默认」也去不掉。现在不猜名字，直接问系统谁处理
+  `OPEN_DOCUMENT` / `GET_CONTENT`（本机是 `com.android.documentsui`）。实测默认预装 25 个包，
+  不含 `com.meizu.picker`。
+- **主界面「新建空间并装应用」的进度**：原来从点确定到建号返回的几秒是静默的（对话框已关、
+  状态行还是「root 就绪」）。现在四步都带步号：创建空间（1/4）→ 准备存储（2/4）→
+  配置输入法（3/4）→ 装应用（4/4），全部显示在标题下那行状态文字，长操作不自动回落。
+：`startInputUncheckedLocked` 在绑定前还要校验「客户端 uid 是否拥有该输入法包」
   （`InputMethodUtils.checkIfPackageBelongsToUid`），空间里没有主空间的输入法包，校验失败直接返回
   `INVALID_PACKAGE_NAME`——`mCurMethodId` 有值、`mCurId` 为 null、键盘不弹。现在对我们自己的空间放行；
   同时 `bindServiceAsUser` **所有重载**都挂上（原来只挂第一个，IMS 实际用的那个没挂到）。

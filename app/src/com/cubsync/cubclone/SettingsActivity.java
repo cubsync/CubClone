@@ -406,6 +406,8 @@ public class SettingsActivity extends Activity {
             if (t != null) t.setTextColor(fgColor);
         }
         if (rootEntryState != null) rootEntryState.setTextColor(secColor);
+        TextView bec = findViewById(R.id.backup_entry_count);
+        if (bec != null) bec.setTextColor(secColor);
         TextView mfh = findViewById(R.id.manage_foreign_hint);
         if (mfh != null) mfh.setTextColor(secColor);
         TextView sbh = findViewById(R.id.space_badge_hint);

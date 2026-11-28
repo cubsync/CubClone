@@ -142,6 +142,7 @@ public class BackupActivity extends Activity {
         progWrap = findViewById(R.id.bk_progress);
         progBar = findViewById(R.id.bk_progress_bar);
         progText = findViewById(R.id.bk_progress_text);
+        progText.setTextColor(Theme.sec(this));
         selCount = findViewById(R.id.bk_sel_count);
         selAll = findViewById(R.id.bk_sel_all);
         selMore = findViewById(R.id.bk_sel_more);

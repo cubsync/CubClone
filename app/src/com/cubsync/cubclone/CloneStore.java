@@ -304,19 +304,42 @@ public final class CloneStore {
     /**
      * 空间跑起来的最低要求：这些包必须装进去，其余系统包一律不装。
      *
-     * <p>不硬编码整份清单：按包名特征匹配主空间实际存在的包，ROM 换了也不会漏
-     * （实测魅族文件选择器叫 {@code com.meizu.picker}，AOSP 叫 {@code documentsui}）。
-     * 三家参考实现的分身用户只有 8–10 个包，共同项只有 android / WebView / GMS。
+     * <p>不硬编码整份清单：按包名特征匹配主空间实际存在的包，ROM 换了也不会漏。
+     * 文件选择器不用包名猜，直接问系统「谁处理 OPEN_DOCUMENT」—— 按名字含 picker
+     * 猜会误收「Aicy Touch」这类识屏服务（它的包名就叫 com.meizu.picker），
+     * 于是它既被勾上、又是红字，用户点「默认」也去不掉。
      */
+    /** 真正选文件的包：问系统谁处理 OPEN_DOCUMENT / GET_CONTENT，不按包名猜 */
+    static Set<String> filePickerPkgs(Context c) {
+        Set<String> out = new HashSet<String>();
+        try {
+            android.content.pm.PackageManager pm = c.getPackageManager();
+            addPicker(pm, out, new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                    .addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"));
+            addPicker(pm, out, new Intent(Intent.ACTION_GET_CONTENT)
+                    .addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"));
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    private static void addPicker(android.content.pm.PackageManager pm, Set<String> out, Intent i) {
+        try {
+            ResolveInfo ri = pm.resolveActivity(i,
+                    android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+            if (ri != null && ri.activityInfo != null) out.add(ri.activityInfo.packageName);
+        } catch (Throwable ignored) {
+        }
+    }
+
     static Set<String> essentialPkgs(Context c) {
         Set<String> out = new HashSet<String>();
         out.add("android");
         Set<String> all = systemPkgs();
+        Set<String> pickers = filePickerPkgs(c);
         for (String p : all) {
             if (p.endsWith(".documentsui")          // AOSP 文件选择器
-                    // 厂商文件选择器：只认真正选文件的，别把动态壁纸、铃声选择器也算进来
-                    || (p.contains("picker") && !p.contains("wallpaper")
-                        && !p.contains("sound") && !p.contains("ringtone"))
+                    || pickers.contains(p)          // 系统实际用来选文件的那个包
                     || p.contains("permissioncontroller")
                     || p.contains("packageinstaller")
                     || p.endsWith(".ext.services")

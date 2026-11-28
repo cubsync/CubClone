@@ -40,7 +40,7 @@ public class RootActivity extends Activity {
     private Switch swMaster, swClone, swBackup, swRel;
     private ImageButton btnBack;
     private TextView rtLimitSec, rtLimitState, rtLimitHint, rtLimitInstall, rtLimitTune;
-    private TextView rtPluginState;
+    private TextView rtPluginState, rtPluginHint;
     private LinearLayout rtLimitCard;
     private TextView rtInstallLabel, rtInstallState, rtInstallHint;
     private LinearLayout rtInstallCard;
@@ -52,6 +52,9 @@ public class RootActivity extends Activity {
     private TextView rtHideLabel, rtHideState, rtHideHint;
     private Switch swHide;
     private Switch swIme, swPick, swStore;
+    private TextView rtLimitTitle, rtInstallTitle;
+    private TextView rtFeatureTitle, rtImeLabel, rtImeHint;
+    private TextView rtPickLabel, rtPickHint, rtStoreLabel, rtStoreHint;
     private boolean hideBinding;
     /** 程序化 setChecked 会回调监听器，用这个挡住，免得自己把属性写一圈 */
     private boolean installBinding;
@@ -86,8 +89,11 @@ public class RootActivity extends Activity {
         swRel = findViewById(R.id.rt_relaunch);
         btnBack = findViewById(R.id.rt_back);
 
+        rtLimitTitle = findViewById(R.id.rt_limit_title);
+        rtInstallTitle = findViewById(R.id.rt_install_title);
         rtLimitSec = findViewById(R.id.rt_limit_sec);
         rtPluginState = findViewById(R.id.rt_plugin_state);
+        rtPluginHint = findViewById(R.id.rt_plugin_hint);
         rtLimitCard = findViewById(R.id.rt_limit_card);
         rtLimitState = findViewById(R.id.rt_limit_state);
         rtLimitHint = findViewById(R.id.rt_limit_hint);
@@ -113,6 +119,13 @@ public class RootActivity extends Activity {
         });
 
         // 功能开关：关掉即透传，不用卸载插件/模块
+        rtFeatureTitle = findViewById(R.id.rt_feature_title);
+        rtImeLabel = findViewById(R.id.rt_ime_label);
+        rtImeHint = findViewById(R.id.rt_ime_hint);
+        rtPickLabel = findViewById(R.id.rt_pick_label);
+        rtPickHint = findViewById(R.id.rt_pick_hint);
+        rtStoreLabel = findViewById(R.id.rt_store_label);
+        rtStoreHint = findViewById(R.id.rt_store_hint);
         swIme = findViewById(R.id.rt_ime);
         swPick = findViewById(R.id.rt_pick);
         swStore = findViewById(R.id.rt_store);
@@ -776,6 +789,14 @@ public class RootActivity extends Activity {
 
         root.setBackgroundColor(bg);
         header.setBackgroundColor(bg);
+        // 卡片底色必须按应用内的深浅算：@color/card_bg 跟的是系统深浅，
+        // 应用选浅色而系统是深色时，卡片会黑压压一片、字还按浅色画 —— 看着就是没跟主题
+        int card = Theme.card(this);
+        for (int id : new int[]{R.id.rt_master_card, R.id.rt_card, R.id.rt_limit_card,
+                R.id.rt_install_card, R.id.rt_feature_card, R.id.rt_guard_card}) {
+            View c = findViewById(id);
+            if (c != null && c.getBackground() != null) c.getBackground().setTint(card);
+        }
         title.setTextColor(fg);
         btnBack.setColorFilter(fg);
         status.setTextColor(sec);
@@ -793,6 +814,16 @@ public class RootActivity extends Activity {
         if (rtLimitHint != null) rtLimitHint.setTextColor(sec);
         if (rtInstallLabel != null) rtInstallLabel.setTextColor(fg);
         if (rtInstallHint != null) rtInstallHint.setTextColor(sec);
+        if (rtPluginHint != null) rtPluginHint.setTextColor(sec);
+        if (rtLimitTitle != null) rtLimitTitle.setTextColor(fg);
+        if (rtInstallTitle != null) rtInstallTitle.setTextColor(fg);
+        if (rtFeatureTitle != null) rtFeatureTitle.setTextColor(fg);
+        for (TextView t : new TextView[]{rtImeLabel, rtPickLabel, rtStoreLabel}) {
+            if (t != null) t.setTextColor(fg);
+        }
+        for (TextView t : new TextView[]{rtImeHint, rtPickHint, rtStoreHint}) {
+            if (t != null) t.setTextColor(sec);
+        }
         if (rtGuardLabel != null) rtGuardLabel.setTextColor(fg);
         if (rtGuardHint != null) rtGuardHint.setTextColor(sec);
         if (rtHideLabel != null) rtHideLabel.setTextColor(fg);

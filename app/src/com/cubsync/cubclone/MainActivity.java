@@ -441,6 +441,11 @@ public class MainActivity extends Activity {
         if (btnGrid != null) btnGrid.setColorFilter(fg);
         updateGridBtn();
 
+        TextView mc = findViewById(R.id.multi_count);
+        if (mc != null) mc.setTextColor(fg);
+        TextView eh0 = findViewById(R.id.empty_hint);
+        if (eh0 != null) eh0.setTextColor(sec);
+
         if (btnTheme != null) {
             int t = sp().getInt("theme", THEME_AUTO);
             btnTheme.setImageResource(t == THEME_DARK ? R.drawable.ic_theme_dark
@@ -2088,6 +2093,8 @@ public class MainActivity extends Activity {
     private void createSpaceWith(final Group g, final String name) {
         new Thread(new Runnable() {
             public void run() {
+                // 建号要几秒，对话框刚关、状态行还是「root 就绪」，先占位
+                sayBg(getString(R.string.prog_create), true);
                 String out = Shell.exec(CloneStore.createCmd(MainActivity.this, CloneStore.cloneName(name)));
                 Matcher m = Pattern.compile("\\{(\\d+):").matcher(out);
                 int uid = m.find() ? Integer.parseInt(m.group(1)) : -1;
@@ -2102,11 +2109,11 @@ public class MainActivity extends Activity {
                 // unmountable 的机器会立刻返回，不再白等 25 秒。
                 CloneStore.markOurs(uid);
                 CloneStore.markPending(uid);
-                sayBg(getString(R.string.space_preparing, uid), true);
+                sayBg(getString(R.string.prog_storage, uid), true);
                 CloneStore.readySpace(MainActivity.this, uid);
                 // 系统应用已在建号时排除（CloneStore.notInstallSet），这里只剩输入法和
                 // 你勾过的禁用项，一两秒内结束；给一句阶段提示，别让人以为卡住。
-                sayBg(getString(R.string.batch_space_stage, uid, getString(R.string.stage_ime)), true);
+                sayBg(getString(R.string.prog_ime), true);
                 CloneStore.cleanSpace(MainActivity.this, uid);
                 installIntoClone(g, uid, false, name, true);
             }
@@ -2243,7 +2250,8 @@ public class MainActivity extends Activity {
             final String name, final boolean claim) {
         if (claim) CloneStore.markOurs(uid);   // 归属登记：以后靠它 + 名字前缀认自己人
         // 装应用 + 配输入法要几秒：状态行常驻显示在装什么，结束后由最终结果覆盖
-        sayBg(getString(R.string.clone_installing, g.label, uid), true);
+        sayBg(getString(reused ? R.string.clone_installing : R.string.prog_install,
+                g.label, Integer.valueOf(uid)), true);
         // 不主动 start：建号时系统已经把档案拉起来了，这里再 start 只会让桌面
         // 把「刚灌进来还没删的那批应用」bind 一遍
         if (claim) Launcher.hideSelfFrom(uid);   // 只动自己的空间；别人的空间不碰它的包

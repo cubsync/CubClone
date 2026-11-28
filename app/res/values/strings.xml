@@ -202,7 +202,7 @@
     <string name="label_keep_sys">新建空间预处理系统应用</string>
     <string name="hint_keep_sys">总开关：新建空间时按预装、不装、禁用、隐藏四份清单预处理系统应用；关闭则清单都不执行</string>
     <string name="keep_extra_title">禁用清单</string>
-    <string name="keep_extra_hint">禁用清单里的应用建空间后禁用（不可用）；可随时启用装回</string>
+    <string name="keep_extra_hint">勾选的应用建空间后禁用（不可用），可随时启用装回；红字项不建议禁用</string>
     <string name="keep_extra_essential">必需 · 不可禁用（%1$d 个，保证分身可用）</string>
     <string name="keep_extra_optional">可选 · 勾选禁用</string>
     <string name="search_sys_app">搜索系统应用</string>
@@ -213,10 +213,13 @@
     <string name="hidden_sys_hint">隐藏清单里的应用建空间后隐藏（保持启用、只不显示）；下次建空间生效</string>
     <string name="hidden_sys_dialog_tip">勾选 = 建空间后隐藏（保持启用、只不显示）</string>
     <string name="preinstall_title">预装清单</string>
-    <string name="preinstall_hint">新空间一定会装的应用：底线项不可取消，可额外勾选其它系统应用一起装</string>
+    <string name="preinstall_hint">新空间一定会装的应用：勾选即装，红字项取消后空间可能起不来</string>
     <string name="preinstall_essential">底线 · 不可取消（%1$d 个，保证分身可用）</string>
     <string name="preinstall_optional">额外预装 · 勾选后新空间也装</string>
     <string name="list_conflict_dropped">已从其它清单移除重叠的应用</string>
+    <string name="restore_default">默认</string>
+    <string name="list_red_hint">红字＝不建议改动，改了分身可能不可用</string>
+    <string name="list_need_perm">权限还没就绪，稍后再试</string>
     <string name="uninstall_optional">可选 · 勾选不安装</string>
     <string name="in_uninstall_list">已在不装清单</string>
     <string name="in_disable_list">已在禁用清单</string>
@@ -597,4 +600,11 @@
     <string name="sp_deleted_n">已删除 %1$d / %2$d 个空间</string>
     <string name="sp_manage">管理</string>
     <string name="sp_view_all">查看全部 %1$d 个空间</string>
+    <string name="feature_title">功能开关</string>
+    <string name="feature_ime">输入法</string>
+    <string name="feature_ime_hint">空间里不装输入法，直接用主空间那一个</string>
+    <string name="feature_pick">文件选择器</string>
+    <string name="feature_pick_hint">选文件时打开主空间的相册和文件</string>
+    <string name="feature_store">共享存储</string>
+    <string name="feature_store_hint">分身与主空间共用相册和文件（需刷修复模块）</string>
 </resources>

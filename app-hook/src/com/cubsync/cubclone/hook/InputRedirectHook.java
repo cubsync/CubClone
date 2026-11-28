@@ -86,6 +86,7 @@ final class InputRedirectHook {
                 xp.hook(target)
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(chain -> {
+                            if (!HookMain.flagOn(HookMain.P_IME)) return chain.proceed();
                             Object[] args = chain.getArgs().toArray();
                             // 只改「绑定输入法服务」这一类，别的绑定原样放行。
                             // 这里只动 UserHandle：同签名里的 int 是 bind flags，不是用户 id。
@@ -145,6 +146,7 @@ final class InputRedirectHook {
             xp.hook(m)
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                     .intercept(chain -> {
+                        if (!HookMain.flagOn(HookMain.P_IME)) return chain.proceed();
                         Object r = chain.proceed();
                         if (Boolean.TRUE.equals(r)) return r;
                         Object a0 = chain.getArg(0);
@@ -205,6 +207,7 @@ final class InputRedirectHook {
                 xp.hook(m)
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(chain -> {
+                            if (!HookMain.flagOn(HookMain.P_IME)) return chain.proceed();
                             Object[] a = chain.getArgs().toArray();
                             if (rewriteUserArgs(a) > 0) {
                                 HookMain.mark(name, m.getName());
@@ -258,6 +261,7 @@ final class InputRedirectHook {
             xp.hook(m)
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                     .intercept(chain -> {
+                        if (!HookMain.flagOn(HookMain.P_IME)) return chain.proceed();
                         Object r = chain.proceed();
                         if (Boolean.TRUE.equals(r)) return r;
                         Object a1 = chain.getArg(1);

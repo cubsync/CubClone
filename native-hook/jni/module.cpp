@@ -235,6 +235,12 @@ static int setgroups_replacement(size_t size, const gid_t *list) {
     if (!g_groupsWanted) {
         return g_origSetgroups ? g_origSetgroups(size, list) : -1;
     }
+    // 应用里的「共享存储」开关：写 0 就当作没装这个模块，完全透传
+    char on[PROP_VALUE_MAX] = {0};
+    __system_property_get("persist.sys.cubclone.store.on", on);
+    if (on[0] == '0') {
+        return g_origSetgroups ? g_origSetgroups(size, list) : -1;
+    }
     gid_t buf[128];
     size_t n = 0;
     for (size_t i = 0; i < size && n < 128; i++) buf[n++] = list[i];

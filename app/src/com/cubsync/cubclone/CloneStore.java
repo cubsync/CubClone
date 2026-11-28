@@ -314,7 +314,9 @@ public final class CloneStore {
         Set<String> all = systemPkgs();
         for (String p : all) {
             if (p.endsWith(".documentsui")          // AOSP 文件选择器
-                    || p.contains("picker")          // 厂商文件选择器
+                    // 厂商文件选择器：只认真正选文件的，别把动态壁纸、铃声选择器也算进来
+                    || (p.contains("picker") && !p.contains("wallpaper")
+                        && !p.contains("sound") && !p.contains("ringtone"))
                     || p.contains("permissioncontroller")
                     || p.contains("packageinstaller")
                     || p.endsWith(".ext.services")
@@ -341,7 +343,8 @@ public final class CloneStore {
         }
         out.addAll(mustKeep(c));      // WebView + 全部输入法
         out.addAll(defaultKeep(c));   // GMS / GSF / Vending
-        out.addAll(resolverPkgs(c));  // 打开网页/图片/分享文本的默认应用
+        // 解析器（浏览器 / 看图）不进不可取消的底线：ROM 可能把自家助手设成默认，
+        // 那会把「识屏」这类跟分身无关的应用钉死。默认装，可在预装清单里取消。
         return out;
     }
 
@@ -361,7 +364,7 @@ public final class CloneStore {
         Set<String> all = systemPkgs();
         if (all.isEmpty()) return out;          // 查不到就传空，退回老行为（不误伤）
         Set<String> keep = essentialPkgs(c);
-        keep.addAll(preinstallExtra(c));   // 预装清单里额外勾选的系统应用
+        keep.addAll(preinstallOn(c));      // 预装清单（默认＝底线＋浏览器/看图，可改）
         keep.addAll(extraDisable(c));
         keep.addAll(extraUninstall(c));
         for (String p : all) {
@@ -594,6 +597,10 @@ public final class CloneStore {
      * 分身里的隐式 Intent 要靠这些应用解析：浏览器（点链接）、看图、文件选择器。
      * 默认打开方式是按用户隔离的 —— 分身里一个解析器都没装的话，
      * 应用点个链接就是 "No activity found"，所以这几个必须留在空间里。
+     *
+     * <p>只收「点开就有用」的两类：浏览器、看图。分享（ACTION_SEND）不收——
+     * 它只是分享面板少几项，不影响应用起不来，而且各家 ROM 常把自家助手设成文本分享默认，
+     * 收进来会让「识屏 / 助手」这种跟分身无关的应用被钉成不可取消的底线。
      */
     static Set<String> resolverPkgs(Context c) {
         Set<String> out = new HashSet<String>();
@@ -604,7 +611,6 @@ public final class CloneStore {
             addResolver(pm, out, new Intent(Intent.ACTION_VIEW,
                     android.net.Uri.parse("content://media/external/images/media/1"))
                     .setType("image/jpeg"));
-            addResolver(pm, out, new Intent(Intent.ACTION_SEND).setType("text/plain"));
         } catch (Throwable ignored) {
         }
         return out;
@@ -615,9 +621,18 @@ public final class CloneStore {
         try {
             android.content.pm.ResolveInfo ri =
                     pm.resolveActivity(i, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
-            if (ri != null && ri.activityInfo != null) out.add(ri.activityInfo.packageName);
+            if (ri != null && ri.activityInfo != null) {
+                String p = ri.activityInfo.packageName;
+                if (!isAssistantPkg(p)) out.add(p);
+            }
         } catch (Throwable ignored) {
         }
+    }
+
+    /** 系统助手 / 识屏 / 语音：不少 ROM 把它们设成默认浏览器，不能当解析器收进预装 */
+    private static boolean isAssistantPkg(String p) {
+        return p.contains("assistant") || p.contains("voiceassist")
+                || p.contains("aicy") || p.contains("glance") || p.contains("sceneinfo");
     }
 
     /** 分身里没它们就用不了的东西（硬必需，锁定不可禁用/卸载）：输入法、WebView */
@@ -703,14 +718,43 @@ public final class CloneStore {
         return s == null ? new HashSet<String>() : new HashSet<String>(s);
     }
 
-    /**
-     * 用户额外勾选的「预装」系统应用：本来会被排除，勾了就跟着底线一起装进新空间。
-     * 底线（{@link #essentialPkgs}）不可取消，不在这里。
-     */
+    /** 用户额外勾选的「预装」系统应用：本来会被排除，勾了就跟着底线一起装进新空间。
+     * 底线（{@link #essentialPkgs}）不可取消，不在这里。 */
     static Set<String> preinstallExtra(Context c) {
         Set<String> s = c.getSharedPreferences("clone", Context.MODE_PRIVATE)
                 .getStringSet("preinstall_extra", null);
         return s == null ? new HashSet<String>() : new HashSet<String>(s);
+    }
+
+    /** 用户从「默认预装」里取消掉的解析器（浏览器 / 看图），建空间时不再装 */
+    static Set<String> preinstallOff(Context c) {
+        Set<String> s = c.getSharedPreferences("clone", Context.MODE_PRIVATE)
+                .getStringSet("preinstall_off", null);
+        return s == null ? new HashSet<String>() : new HashSet<String>(s);
+    }
+
+    /** 默认预装＝底线 + 浏览器/看图 */
+    static Set<String> defaultPreinstall(Context c) {
+        Set<String> s = essentialPkgs(c);
+        s.addAll(resolverPkgs(c));
+        s.remove(c.getPackageName());
+        return s;
+    }
+
+    /**
+     * 预装清单的实际集合（新空间要装的系统应用）。
+     * 保存过就用保存的那份；没保存过＝默认。老版本只存过「额外勾选」，升级时并进默认。
+     */
+    static Set<String> preinstallOn(Context c) {
+        android.content.SharedPreferences sp =
+                c.getSharedPreferences("clone", Context.MODE_PRIVATE);
+        Set<String> s = sp.getStringSet("preinstall_on", null);
+        if (s == null) {
+            s = defaultPreinstall(c);
+            Set<String> extra = sp.getStringSet("preinstall_extra", null);
+            if (extra != null) s.addAll(extra);
+        }
+        return new HashSet<String>(s);
     }
 
     /** 内置必需白名单（文件选择器/相机/通讯录/拨号/短信/媒体库）；与 pruneSpace 的 ESS 字符串保持一致 */
@@ -742,15 +786,15 @@ public final class CloneStore {
         Set<String> keep = rec == null ? new HashSet<String>() : new HashSet<String>(rec);
         keep.addAll(shortcutPkgs(c, uid));
         if (!fresh) keep.addAll(sameNamePkgs(c, uid));
-        // 解析器 / 输入法 / Play 一律留着，否则分身里打不了字、点链接没反应
-        keep.addAll(resolverPkgs(c));
+        // 预装 / 解析器 / 输入法 / Play 一律留着，否则分身里打不了字、点链接没反应
+        keep.addAll(preinstallOn(c));
         keep.addAll(mustKeep(c));
         keep.addAll(defaultKeep(c));   // Play/GMS 默认保留，但可加卸载清单卸载
         StringBuilder kp = new StringBuilder(" ");
         for (String p : keep) kp.append(p).append(' ');
         // 预装（含底线）以「装进去」为准：历史清单里即使有重叠，也不卸、不禁用
         Set<String> pre = essentialPkgs(c);
-        pre.addAll(preinstallExtra(c));
+        pre.addAll(preinstallOn(c));
         Set<String> ulSet = extraUninstall(c);
         Set<String> diSet = extraDisable(c);
         ulSet.removeAll(pre);
@@ -1661,6 +1705,26 @@ public final class CloneStore {
 
 
 
+    /** 功能开关：hook / 模块每次现读，缺省 1（开）；写 0 即透传，不用卸载模块 */
+    public static final String PROP_IME_ON = "persist.sys.cubclone.ime.on";
+    public static final String PROP_PICK_ON = "persist.sys.cubclone.pick.on";
+    public static final String PROP_STORE_ON = "persist.sys.cubclone.store.on";
+
+    public static boolean flagOn(String key) {
+        return !"0".equals(Shell.raw("getprop", key).trim());
+    }
+
+    /** 写开关并回读校验；返回 null 表示成功 */
+    public static String writeFlag(String key, boolean on) {
+        String out = Shell.exec("setprop " + key + " " + (on ? "1" : "0"));
+        String want = on ? "1" : "0";
+        String back = Shell.raw("getprop", key).trim();
+        if (!want.equals(back)) {
+            return out.length() == 0 ? "readback=" + back : out.trim();
+        }
+        return null;
+    }
+
     /**
      * 插件是否已把输入法整条链路重定向到主用户。
      *
@@ -1669,7 +1733,8 @@ public final class CloneStore {
      * 任一缺失就走老路：把输入法包装进空间。没 root / 没装插件时恒为 false。
      */
     static boolean imeRedirectReady() {
-        return hookOk("sys.cubclone.hook.ime.q")
+        return flagOn(PROP_IME_ON)
+                && hookOk("sys.cubclone.hook.ime.q")
                 && hookOk("sys.cubclone.hook.ime.cp")
                 && hookOk("sys.cubclone.hook.ime");
     }

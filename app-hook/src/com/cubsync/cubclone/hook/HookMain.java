@@ -345,6 +345,28 @@ public final class HookMain extends XposedModule {
         }
     }
 
+    /** 功能开关：默认开，应用里写 0 才关。每次现读，改完立即生效 */
+    static final String P_IME = "persist.sys.cubclone.ime.on";
+    static final String P_PICK = "persist.sys.cubclone.pick.on";
+    static final String P_STORE = "persist.sys.cubclone.store.on";
+
+    private static volatile Method SP_GET_STR;
+
+    static boolean flagOn(String key) {
+        try {
+            Method get = SP_GET_STR;
+            if (get == null) {
+                Class<?> sp = Class.forName("android.os.SystemProperties");
+                get = sp.getMethod("get", String.class, String.class);
+                SP_GET_STR = get;
+            }
+            Object v = get.invoke(null, key, "1");
+            return !"0".equals(String.valueOf(v));
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
     static int readLimit() {
         int v = DEFAULT_LIMIT;
         try {

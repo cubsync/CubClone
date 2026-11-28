@@ -67,6 +67,7 @@ final class FilePickerRedirectHook {
                 xp.hook(m)
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(chain -> {
+                            if (!HookMain.flagOn(HookMain.P_PICK)) return chain.proceed();
                             Object[] a = chain.getArgs().toArray();
                             if (a.length > intentIdx && a[intentIdx] instanceof Intent
                                     && isFilePicker((Intent) a[intentIdx])) {

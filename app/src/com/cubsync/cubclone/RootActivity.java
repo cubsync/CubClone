@@ -51,6 +51,7 @@ public class RootActivity extends Activity {
     private boolean guardBinding;
     private TextView rtHideLabel, rtHideState, rtHideHint;
     private Switch swHide;
+    private Switch swIme, swPick, swStore;
     private boolean hideBinding;
     /** 程序化 setChecked 会回调监听器，用这个挡住，免得自己把属性写一圈 */
     private boolean installBinding;
@@ -110,6 +111,14 @@ public class RootActivity extends Activity {
                 saveInstall(checked);
             }
         });
+
+        // 功能开关：关掉即透传，不用卸载插件/模块
+        swIme = findViewById(R.id.rt_ime);
+        swPick = findViewById(R.id.rt_pick);
+        swStore = findViewById(R.id.rt_store);
+        bindFeature(swIme, CloneStore.PROP_IME_ON);
+        bindFeature(swPick, CloneStore.PROP_PICK_ON);
+        bindFeature(swStore, CloneStore.PROP_STORE_ON);
 
         rtGuardLabel = findViewById(R.id.rt_guard_label);
         rtGuardState = findViewById(R.id.rt_guard_state);
@@ -336,6 +345,31 @@ public class RootActivity extends Activity {
                 });
             }
         }).start();
+    }
+
+    /** 功能开关＝属性；hook / 模块每次现读，改完立刻生效。读不到按开显示 */
+    private void bindFeature(final Switch sw, final String key) {
+        if (sw == null) return;
+        sw.setChecked(CloneStore.flagOn(key));
+        sw.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton v, final boolean checked) {
+                if (!Shell.ready()) {
+                    toast(getString(R.string.limit_need_perm));
+                    return;
+                }
+                new Thread(new Runnable() {
+                    public void run() {
+                        final String err = CloneStore.writeFlag(key, checked);
+                        if (err == null) return;
+                        runOnUiThread(new Runnable() {
+                            public void run() {
+                                toast(getString(R.string.limit_install_fail, err));
+                            }
+                        });
+                    }
+                }).start();
+            }
+        });
     }
 
     /** 只负责装；LSPosed 里的启用和重启必须用户自己来，我们不改它的配置库 */

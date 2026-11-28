@@ -117,7 +117,20 @@ public class SettingsActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        // 直接进本页（快捷方式/通知）时没经过 MainActivity，先把全局 Context 挂上
+        CloneStore.attach(this);
         setContentView(R.layout.activity_settings);
+        // 清单排查：adb logcat -s CubCloneLists（提权就绪后再算，否则系统包清单为空）
+        new android.os.Handler(getMainLooper()).postDelayed(new Runnable() {
+            public void run() {
+                android.util.Log.i("CubCloneLists",
+                        "preinstall_on=" + CloneStore.preinstallOn(SettingsActivity.this)
+                        + " default=" + CloneStore.defaultPreinstall(SettingsActivity.this)
+                        + " disable=" + CloneStore.extraDisable(SettingsActivity.this)
+                        + " uninstall=" + CloneStore.extraUninstall(SettingsActivity.this)
+                        + " hide=" + CloneStore.hideList());
+            }
+        }, 3000);
 
         title = findViewById(R.id.title);
         secLook = findViewById(R.id.sec_look);
@@ -994,7 +1007,7 @@ public class SettingsActivity extends Activity {
         return et;
     }
 
-    /** 禁用清单弹窗：必需项锁定，可选项勾选禁用 */
+    /** 禁用清单：勾选的系统应用建空间后禁用（不可用）。红字＝不建议禁用，但照样能改 */
     private void showDisableExtra() {
         PackageManager pm = getPackageManager();
         Intent i = new Intent(Intent.ACTION_MAIN, null);
@@ -1002,9 +1015,10 @@ public class SettingsActivity extends Activity {
         List<ResolveInfo> ris = pm.queryIntentActivities(i, 0);
         if (ris == null) ris = new ArrayList<ResolveInfo>();
 
+        final int red = Theme.red(this);
         final Set<String> mustK = CloneStore.mustKeep(this);
         final Set<String> resolver = CloneStore.resolverPkgs(this);
-        final Set<String> essential = new HashSet<String>();
+        final Set<String> risky = new HashSet<String>();
         final List<String> sysPkgs = new ArrayList<String>();
         final Map<String, String> labels = new HashMap<String, String>();
         for (ResolveInfo ri : ris) {
@@ -1014,16 +1028,14 @@ public class SettingsActivity extends Activity {
                 ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
                 if ((ai.flags & (ApplicationInfo.FLAG_SYSTEM
                         | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) == 0) continue;
-                labels.put(pkg, String.valueOf(ai.loadLabel(pm)));
+                labels.put(pkg, String.valueOf(ri.loadLabel(pm)));
             } catch (Throwable ignored) { continue; }
             sysPkgs.add(pkg);
             if (CloneStore.isEssentialPkg(pkg) || mustK.contains(pkg) || resolver.contains(pkg)) {
-                essential.add(pkg);
+                risky.add(pkg);
             }
         }
         Collections.sort(sysPkgs);
-        final List<String> optional = new ArrayList<String>();
-        for (String p : sysPkgs) if (!essential.contains(p)) optional.add(p);
 
         final Set<String> checked = CloneStore.extraDisable(this);
 
@@ -1041,81 +1053,31 @@ public class SettingsActivity extends Activity {
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
 
-        TextView essTitle = new TextView(this);
-        essTitle.setText(getString(R.string.keep_extra_essential, essential.size()));
-        essTitle.setTextSize(12);
-        essTitle.setTextColor(secColor);
-        essTitle.setPadding(0, dp(8), 0, dp(2));
-        list.addView(essTitle);
-        TextView essText = new TextView(this);
-        StringBuilder sb = new StringBuilder();
-        for (String p : essential) {
-            if (sb.length() > 0) sb.append(" · ");
-            String lb = labels.get(p);
-            sb.append(lb == null ? p : lb);
-        }
-        essText.setText(sb.toString());
-        essText.setTextSize(13);
-        essText.setTextColor(secColor);
-        essText.setAlpha(0.55f);
-        essText.setPadding(dp(4), dp(2), dp(4), dp(2));
-        list.addView(essText);
+        TextView tip = new TextView(this);
+        tip.setText(R.string.list_red_hint);
+        tip.setTextSize(12);
+        tip.setTextColor(red);
+        tip.setPadding(0, dp(6), 0, dp(4));
+        list.addView(tip);
 
-        TextView optTitle = new TextView(this);
-        optTitle.setText(R.string.keep_extra_optional);
-        optTitle.setTextSize(12);
-        optTitle.setTextColor(secColor);
-        optTitle.setPadding(0, dp(8), 0, dp(2));
-        list.addView(optTitle);
-
-        final LinearLayout optBox = new LinearLayout(this);
-        optBox.setOrientation(LinearLayout.VERTICAL);
         final Map<String, CheckBox> optChecks = new HashMap<String, CheckBox>();
         final Set<String> inUninstall = CloneStore.extraUninstall(this);
-        for (String p : optional) {
-            if (inUninstall.contains(p)) continue;   // 卸载优先：已在卸载清单的项排到末尾置灰
+        for (String p : sysPkgs) {
             CheckBox cb = new CheckBox(this);
             String lb = labels.get(p);
-            cb.setText(lb == null ? p : lb);
+            String txt = lb == null ? p : lb;
+            if (inUninstall.contains(p)) txt += "（" + getString(R.string.in_uninstall_list) + "）";
+            cb.setText(txt);
             cb.setTextSize(14);
-            cb.setTextColor(fgColor);
+            cb.setTextColor(risky.contains(p) ? red : fgColor);
             cb.setChecked(checked.contains(p));
             optChecks.put(p, cb);
-            optBox.addView(cb);
+            list.addView(cb);
         }
-        for (String p : optional) {
-            if (!inUninstall.contains(p)) continue;
-            CheckBox cb = new CheckBox(this);
-            String lb = labels.get(p);
-            cb.setText((lb == null ? p : lb) + "（" + getString(R.string.in_uninstall_list) + "）");
-            cb.setTextSize(14);
-            cb.setTextColor(secColor);
-            cb.setEnabled(false);
-            cb.setChecked(false);
-            optChecks.put(p, cb);
-            optBox.addView(cb);
-        }
-        list.addView(optBox);
         sv.addView(list);
         root.addView(sv);
 
-        LinearLayout btns = new LinearLayout(this);
-        btns.setOrientation(LinearLayout.HORIZONTAL);
-        btns.setPadding(0, dp(8), 0, dp(4));
-        TextView all = new TextView(this);
-        all.setText(R.string.select_all_optional);
-        all.setTextSize(14);
-        all.setTextColor(fgColor);
-        all.setPadding(dp(4), dp(8), dp(16), dp(8));
-        all.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                for (CheckBox cb : optChecks.values()) cb.setChecked(true);
-            }
-        });
-        btns.addView(all);
-        root.addView(btns);
-
-        final AlertDialog dlg = Theme.dialog(this)
+        AlertDialog dlg = Theme.dialog(this)
                 .setTitle(R.string.keep_extra_title)
                 .setView(root)
                 .setPositiveButton(R.string.save, new DialogInterface.OnClickListener() {
@@ -1131,9 +1093,11 @@ public class SettingsActivity extends Activity {
                         CloneStore.dirty = true;
                     }
                 })
+                .setNeutralButton(R.string.restore_default, null)
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
         dlg.show();
+        bindRestoreDefault(dlg, optChecks, null);
 
         search.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s, int a, int b2, int c) {}
@@ -1274,9 +1238,11 @@ public class SettingsActivity extends Activity {
                         CloneStore.dirty = true;
                     }
                 })
+                .setNeutralButton(R.string.restore_default, null)
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
         dlg.show();
+        bindRestoreDefault(dlg, optChecks, null);
 
         search.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s, int a, int b2, int c) {}
@@ -1295,14 +1261,15 @@ public class SettingsActivity extends Activity {
     }
 
     /**
-     * 四份清单互斥：同一个应用不能既预装、又被禁用/不装/隐藏。
+     * 三份清单互斥：预装与「不装」「禁用」不能同时选中（装了就不该再卸/禁）。
+     * 隐藏清单不参与：它语义是「装进去但不显示」，和预装可以共存。
      * 最后保存的那份说了算，从其它清单里剔除重叠项；返回是否真的剔过。
      */
     private boolean dropListConflicts(String savedKey, Set<String> saved) {
         boolean cut = false;
         if (saved == null || saved.isEmpty()) return false;
-        for (String k : new String[]{"preinstall_extra", "disable_extra",
-                "uninstall_extra", "hide_list"}) {
+        for (String k : new String[]{"preinstall_on", "preinstall_extra",
+                "disable_extra", "uninstall_extra"}) {
             if (k.equals(savedKey)) continue;
             Set<String> other = sp().getStringSet(k, null);
             if (other == null || other.isEmpty()) continue;
@@ -1315,17 +1282,23 @@ public class SettingsActivity extends Activity {
     }
 
     /**
-     * 预装清单：新空间一定会装哪些系统应用。
-     * 底线＝{@link CloneStore#essentialPkgs}，不可取消（少一个分身就起不来）；
-     * 其余系统应用可额外勾选，勾了就跟着底线一起装进新空间。
+     * 预装清单：新空间要装哪些系统应用。
+     *
+     * <p>所有项都能改，没有钉死的条目；底线（少一个空间就起不来）用红字标出，只是不建议取消。
+     * 「默认」按钮恢复成「底线 + 浏览器 / 看图」。
      */
     private void showPreinstall() {
         PackageManager pm = getPackageManager();
-        Set<String> essential = CloneStore.essentialPkgs(this);
+        final int red = Theme.red(this);
+        final Set<String> essential = CloneStore.essentialPkgs(this);
+        // 系统包清单要靠提权 shell 查；刚进页面还没就绪时会算成残缺集合，别让用户存下这份
+        if (essential.size() < 5) {
+            toast(getString(R.string.list_need_perm));
+            return;
+        }
+        final Set<String> defaults = CloneStore.defaultPreinstall(this);
         final Map<String, String> labels = new HashMap<String, String>();
         // 不用 getInstalledApplications：Flyme 的「读取应用列表」隐私开关会因此每次弹系统授权框。
-        // 和主界面/不装清单一样走 queryIntentActivities，只拿有桌面入口的系统应用；
-        // 底线里没有桌面入口的（GMS/WebView 等）再单包查一次，实测不触发隐私弹框。
         Intent i = new Intent(Intent.ACTION_MAIN, null);
         i.addCategory(Intent.CATEGORY_LAUNCHER);
         List<ResolveInfo> ris = pm.queryIntentActivities(i, 0);
@@ -1340,25 +1313,22 @@ public class SettingsActivity extends Activity {
                 labels.put(pkg, String.valueOf(ri.loadLabel(pm)));
             } catch (Throwable ignored) { }
         }
-        for (String p : essential) {
+        // 默认预装里没有桌面入口的（GMS / WebView / 解析器）单包查一次名字
+        for (String p : defaults) {
             if (labels.containsKey(p)) continue;
             try {
                 ApplicationInfo ai = pm.getApplicationInfo(p, 0);
                 labels.put(p, String.valueOf(ai.loadLabel(pm)));
             } catch (Throwable ignored) { }
         }
-        final List<String> optional = new ArrayList<String>();
-        for (String p : labels.keySet()) {
-            if (!essential.contains(p) && !p.equals(getPackageName())) optional.add(p);
-        }
-        Collections.sort(optional, new Comparator<String>() {
+        final List<String> all = new ArrayList<String>(labels.keySet());
+        Collections.sort(all, new Comparator<String>() {
             public int compare(String a, String b) {
                 String la = labels.get(a), lb = labels.get(b);
                 return (la == null ? a : la).compareToIgnoreCase(lb == null ? b : lb);
             }
         });
-
-        final Set<String> checked = CloneStore.preinstallExtra(this);
+        final Set<String> on = CloneStore.preinstallOn(this);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -1373,48 +1343,29 @@ public class SettingsActivity extends Activity {
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
 
-        TextView essTitle = new TextView(this);
-        essTitle.setText(getString(R.string.preinstall_essential, essential.size()));
-        essTitle.setTextSize(12);
-        essTitle.setTextColor(secColor);
-        essTitle.setPadding(0, dp(8), 0, dp(2));
-        list.addView(essTitle);
-        TextView essText = new TextView(this);
-        StringBuilder sb = new StringBuilder();
-        for (String p : essential) {
-            if (sb.length() > 0) sb.append(" · ");
-            String lb = labels.get(p);
-            sb.append(lb == null ? p : lb);
-        }
-        essText.setText(sb.toString());
-        essText.setTextSize(13);
-        essText.setTextColor(secColor);
-        essText.setAlpha(0.55f);
-        essText.setPadding(dp(4), dp(2), dp(4), dp(2));
-        list.addView(essText);
-
-        TextView optTitle = new TextView(this);
-        optTitle.setText(R.string.preinstall_optional);
-        optTitle.setTextSize(12);
-        optTitle.setTextColor(secColor);
-        optTitle.setPadding(0, dp(8), 0, dp(2));
-        list.addView(optTitle);
+        TextView tip = new TextView(this);
+        tip.setText(R.string.list_red_hint);
+        tip.setTextSize(12);
+        tip.setTextColor(red);
+        tip.setPadding(0, dp(6), 0, dp(4));
+        list.addView(tip);
 
         final Map<String, CheckBox> checks = new HashMap<String, CheckBox>();
-        for (String p : optional) {
+        for (String p : all) {
             CheckBox cb = new CheckBox(this);
             String lb = labels.get(p);
             cb.setText(lb == null ? p : lb);
             cb.setTextSize(14);
-            cb.setTextColor(fgColor);
-            cb.setChecked(checked.contains(p));
+            // 红字＝底线，取消后分身可能起不来，只是不建议，不拦着
+            cb.setTextColor(essential.contains(p) ? red : fgColor);
+            cb.setChecked(on.contains(p));
             checks.put(p, cb);
             list.addView(cb);
         }
         sv.addView(list);
         root.addView(sv);
 
-        Theme.dialog(this)
+        AlertDialog dlg = Theme.dialog(this)
                 .setTitle(R.string.preinstall_title)
                 .setView(root)
                 .setPositiveButton(R.string.save, new DialogInterface.OnClickListener() {
@@ -1423,15 +1374,18 @@ public class SettingsActivity extends Activity {
                         for (Map.Entry<String, CheckBox> e : checks.entrySet()) {
                             if (e.getValue().isChecked()) saved.add(e.getKey());
                         }
-                        sp().edit().putStringSet("preinstall_extra", saved).apply();
-                        if (dropListConflicts("preinstall_extra", saved)) {
+                        sp().edit().putStringSet("preinstall_on", saved).apply();
+                        if (dropListConflicts("preinstall_on", saved)) {
                             toast(getString(R.string.list_conflict_dropped));
                         }
                         CloneStore.dirty = true;
                     }
                 })
+                .setNeutralButton(R.string.restore_default, null)
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .create();
+        dlg.show();
+        bindRestoreDefault(dlg, checks, defaults);
 
         search.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s, int a, int b2, int c) {}
@@ -1444,6 +1398,24 @@ public class SettingsActivity extends Activity {
                             || (lb != null && lb.toLowerCase().contains(kw))
                             || en.getKey().toLowerCase().contains(kw);
                     en.getValue().setVisibility(match ? View.VISIBLE : View.GONE);
+                }
+            }
+        });
+    }
+
+    /**
+     * 「默认」按钮只重置勾选状态，不关对话框。
+     * defaults 为 null 表示这份清单的默认是「全不选」。
+     */
+    private void bindRestoreDefault(final AlertDialog dlg,
+                                    final Map<String, CheckBox> checks,
+                                    final Set<String> defaults) {
+        android.widget.Button b = dlg.getButton(android.content.DialogInterface.BUTTON_NEUTRAL);
+        if (b == null) return;
+        b.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                for (Map.Entry<String, CheckBox> e : checks.entrySet()) {
+                    e.getValue().setChecked(defaults == null || defaults.contains(e.getKey()));
                 }
             }
         });
@@ -1551,15 +1523,14 @@ public class SettingsActivity extends Activity {
                             if (e.getValue().isChecked()) saved.add(e.getKey());
                         }
                         sp().edit().putStringSet("hide_list", saved).apply();
-                        if (dropListConflicts("hide_list", saved)) {
-                            toast(getString(R.string.list_conflict_dropped));
-                        }
                         // 只改配置，不立即隐藏：建空间时才把清单固化进「已隐藏」结果
                     }
                 })
+                .setNeutralButton(R.string.restore_default, null)
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
         dlg.show();
+        bindRestoreDefault(dlg, checks, null);
 
         search.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s, int a, int b2, int c) {}

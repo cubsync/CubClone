@@ -1295,18 +1295,20 @@ public class MainActivity extends Activity {
         boolean showPrimary = sp().getBoolean("grid_show_primary", false);
         shownGroups.clear();
         flatItems.clear();
+        // 搜索不受筛选影响：页签、「显示全部」、隐藏都不限制结果，否则搜出来的东西时有时无
+        final boolean searching = kw.length() > 0;
         for (Group g : groups) {
             // 页签过滤：用户页签显示 userApps 或「主身份认不出」的包，系统页签显示 sysApps
             boolean isUser = userApps.contains(g.pkg) || !sysApps.contains(g.pkg);
-            if ((tab == 0) != isUser) continue;
+            if (!searching && (tab == 0) != isUser) continue;
             // 默认只列已经开过分身的应用；多选批量创建时列全部，否则勾不到还没开过的
-            if (!multi && !showAll && g.clones.isEmpty()) continue;
+            if (!searching && !multi && !showAll && g.clones.isEmpty()) continue;
             if (kw.length() > 0
                     && !g.label.toLowerCase().contains(kw)
                     && !g.pkg.toLowerCase().contains(kw)) {
                 continue;
             }
-            if (CloneStore.isSysHidden(g.pkg)) continue;   // 隐藏的主空间系统应用不显示
+            if (!searching && CloneStore.isSysHidden(g.pkg)) continue;   // 隐藏的主空间系统应用不显示；搜索时照常出现
             shownGroups.add(g);
             if (grid) {
                 if (showPrimary) flatItems.add(new FlatItem(g, null, -1));

@@ -202,7 +202,7 @@ Owner data is not touched.</string>
     <string name="label_keep_sys">Preprocess system apps for new spaces</string>
     <string name="hint_keep_sys">Master switch: when creating a space, preprocess system apps by the preinstall, uninstall, disable and hide lists; turn off to skip them all</string>
     <string name="keep_extra_title">Disable list</string>
-    <string name="keep_extra_hint">Apps in the disable list are disabled when creating a space; can be enabled anytime</string>
+    <string name="keep_extra_hint">Checked apps are disabled inside new spaces (kept installed, just unusable) and can be enabled again; red items are not recommended</string>
     <string name="keep_extra_essential">Essential · cannot be disabled (%1$d)</string>
     <string name="keep_extra_optional">Optional · check to disable</string>
     <string name="search_sys_app">Search system apps</string>
@@ -213,10 +213,13 @@ Owner data is not touched.</string>
     <string name="hidden_sys_hint">Apps in the hide list are hidden when creating a space (stay enabled, just hidden); applies on next space</string>
     <string name="hidden_sys_dialog_tip">Check = hide when creating a space</string>
     <string name="preinstall_title">Preinstall list</string>
-    <string name="preinstall_hint">Apps every new space gets: the essential set cannot be removed; check more system apps to include them</string>
+    <string name="preinstall_hint">Apps every new space gets: checked means installed. Unchecking a red item may break the space</string>
     <string name="preinstall_essential">Essential · locked (%1$d, keeps a space usable)</string>
     <string name="preinstall_optional">Extra preinstall · checked = also install in new spaces</string>
     <string name="list_conflict_dropped">Overlapping apps were removed from the other lists</string>
+    <string name="restore_default">Default</string>
+    <string name="list_red_hint">Red = not recommended; changing it may break the space</string>
+    <string name="list_need_perm">Permissions are not ready yet, try again in a moment</string>
     <string name="uninstall_optional">Optional · check to uninstall</string>
     <string name="in_uninstall_list">In uninstall list</string>
     <string name="in_disable_list">In disable list</string>
@@ -597,4 +600,11 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="sp_deleted_n">Deleted %1$d / %2$d spaces</string>
     <string name="sp_manage">Manage</string>
     <string name="sp_view_all">View all %1$d spaces</string>
+    <string name="feature_title">Feature switches</string>
+    <string name="feature_ime">Input method</string>
+    <string name="feature_ime_hint">Spaces use the input method of the main space instead of installing their own</string>
+    <string name="feature_pick">File picker</string>
+    <string name="feature_pick_hint">Picking a file opens photos and files from the main space</string>
+    <string name="feature_store">Shared storage</string>
+    <string name="feature_store_hint">Spaces share photos and files with the main space (needs the fix module)</string>
 </resources>

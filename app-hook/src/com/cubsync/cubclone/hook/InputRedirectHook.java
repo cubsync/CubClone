@@ -53,8 +53,8 @@ final class InputRedirectHook {
 
     int apply(ClassLoader cl) {
         hookCurrentProfile(cl);
-        hookMethodMap(cl);
-        hookQueryImeServices(cl);
+        hookImeQueries(cl);
+        hookPackageCheck(cl);
         Class<?> c;
         try {
             c = Class.forName(CONTEXT_IMPL, false, cl);
@@ -62,51 +62,52 @@ final class InputRedirectHook {
             Log.i(TAG, "no ContextImpl; skip ime redirect");
             return 0;
         }
-        Method target = null;
+        java.util.List<Method> targets = new java.util.ArrayList<>();
         for (Method m : c.getDeclaredMethods()) {
             if (!METHOD.equals(m.getName())) continue;
             Class<?>[] p = m.getParameterTypes();
-            // (Intent, ServiceConnection, int, UserHandle)
-            if (p.length == 4 && p[0] == Intent.class && p[3] == UserHandle.class) {
-                target = m;
-                break;
+            // 不绑死参数个数：只要带 Intent 和 UserHandle 就是候选，全部挂上
+            // （ContextImpl 里 bindServiceAsUser 有多个重载，IMS 用的是哪一个随版本变）
+            if (indexOf(p, Intent.class) >= 0 && indexOf(p, UserHandle.class) >= 0) {
+                targets.add(m);
             }
         }
-        if (target == null) {
+        if (targets.isEmpty()) {
             Log.w(TAG, METHOD + " not found; skip ime redirect");
             return 0;
         }
-        try {
+        int ok = 0;
+        for (Method target : targets) {
             try {
-                xp.deoptimize(target);
-            } catch (Throwable ignored) {
-            }
-            xp.hook(target)
-                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                    .intercept(chain -> {
-                        Object[] args = chain.getArgs().toArray();
-                        if (args.length == 4 && args[0] instanceof Intent && args[3] instanceof UserHandle) {
-                            int uid = idOf((UserHandle) args[3]);
-                            if (uid > 0 && WmVisibleHook.ours(uid) && isIme((Intent) args[0])) {
-                                args[3] = user0();
+                try {
+                    xp.deoptimize(target);
+                } catch (Throwable ignored) {
+                }
+                xp.hook(target)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(chain -> {
+                            Object[] args = chain.getArgs().toArray();
+                            // 只改「绑定输入法服务」这一类，别的绑定原样放行。
+                            // 这里只动 UserHandle：同签名里的 int 是 bind flags，不是用户 id。
+                            if (anyIme(args) && rewriteUserHandles(args) > 0) {
                                 int k = HITS.incrementAndGet();
                                 if (FIRST.getAndIncrement() == 0) {
-                                    Log.i(TAG, "ime bind: uid " + uid + " -> 0");
-                                    HookMain.mark(PROP_LAST, String.valueOf(uid));
+                                    Log.i(TAG, "ime bind: -> user 0");
+                                    HookMain.mark(PROP_LAST, "bind");
                                 }
                                 HookMain.mark(PROP_HITS, String.valueOf(k));
                                 return chain.proceed(args);
                             }
-                        }
-                        return chain.proceed();
-                    });
-            HookMain.mark(PROP_LAST, "hooked");
-            Log.i(TAG, METHOD + " hooked for ime redirect");
-            return 1;
-        } catch (Throwable t) {
-            Log.w(TAG, "ime hook failed: " + t);
-            return 0;
+                            return chain.proceed();
+                        });
+                ok++;
+            } catch (Throwable t) {
+                Log.w(TAG, "ime hook failed: " + t);
+            }
         }
+        HookMain.mark(PROP_LAST, ok > 0 ? "hooked:" + ok : "fail");
+        Log.i(TAG, METHOD + " hooked for ime redirect: " + ok + "/" + targets.size());
+        return ok;
     }
 
     /**
@@ -167,68 +168,81 @@ final class InputRedirectHook {
     }
 
     /**
-     * 第三道闸：IMS 按用户构建「可用的输入法集合」（{@code queryMethodMapForUser(int)}）。
-     * 空间里没装输入法时这个集合是空的，{@code mCurMethodId} 直接被置 null，后面连绑定都不会发起。
-     * 这里把空间的查询换成主用户（参数改 0），集合里就有主空间那套输入法；
-     * 真正绑定时再由 bindServiceAsUser 的 hook 把目标用户换到 0。
+     * 第二道闸：IMS 按用户构建「可用的输入法集合」。
+     *
+     * <p>空间里没装输入法时集合是空的，{@code mCurMethodId} 直接被置 null，后面连绑定都不会发起。
+     * AOSP 各版本这里的方法名与签名不一样：
+     * <ul>
+     *   <li>11–13：{@code queryMethodMapForUser(int)}</li>
+     *   <li>12+：{@code queryInputMethodServicesInternal(Context, int, ArrayMap, ArrayMap, ArrayList, int)}</li>
+     * </ul>
+     * 所以不绑签名：按名字候选 + 名字模式兜底，命中后把「值等于我们空间用户 id」的
+     * 参数一律改成 0，空间就拿到主用户那套输入法清单；真正绑定时再由
+     * {@code bindServiceAsUser} 的钩子把目标用户换成 0。
      */
-    private void hookMethodMap(ClassLoader cl) {
+    private void hookImeQueries(ClassLoader cl) {
+        String name = "sys.cubclone.hook.ime.q";
+        Class<?> c;
         try {
-            Class<?> c = Class.forName("com.android.server.inputmethod.InputMethodManagerService", false, cl);
-            Method m = null;
-            for (Method x : c.getDeclaredMethods()) {
-                if ("queryMethodMapForUser".equals(x.getName())
-                        && x.getParameterTypes().length == 1
-                        && x.getParameterTypes()[0] == int.class) {
-                    m = x;
-                    break;
-                }
-            }
-            if (m == null) {
-                HookMain.mark("sys.cubclone.hook.ime.mm", "no-method");
-                return;
-            }
-            try {
-                xp.deoptimize(m);
-            } catch (Throwable ignored) {
-            }
-            xp.hook(m)
-                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                    .intercept(chain -> {
-                        Object a0 = chain.getArg(0);
-                        int userId = a0 instanceof Integer ? ((Integer) a0).intValue() : -1;
-                        if (userId > 0 && WmVisibleHook.ours(userId)) {
-                            HookMain.mark("sys.cubclone.hook.ime.mm", String.valueOf(userId));
-                            return chain.proceed(new Object[]{Integer.valueOf(0)});
-                        }
-                        return chain.proceed();
-                    });
-            HookMain.mark("sys.cubclone.hook.ime.mm", "hooked");
+            c = Class.forName(IMS, false, cl);
         } catch (Throwable t) {
-            HookMain.mark("sys.cubclone.hook.ime.mm", "fail");
-            Log.w(TAG, "method map hook failed: " + t);
+            HookMain.mark(name, "no-class");
+            return;
         }
+        Method[] cands = pickImeQueries(c);
+        if (cands.length == 0) {
+            HookMain.mark(name, "no-method");
+            HookMain.mark("sys.cubclone.hook.ime.mm", "no-method");
+            return;
+        }
+        int n = 0;
+        for (Method m : cands) {
+            try {
+                try {
+                    xp.deoptimize(m);
+                } catch (Throwable ignored) {
+                }
+                xp.hook(m)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(chain -> {
+                            Object[] a = chain.getArgs().toArray();
+                            if (rewriteUserArgs(a) > 0) {
+                                HookMain.mark(name, m.getName());
+                                return chain.proceed(a);
+                            }
+                            return chain.proceed();
+                        });
+                n++;
+                Log.i(TAG, "ime query hooked: " + m.getName());
+            } catch (Throwable t) {
+                Log.w(TAG, "ime query hook failed on " + m.getName() + ": " + t);
+            }
+        }
+        HookMain.mark(name, n > 0 ? "hooked:" + n : "fail");
+        HookMain.mark("sys.cubclone.hook.ime.mm", n > 0 ? "hooked:" + n : "fail");
     }
 
+    private static final String IMS = "com.android.server.inputmethod.InputMethodManagerService";
+
     /**
-     * AOSP 主线：{@code InputMethodManagerService.queryInputMethodServicesInternal(
-     * Context, int userId, ArrayMap, ArrayMap, ArrayList, int)} 是「某个用户有哪些输入法」的
-     * 唯一来源。空间里没装输入法包，按空间 userId 查出来就是空表，{@code mMethodMap} 空，
-     * 选中项被清空，后面绑定根本不会发起。
+     * 第四道闸：{@code InputMethodUtils.checkIfPackageBelongsToUid(AppOpsManager, uid, pkg)}。
      *
-     * <p>把 userId 换成 0 后，空间拿到的是主用户那套输入法清单；真正绑定时
-     * 再由 {@code bindServiceAsUser} 的 hook 把目标用户换成 0，服务就在主用户里跑起来。
-     * 输入法与应用的连接走 binder，不依赖同用户。
+     * <p>{@code startInputUncheckedLocked} 在绑定之前用它确认「客户端的 uid 确实拥有这个输入法包」，
+     * 内部就是 {@code appOpsManager.checkPackage(uid, pkg)}。空间的客户端 uid 里没有主空间的输入法包，
+     * 校验抛 SecurityException → 返回 false → IMS 直接返回 {@code INVALID_PACKAGE_NAME}，
+     * 连绑定都不会发起（表现就是 mCurMethodId 有值、mCurId 为 null、键盘不弹）。
+     *
+     * <p>只对我们自己空间的 uid 放行；主用户、系统自带分身的判定原样走原实现。
      */
-    private void hookQueryImeServices(ClassLoader cl) {
-        String name = "sys.cubclone.hook.ime.q";
+    private void hookPackageCheck(ClassLoader cl) {
+        String name = "sys.cubclone.hook.ime.pkg";
         try {
-            Class<?> c = Class.forName("com.android.server.inputmethod.InputMethodManagerService", false, cl);
+            Class<?> c = Class.forName("com.android.server.inputmethod.InputMethodUtils", false, cl);
             Method m = null;
             for (Method x : c.getDeclaredMethods()) {
-                if (!"queryInputMethodServicesInternal".equals(x.getName())) continue;
+                if (!"checkIfPackageBelongsToUid".equals(x.getName())) continue;
                 Class<?>[] p = x.getParameterTypes();
-                if (p.length == 6 && p[0] == android.content.Context.class && p[1] == int.class) {
+                if (p.length == 3 && p[1] == int.class && p[2] == String.class) {
                     m = x;
                     break;
                 }
@@ -244,23 +258,105 @@ final class InputRedirectHook {
             xp.hook(m)
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                     .intercept(chain -> {
-                        Object[] a = chain.getArgs().toArray();
-                        if (a.length == 6 && a[1] instanceof Integer) {
-                            int userId = ((Integer) a[1]).intValue();
-                            if (userId > 0 && WmVisibleHook.ours(userId)) {
-                                a[1] = Integer.valueOf(0);
-                                HookMain.mark(name, String.valueOf(userId));
-                                return chain.proceed(a);
+                        Object r = chain.proceed();
+                        if (Boolean.TRUE.equals(r)) return r;
+                        Object a1 = chain.getArg(1);
+                        int uid = a1 instanceof Integer ? ((Integer) a1).intValue() : -1;
+                        if (uid > 0 && WmVisibleHook.ours(uid / 100000)) {
+                            int k = HITS.incrementAndGet();
+                            if (FIRST.getAndIncrement() == 0) {
+                                Log.i(TAG, "ime package check: uid " + uid + " -> true");
                             }
+                            HookMain.mark(name, "hit:" + k);
+                            HookMain.mark(PROP_HITS, String.valueOf(k));
+                            return Boolean.TRUE;
                         }
-                        return chain.proceed();
+                        return r;
                     });
             HookMain.mark(name, "hooked");
-            Log.i(TAG, "queryInputMethodServicesInternal hooked");
+            Log.i(TAG, "checkIfPackageBelongsToUid hooked");
         } catch (Throwable t) {
             HookMain.mark(name, "fail");
-            Log.w(TAG, "query ime services hook failed: " + t);
+            Log.w(TAG, "pkg check hook failed: " + t);
         }
+    }
+
+    /** 已知名字优先，其次按名字模式兜底；同一次只挂一次。 */
+    private static Method[] pickImeQueries(Class<?> c) {
+        java.util.LinkedHashSet<Method> out = new java.util.LinkedHashSet<>();
+        for (Method x : c.getDeclaredMethods()) {
+            String n = x.getName();
+            if ("queryMethodMapForUser".equals(n) || "queryInputMethodServicesInternal".equals(n)) {
+                if (rewriteCandidate(x.getParameterTypes())) out.add(x);
+            }
+        }
+        if (!out.isEmpty()) return out.toArray(new Method[0]);
+        for (Method x : c.getDeclaredMethods()) {
+            String n = x.getName().toLowerCase(java.util.Locale.ROOT);
+            if (!n.startsWith("query")) continue;
+            if (!n.contains("methodmap") && !n.contains("inputmethodservice")) continue;
+            if (rewriteCandidate(x.getParameterTypes())) out.add(x);
+        }
+        return out.toArray(new Method[0]);
+    }
+
+    private static boolean rewriteCandidate(Class<?>[] p) {
+        for (Class<?> t : p) if (t == int.class || t == UserHandle.class) return true;
+        return false;
+    }
+
+    private static int indexOf(Class<?>[] p, Class<?> want) {
+        for (int i = 0; i < p.length; i++) if (p[i] == want) return i;
+        return -1;
+    }
+
+    /**
+     * 把「值为我们空间用户 id」的 int 参数换成 0，UserHandle 同理会换成 user 0。
+     *
+     * <p>不按位置取，是因为 AOSP 每个版本都会往里加参数；只有值真正命中我们空间
+     * 用户时才改，flags / displayId 之类的 int 不会等于用户 id，不会被误改。
+     *
+     * @return 改写的参数个数
+     */
+    private static int rewriteUserArgs(Object[] a) {
+        int n = 0;
+        for (int i = 0; i < a.length; i++) {
+            Object v = a[i];
+            if (v instanceof Integer) {
+                int id = ((Integer) v).intValue();
+                if (id > 0 && WmVisibleHook.ours(id)) {
+                    a[i] = Integer.valueOf(0);
+                    n++;
+                }
+            } else if (v instanceof UserHandle) {
+                int id = idOf((UserHandle) v);
+                if (id > 0 && WmVisibleHook.ours(id)) {
+                    a[i] = user0();
+                    n++;
+                }
+            }
+        }
+        return n;
+    }
+
+    private static boolean anyIme(Object[] a) {
+        for (Object v : a) if (v instanceof Intent && isIme((Intent) v)) return true;
+        return false;
+    }
+
+    /** 只改 UserHandle 形态的用户 id（绑定服务用这个形态，int 是 flags 不能动）。 */
+    private static int rewriteUserHandles(Object[] a) {
+        int n = 0;
+        for (int i = 0; i < a.length; i++) {
+            Object v = a[i];
+            if (!(v instanceof UserHandle)) continue;
+            int id = idOf((UserHandle) v);
+            if (id > 0 && WmVisibleHook.ours(id)) {
+                a[i] = user0();
+                n++;
+            }
+        }
+        return n;
     }
 
     /** UserHandle.getIdentifier 是 @hide，编译桩里没有，只能反射 */

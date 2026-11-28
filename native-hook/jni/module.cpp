@@ -139,6 +139,11 @@ static bool relocatable(const uint32_t *insn, int n) {
 
 static bool hook_func(void *target, void *replace, void **backup) {
     if (!target || !replace || !backup) return false;
+#if !defined(__aarch64__)
+    // 指令编码随架构变，这里只做 arm64 内联补丁；其它架构明确退出，不写坏指令。
+    logi("hook_func: ABI hook not implemented, skip");
+    return false;
+#endif
     const size_t page = (size_t) sysconf(_SC_PAGESIZE);
     uintptr_t pageStart = (uintptr_t) target & ~(page - 1);
     if (mprotect((void *) pageStart, page * 2, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {

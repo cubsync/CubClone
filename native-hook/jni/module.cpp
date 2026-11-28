@@ -226,9 +226,6 @@ static int setgroups_replacement(size_t size, const gid_t *list) {
 
     std::vector<int> users;
     collect_space_users(&users);
-    // 号段预留：AOSP 从 10 开始分配用户，新建空间不可能赶在媒体存储进程启动之前。
-    // 这里把 10..39 的派生组一起并进去，新建空间无需重启即挂得上。
-    for (int u = 10; u <= 39; u++) users.push_back(u);
     int added = 0;
     for (int u : users) {
         gid_t gid = (gid_t) (u * 100000 + 9997);   // AID_EVERYBODY 的每用户派生组

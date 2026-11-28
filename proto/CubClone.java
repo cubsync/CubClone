@@ -23,6 +23,8 @@ import java.util.regex.Pattern;
 public final class CubClone {
 
     private static final String CLONE = "android.os.usertype.profile.CLONE";
+    /** 由主应用随 jar 一起释放到 /data/local/tmp，用来给目录加 POSIX ACL */
+    private static final String ACLTOOL = "/data/local/tmp/acltool";
     /**
      * 降级档：内核还编着 sdcardfs 的 ROM 上，vold 给 clone 用户 bind
      * `/mnt/user/<uid>/emulated/<uid>/Android/data` 时，MediaProvider 的 FUSE
@@ -153,11 +155,66 @@ public final class CubClone {
         // 那时属性里没有这个 uid 的话，桌面照样会摆出分身应用（G7 实测）。
         addHookSpace(uid);
         markOwned(uid);
+        // 存储授权必须在 start-user 之前：卷是首次 start 时挂的，挂的时候媒体进程就要能
+        // 穿过 /data/media/<uid>，晚了这一轮就只能是 unmountable，只能等下轮。
+        provisionStorage(uid);
         sh("am", "start-user", String.valueOf(uid));
         // 建号只花 1 秒，等存储最长 25 秒。以前在这里死等，界面就一直是「创建中」，
         // 用户以为卡住会反复点（G7 上一次连建 5 个）。现在建完立刻返回，
         // 等存储交给 settle 子命令，App 在后台跑。
         say("MODE=pending");
+    }
+
+    /**
+     * 给媒体存储进程一条 ACL，让它可以穿过这个空间的 {@code /data/media/<uid>}。
+     *
+     * <p>只在「内核带 sdcardfs」的设备上需要：那类机型该目录是 2770、组是用户自己的
+     * 派生组，媒体进程没有这个组，lstat 直接 EACCES，vold 绑 Android/data 前的
+     * umount2 失败，整卷回滚成 unmountable。纯 FUSE 机型系统自己就能挂，什么都不做。
+     *
+     * <p>用 ACL 而不是往进程里补组：附加组在进程启动时定死，补组只能预先占号段，
+     * 空间一多就不成立。ACL 按 uid 授权，建多少空间都是同一个动作、同一份开销。
+     */
+    private static void provisionStorage(int uid) {
+        String fs = "";
+        try {
+            fs = new String(java.nio.file.Files.readAllBytes(
+                    java.nio.file.Paths.get("/proc/filesystems")));
+        } catch (Throwable ignored) {
+        }
+        if (!fs.contains("sdcardfs")) return;
+        if (!new java.io.File(ACLTOOL).exists()) {
+            say("WARN 缺 " + ACLTOOL + "，本机存储授权未做");
+            return;
+        }
+        java.util.List<String> mp = mediaUids();
+        StringBuilder sb = new StringBuilder();
+        sb.append("D=/data/media/").append(uid).append("; ");
+        sb.append("mkdir -p $D/Android/data $D/Android/obb; ");
+        sb.append("chown 1023:1023 $D $D/Android $D/Android/data $D/Android/obb; ");
+        sb.append("chmod 2770 $D; chmod 2771 $D/Android $D/Android/data $D/Android/obb; ");
+        for (String u : mp) {
+            for (String p : new String[]{"$D", "$D/Android", "$D/Android/data", "$D/Android/obb"}) {
+                sb.append(ACLTOOL).append(" set ").append(p).append(' ').append(u).append(" 7; ");
+            }
+        }
+        String out = sh("su", "-c", sb.toString());
+        say("ACL uid=" + uid + " mp=" + mp + (out.isEmpty() ? "" : " out=" + out.replace('\n', ' ')));
+    }
+
+    /** 媒体存储的 uid：Android 10+ 是 .module（APEX），更早是 com.android.providers.media */
+    private static java.util.List<String> mediaUids() {
+        java.util.List<String> out = new java.util.ArrayList<String>();
+        String r = sh("pm", "list", "packages", "-U");
+        for (String line : r.split("\n")) {
+            if (!line.contains("providers.media")) continue;
+            Matcher m = Pattern.compile("uid:(\\d+)").matcher(line);
+            while (m.find()) {
+                if (!out.contains(m.group(1))) out.add(m.group(1));
+            }
+        }
+        if (out.isEmpty()) out.add("10155");
+        return out;
     }
 
     /**

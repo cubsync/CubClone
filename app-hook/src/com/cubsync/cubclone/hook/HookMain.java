@@ -103,10 +103,23 @@ public final class HookMain extends XposedModule {
             "com.bbk.launcher2",                     // vivo
     };
 
-    /** 共享存储的宿主进程：A13 起在 APEX 里，旧版在 /system/priv-app */
+    /** 共享存储的宿主进程：A13 起在 APEX 里（module 后缀），旧版在 /system/priv-app */
+    private static final String[] MEDIA_PKGS = {
+            "com.android.providers.media.module",        // AOSP / 多数 ROM 的 APEX 包
+            "com.google.android.providers.media.module",  // GMS 版 APEX 包
+            "com.android.providers.media",                // A11 及更早的 priv-app
+    };
+
     private static boolean isMediaProvider(String pkg) {
-        return "com.google.android.providers.media.module".equals(pkg)
-                || "com.android.providers.media".equals(pkg);
+        if (pkg == null) {
+            return false;
+        }
+        for (String k : MEDIA_PKGS) {
+            if (k.equals(pkg)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isLauncher(String pkg) {
@@ -191,6 +204,22 @@ public final class HookMain extends XposedModule {
             wm = new WmVisibleHook(this).apply(cl);
         } catch (Throwable t) {
             Log.w(TAG, "wm hook failed: " + t);
+        }
+        // 让 MediaProvider 认自建空间与父用户共享媒体：vold 挂 clone 用户的
+        // Android/data 要过 FUSE 的跨用户 lookup，不放行整卷就回滚（G7 实测）
+        int mediaShare = 0;
+        try {
+            mediaShare = new MediaShareHook(this).apply(cl);
+        } catch (Throwable t) {
+            Log.w(TAG, "mediaShare hook failed: " + t);
+        }
+        // 挂存储前先把该分身的媒体存储拉起来：FUSE 的服务方不在，vold 重绑
+        // Android/data 必然拿 EACCES，整卷回滚成 unmountable（G7 实测）
+        int mediaBoot = 0;
+        try {
+            mediaBoot = new MediaBootHook(this).apply(cl);
+        } catch (Throwable t) {
+            Log.w(TAG, "mediaBoot hook failed: " + t);
         }
         // 解锁自建空间：Flyme 的 LockSettingsService.tieProfileLockIfNecessary 会对 null
         // UserInfo 取 .id，把 system_server 打死（详见 LockHook）

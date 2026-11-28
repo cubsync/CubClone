@@ -76,7 +76,16 @@ final class FilePickerRedirectHook {
                                         Log.i(TAG, "file picker: user " + target + " -> 0");
                                     }
                                     HookMain.mark(PROP, "hit:" + k);
-                                    return chain.proceed(a);
+                                    // 换用户后系统会立刻校验 INTERACT_ACROSS_USERS_FULL，
+                                    // 调用方是空间里的普通应用，必然被拒并抛出到应用进程（闪退）。
+                                    // 这一次调用按系统身份执行——与系统自己跨用户拉起选择器同一条路径，
+                                    // 返回前恢复，线程内生效，不影响任何其它调用。
+                                    long token = Binder.clearCallingIdentity();
+                                    try {
+                                        return chain.proceed(a);
+                                    } finally {
+                                        Binder.restoreCallingIdentity(token);
+                                    }
                                 }
                             }
                             return chain.proceed();

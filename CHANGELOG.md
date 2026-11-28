@@ -20,10 +20,18 @@
   `com.tencent.wetype`（进程 `USER=u0_a214`），`mCurClient` 是空间应用。
   主应用据此不再往新空间装输入法包（`CloneStore.imeRedirectReady()` 读三个诊断 prop），
   插件缺失或没 root 时仍走原来的装包路径，Shizuku 用户不受影响。
-- **（未生效）共享存储放行**：给 `MediaProvider.shouldAllowLookupForFuse` 加了 hook，
-  计划让空间访问自己的 `/storage/emulated/<uid>`。代码在 `MediaUserHook`，但 LSPosed 2.2.1
-  实测不注入 `com.android.providers.media.module`（包名已修正、scope 已写入、重启后
-  `/proc/<pid>/maps` 里 `lsposed` 0 次），所以这条**没有生效**，留着等 LSPosed 支持。
+- **空间能用自己的共享存储了（仅 root + APatch/Magisk，需装原生模块 `cubclone-native`）**：
+  卷挂不上的真实原因是媒体存储进程缺分身的每用户派生组。sdcardfs 把 `<user>` 目录的分组回显成
+  `<uid>09997`，AOSP 只给主用户和系统自带分身配这组，自建空间没有，所以守护进程自己 `lstat`
+  `/storage/emulated/<uid>/Android` 就是 EACCES；vold 绑 `Android/data` 前的 `umount2` 因此失败，
+  整卷回滚成 `unmountable`。模块在 zygote 落地 uid 之前接管 `setgroups`，把每个空间的
+  `<uid>09997` 并进附加组；`ShouldAllowLookup` 的跨用户放行继续保留。
+  G7 实测：u0 媒体存储进程组含 `1109997`，`VolumeInfo{emulated;11}` = `state=MOUNTED`，
+  `/mnt/user/11/emulated` 与 `…/11/Android/{data,obb}` 三个挂载齐全，分身 11 内文件管理器
+  列出共享存储内容、分身身份写入 `Download` 成功。不改挂载方式、不改 vold、不动主空间与系统自带分身。
+- **（已废弃）共享存储放行的 Java hook 路线**：`MediaUserHook` 里的
+  `shouldAllowLookupForFuse` / `isAppCloneUserForFuse` 钩子保留作诊断用，它不是失败点——
+  实测这些钩子返回 true 之后卷仍然回滚。真正的判定在进程附加组，见上一条。
 - **空间里选文件直接用主空间那份选择器**：在
   `ActivityTaskManagerService.startActivityAsUser` 上把「发给自建空间的文件选择请求」的目标用户换成 0。
   G7 实测：空间里的测试应用点按钮，拉起 `com.android.documentsui`（`U=0`、进程 `u0a39`），

@@ -225,6 +225,7 @@ Owner data is not touched.</string>
     <string name="list_need_perm">Permissions are not ready yet, try again in a moment</string>
     <string name="uninstall_optional">Optional · check to uninstall</string>
     <string name="in_uninstall_list">In uninstall list</string>
+    <string name="in_preinstall_list">In preinstall list</string>
     <string name="in_disable_list">In disable list</string>
     <string name="save">Save</string>
     <string name="label_manage_foreign">Manage other clone spaces</string>

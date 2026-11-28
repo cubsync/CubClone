@@ -1046,7 +1046,29 @@ public class SettingsActivity extends Activity {
             }
         }
         final Set<String> checked = CloneStore.extraDisable(this);
-        final List<String> ordered = checkedFirst(sysPkgs, checked, labels);
+        final Set<String> inPre = CloneStore.preinstallOn(this);
+        final Set<String> inUninstall = CloneStore.extraUninstall(this);
+        List<String> cand = new ArrayList<String>();
+        final List<String> locked = new ArrayList<String>();
+        final Map<String, Integer> lockWhy = new HashMap<String, Integer>();
+        for (String p : sysPkgs) {
+            if (inPre.contains(p)) {
+                locked.add(p);
+                lockWhy.put(p, Integer.valueOf(R.string.in_preinstall_list));
+            } else if (inUninstall.contains(p)) {
+                locked.add(p);
+                lockWhy.put(p, Integer.valueOf(R.string.in_uninstall_list));
+            } else {
+                cand.add(p);
+            }
+        }
+        Collections.sort(locked, new Comparator<String>() {
+            public int compare(String a, String b) {
+                String la = labels.get(a), lb = labels.get(b);
+                return (la == null ? a : la).compareToIgnoreCase(lb == null ? b : la);
+            }
+        });
+        final List<String> ordered = checkedFirst(cand, checked, labels);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -1070,18 +1092,21 @@ public class SettingsActivity extends Activity {
         list.addView(tip);
 
         final Map<String, CheckBox> optChecks = new HashMap<String, CheckBox>();
-        final Set<String> inUninstall = CloneStore.extraUninstall(this);
         for (String p : ordered) {
             CheckBox cb = new CheckBox(this);
             String lb = labels.get(p);
-            String txt = lb == null ? p : lb;
-            if (inUninstall.contains(p)) txt += "（" + getString(R.string.in_uninstall_list) + "）";
-            cb.setText(txt);
+            cb.setText(lb == null ? p : lb);
             cb.setTextSize(14);
             cb.setTextColor(risky.contains(p) ? red : fgColor);
             cb.setChecked(checked.contains(p));
             optChecks.put(p, cb);
             list.addView(cb);
+        }
+        // 已在更高优先级清单里的项：灰、置底、不可改
+        for (String p : locked) {
+            String lb = labels.get(p);
+            list.addView(lockedRow(lb == null ? p : lb,
+                    getString(lockWhy.get(p).intValue())));
         }
         sv.addView(list);
         root.addView(sv);
@@ -1152,9 +1177,20 @@ public class SettingsActivity extends Activity {
             }
         }
         final Set<String> checked = CloneStore.extraUninstall(this);
+        final Set<String> inPre = CloneStore.preinstallOn(this);
         List<String> cand = new ArrayList<String>();
-        for (String p : sysPkgs) if (!essential.contains(p)) cand.add(p);
+        List<String> locked = new ArrayList<String>();
+        for (String p : sysPkgs) {
+            if (essential.contains(p)) continue;
+            if (inPre.contains(p)) locked.add(p); else cand.add(p);
+        }
         final List<String> optional = checkedFirst(cand, checked, labels);
+        Collections.sort(locked, new Comparator<String>() {
+            public int compare(String a, String b) {
+                String la = labels.get(a), lb = labels.get(b);
+                return (la == null ? a : la).compareToIgnoreCase(lb == null ? b : lb);
+            }
+        });
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -1191,6 +1227,10 @@ public class SettingsActivity extends Activity {
             optBox.addView(cb);
         }
         list.addView(optBox);
+        for (String p : locked) {
+            list.addView(lockedRow(labels.get(p) == null ? p : labels.get(p),
+                    getString(R.string.in_preinstall_list)));
+        }
         sv.addView(list);
         root.addView(sv);
 
@@ -1401,7 +1441,7 @@ public class SettingsActivity extends Activity {
         b.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 for (Map.Entry<String, CheckBox> e : checks.entrySet()) {
-                    e.getValue().setChecked(defaults == null || defaults.contains(e.getKey()));
+                    e.getValue().setChecked(defaults != null && defaults.contains(e.getKey()));
                 }
             }
         });
@@ -1420,6 +1460,18 @@ public class SettingsActivity extends Activity {
             }
         });
         return out;
+    }
+
+    /** 与更高优先级清单冲突的项：灰、置底、不可勾选（保存时本来也会被剔除） */
+    private CheckBox lockedRow(String label, String why) {
+        CheckBox cb = new CheckBox(this);
+        cb.setText(label + "（" + why + "）");
+        cb.setTextSize(14);
+        cb.setTextColor(secColor);
+        cb.setAlpha(0.5f);
+        cb.setEnabled(false);
+        cb.setChecked(false);
+        return cb;
     }
 
     /** 隐藏名单（配置清单）：勾选要隐藏的主空间系统应用（保持启用、只不显示），取消勾选即恢复 */

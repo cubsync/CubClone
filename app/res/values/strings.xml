@@ -226,6 +226,7 @@
     <string name="list_need_perm">权限还没就绪，稍后再试</string>
     <string name="uninstall_optional">可选 · 勾选不安装</string>
     <string name="in_uninstall_list">已在不装清单</string>
+    <string name="in_preinstall_list">已在预装清单</string>
     <string name="in_disable_list">已在禁用清单</string>
     <string name="save">保存</string>
     <string name="label_manage_foreign">管理非自建空间</string>

@@ -381,6 +381,9 @@ public final class CloneStore {
                     // ↓ 缺了它，主空间的 NFC 服务遍历用户时 createContextAsUser(空间用户) 抛
                     //   Own package not found → NFC 进程连续崩溃 → RescueParty 重启框架（esp 实测）
                     || p.equals("com.android.nfc")
+                    // ↓ 缺了它，系统桌面按用户查 AppFeatureProvider 抛 SecurityException →
+                    //   桌面连续重启，每次重启把主空间应用重新铺一遍桌面（OP12 实测 2026-11-28）
+                    || p.contains("oplus.customize")
                     || p.contains("launcher")             // 空间自己的桌面，退出应用有地方可回
                     ) {
                 out.add(p);
@@ -778,14 +781,28 @@ public final class CloneStore {
         return s == null ? new HashSet<String>() : new HashSet<String>(s);
     }
 
-    /** 默认预装＝底线 + 系统自带的浏览器/看图（第三方应用不进这份清单） */
+    /** 默认预装＝底线 + 系统默认浏览器；看图不进默认（相册要用自己勾），第三方应用一律不进 */
     static Set<String> defaultPreinstall(Context c) {
         Set<String> s = essentialPkgs(c);
-        for (String p : resolverPkgs(c)) {
-            if (isSystemApp(c, p)) s.add(p);
-        }
+        String browser = browserPkg(c);
+        if (browser != null && isSystemApp(c, browser)) s.add(browser);
         s.remove(c.getPackageName());
         return s;
+    }
+
+    /** 当前默认浏览器；没有默认处理者就返回 null */
+    static String browserPkg(Context c) {
+        try {
+            android.content.pm.ResolveInfo ri = c.getPackageManager().resolveActivity(
+                    new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("http://example.com/")),
+                    android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+            if (ri != null && ri.activityInfo != null) {
+                String p = ri.activityInfo.packageName;
+                if (!isAssistantPkg(p)) return p;
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 
     /** 清单只管系统应用：第三方应用由「克隆应用」带进空间，不走预装 */
@@ -986,20 +1003,29 @@ public final class CloneStore {
     }
 
     /**
-     * 补 NFC：缺了不挡空间启动，但主空间 NFC 服务遍历用户时会 createContextAsUser(空间用户)
-     * 抛 Own package not found，连崩到 RescueParty 重启框架（esp 2026-11-28 实测）。
+     * 补一个「主空间服务会跨用户找它」的包：缺了不挡空间启动，但会让主空间的系统进程崩。
+     * 机身没有这个包（精简 ROM）就跳过。
      */
-    static void ensureNfc(int uid) {
+    static void ensurePkg(int uid, String pkg) {
         if (uid <= 0 || !Shell.ready()) return;
-        final String pkg = "com.android.nfc";
         try {
             if (hasPackage(uid, pkg) || !hasPackage(0, pkg)) return;
             Shell.exec("pm install-existing --user " + uid + " " + pkg);
             if (!hasPackage(uid, pkg)) {
-                android.util.Log.w("CubClone", "nfc 补装失败 uid=" + uid);
+                android.util.Log.w("CubClone", pkg + " 补装失败 uid=" + uid);
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    /** 主空间 NFC：缺了会连崩到 RescueParty 重启框架（esp 实测）。 */
+    static void ensureNfc(int uid) {
+        ensurePkg(uid, "com.android.nfc");
+    }
+
+    /** 桌面跨用户查的配置 provider：缺了桌面连崩、每次重启重新铺一屏图标（OP12 实测）。 */
+    static void ensureOplusCoreApp(int uid) {
+        ensurePkg(uid, "com.oplus.customize.coreapp");
     }
 
     /** 进应用时把所有空间补一遍（老空间建号时还没有这些规则） */
@@ -1013,6 +1039,7 @@ public final class CloneStore {
                 if (u > 0) {
                     ensureTelecom(u);
                     ensureNfc(u);
+                    ensureOplusCoreApp(u);
                 }
             }
         } catch (Throwable ignored) {
@@ -1037,6 +1064,7 @@ public final class CloneStore {
             return;
         }
         ensureNfc(uid);
+        ensureOplusCoreApp(uid);
         Shell.exec("am start-user " + uid);
         for (int i = 0; i < 20 && !spaceReady(uid); i++) {
             try { Thread.sleep(500); } catch (InterruptedException e) { break; }

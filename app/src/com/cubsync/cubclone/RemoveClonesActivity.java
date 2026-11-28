@@ -975,7 +975,10 @@ public class RemoveClonesActivity extends Activity {
                                         : getString(R.string.rc_done_bad, fok, fbad),
                                 Toast.LENGTH_LONG).show();
                         setResult(RESULT_OK);
-                        finish();
+                        // 留在本页：删掉的行从列表摘掉，剩下的继续可选
+                        rows.removeAll(sel);
+                        loading = false;
+                        refresh();
                     }
                 });
             }

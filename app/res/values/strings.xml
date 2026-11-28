@@ -555,6 +555,7 @@
     <string name="label_grid_cols">网格列数</string>
     <string name="label_grid_rows">网格行数</string>
     <string name="label_grid_primary">显示主空间应用</string>
+    <string name="label_grid_noicon">显示无图标应用</string>
     <string name="recent_opened">最近打开</string>
     <string name="label_recent_show">显示最近打开</string>
     <string name="label_recent_rows">最近打开行数</string>

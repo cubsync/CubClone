@@ -97,6 +97,7 @@ public final class CloneStore {
 
     /** 主空间系统包集合缓存（建空间算「不装集合」用；`pm list packages -s` 一次 86ms） */
     private static volatile Set<String> SYS_PKGS;
+    private static volatile Set<String> ALL_PKGS;
 
     /** 主界面数据变更标志：建/删/装/精简空间后置 true，onResume 重拉 */
     static volatile boolean dirty = true;
@@ -301,6 +302,20 @@ public final class CloneStore {
         return out;
     }
 
+    /** 主空间全部已装包（含没有桌面图标的）；「显示无图标应用」用 */
+    static Set<String> allPkgNames() {
+        Set<String> s = ALL_PKGS;
+        if (s != null) return s;
+        Set<String> out = new HashSet<String>();
+        String r = Shell.exec("pm list packages 2>/dev/null");
+        for (String line : r.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("package:")) out.add(t.substring(8).trim());
+        }
+        if (!out.isEmpty()) ALL_PKGS = out;
+        return out;
+    }
+
     /**
      * 空间跑起来的最低要求：这些包必须装进去，其余系统包一律不装。
      *
@@ -363,6 +378,9 @@ public final class CloneStore {
                     //   USER_STARTING 广播里 TelecomSystem 要 createContextAsUser(空间用户)，
                     //   抛 Own package not found → RuntimeException 带走 system_server，表现是软重启
                     || p.equals("com.android.server.telecom")
+                    // ↓ 缺了它，主空间的 NFC 服务遍历用户时 createContextAsUser(空间用户) 抛
+                    //   Own package not found → NFC 进程连续崩溃 → RescueParty 重启框架（esp 实测）
+                    || p.equals("com.android.nfc")
                     || p.contains("launcher")             // 空间自己的桌面，退出应用有地方可回
                     ) {
                 out.add(p);
@@ -760,12 +778,25 @@ public final class CloneStore {
         return s == null ? new HashSet<String>() : new HashSet<String>(s);
     }
 
-    /** 默认预装＝底线 + 浏览器/看图 */
+    /** 默认预装＝底线 + 系统自带的浏览器/看图（第三方应用不进这份清单） */
     static Set<String> defaultPreinstall(Context c) {
         Set<String> s = essentialPkgs(c);
-        s.addAll(resolverPkgs(c));
+        for (String p : resolverPkgs(c)) {
+            if (isSystemApp(c, p)) s.add(p);
+        }
         s.remove(c.getPackageName());
         return s;
+    }
+
+    /** 清单只管系统应用：第三方应用由「克隆应用」带进空间，不走预装 */
+    static boolean isSystemApp(Context c, String pkg) {
+        try {
+            android.content.pm.ApplicationInfo ai = c.getPackageManager().getApplicationInfo(pkg, 0);
+            return (ai.flags & (android.content.pm.ApplicationInfo.FLAG_SYSTEM
+                    | android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0;
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     /**
@@ -781,7 +812,12 @@ public final class CloneStore {
             Set<String> extra = sp.getStringSet("preinstall_extra", null);
             if (extra != null) s.addAll(extra);
         }
-        return new HashSet<String>(s);
+        // 老版本点「默认」时把第三方浏览器也存了进来，这里按「只看系统应用」清掉
+        Set<String> out = new HashSet<String>();
+        for (String p : s) {
+            if (isSystemApp(c, p)) out.add(p);
+        }
+        return out;
     }
 
     /** 内置必需白名单（文件选择器/相机/通讯录/拨号/短信/媒体库）；与 pruneSpace 的 ESS 字符串保持一致 */
@@ -949,15 +985,35 @@ public final class CloneStore {
         }
     }
 
-    /** 进应用时把所有空间补一遍（老空间建号时还没有这条规则） */
-    static void ensureTelecomAll() {
+    /**
+     * 补 NFC：缺了不挡空间启动，但主空间 NFC 服务遍历用户时会 createContextAsUser(空间用户)
+     * 抛 Own package not found，连崩到 RescueParty 重启框架（esp 2026-11-28 实测）。
+     */
+    static void ensureNfc(int uid) {
+        if (uid <= 0 || !Shell.ready()) return;
+        final String pkg = "com.android.nfc";
+        try {
+            if (hasPackage(uid, pkg) || !hasPackage(0, pkg)) return;
+            Shell.exec("pm install-existing --user " + uid + " " + pkg);
+            if (!hasPackage(uid, pkg)) {
+                android.util.Log.w("CubClone", "nfc 补装失败 uid=" + uid);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 进应用时把所有空间补一遍（老空间建号时还没有这些规则） */
+    static void ensureSystemAll() {
         try {
             if (!Shell.ready()) return;
             String csv = Shell.exec("getprop persist.sys.cubclone.spaces").trim();
             for (String s : csv.split(",")) {
                 int u = 0;
                 try { u = Integer.parseInt(s.trim()); } catch (Throwable ignored) { }
-                if (u > 0) ensureTelecom(u);
+                if (u > 0) {
+                    ensureTelecom(u);
+                    ensureNfc(u);
+                }
             }
         } catch (Throwable ignored) {
         }
@@ -980,6 +1036,7 @@ public final class CloneStore {
             android.util.Log.w("CubClone", "skip start-user " + uid + ": telecom 未就绪");
             return;
         }
+        ensureNfc(uid);
         Shell.exec("am start-user " + uid);
         for (int i = 0; i < 20 && !spaceReady(uid); i++) {
             try { Thread.sleep(500); } catch (InterruptedException e) { break; }

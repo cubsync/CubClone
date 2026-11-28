@@ -554,6 +554,7 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="label_grid_cols">Grid columns</string>
     <string name="label_grid_rows">Grid rows</string>
     <string name="label_grid_primary">Show primary space apps</string>
+    <string name="label_grid_noicon">Show apps without icon</string>
     <string name="recent_opened">Recent</string>
     <string name="label_recent_show">Show recent</string>
     <string name="label_recent_rows">Recent rows</string>

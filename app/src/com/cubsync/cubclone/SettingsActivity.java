@@ -52,7 +52,7 @@ public class SettingsActivity extends Activity {
 
     private TextView title, secLook, secPerm, secClone, secAbout;
     private TextView themeLabel, themeValue, langLabel, langValue;
-    private TextView gridColsLabel, gridColsValue, gridRowsLabel, gridRowsValue, gridPrimaryLabel;
+    private TextView gridColsLabel, gridColsValue, gridRowsLabel, gridRowsValue, gridPrimaryLabel, gridNoiconLabel;
     private TextView recentRowsLabel, recentRowsValue, recentColsLabel, recentColsValue;
     private Switch swGridPrimary, swRecent;
     private TextView permRoot, permShizuku, allLabel, allHint, iconLabel, iconHint;
@@ -222,6 +222,7 @@ public class SettingsActivity extends Activity {
         gridRowsLabel = findViewById(R.id.grid_rows_label);
         gridRowsValue = findViewById(R.id.grid_rows_value);
         gridPrimaryLabel = findViewById(R.id.grid_primary_label);
+        gridNoiconLabel = findViewById(R.id.grid_noicon_label);
         swGridPrimary = findViewById(R.id.sw_grid_primary);
         recentRowsLabel = findViewById(R.id.recent_rows_label);
         recentRowsValue = findViewById(R.id.recent_rows_value);
@@ -250,6 +251,13 @@ public class SettingsActivity extends Activity {
         swGridPrimary.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(android.widget.CompoundButton v, boolean checked) {
                 sp().edit().putBoolean("grid_show_primary", checked).apply();
+            }
+        });
+        Switch swGridNoicon = findViewById(R.id.sw_grid_noicon);
+        swGridNoicon.setChecked(sp().getBoolean("grid_show_noicon", false));
+        swGridNoicon.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(android.widget.CompoundButton v, boolean checked) {
+                sp().edit().putBoolean("grid_show_noicon", checked).apply();
             }
         });
 
@@ -392,7 +400,7 @@ public class SettingsActivity extends Activity {
                 (TextView) findViewById(R.id.perm_root_label),
                 (TextView) findViewById(R.id.perm_shizuku_label),
                 allLabel, spaceTitle, aboutVer, iconLabel, amoledLabel,
-                gridColsLabel, gridRowsLabel, gridPrimaryLabel,
+                gridColsLabel, gridRowsLabel, gridPrimaryLabel, gridNoiconLabel,
                 recentRowsLabel, recentColsLabel};
         for (TextView t : mains) if (t != null) t.setTextColor(fgColor);
         // 开关旁边的文字（recent/keep_sys/manage_foreign/space_badge/show_disabled）也要跟主题色，否则默认灰色
@@ -1037,9 +1045,8 @@ public class SettingsActivity extends Activity {
                 risky.add(pkg);
             }
         }
-        Collections.sort(sysPkgs);
-
         final Set<String> checked = CloneStore.extraDisable(this);
+        final List<String> ordered = checkedFirst(sysPkgs, checked, labels);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -1064,7 +1071,7 @@ public class SettingsActivity extends Activity {
 
         final Map<String, CheckBox> optChecks = new HashMap<String, CheckBox>();
         final Set<String> inUninstall = CloneStore.extraUninstall(this);
-        for (String p : sysPkgs) {
+        for (String p : ordered) {
             CheckBox cb = new CheckBox(this);
             String lb = labels.get(p);
             String txt = lb == null ? p : lb;
@@ -1144,11 +1151,10 @@ public class SettingsActivity extends Activity {
                 essential.add(pkg);
             }
         }
-        Collections.sort(sysPkgs);
-        final List<String> optional = new ArrayList<String>();
-        for (String p : sysPkgs) if (!essential.contains(p)) optional.add(p);
-
         final Set<String> checked = CloneStore.extraUninstall(this);
+        List<String> cand = new ArrayList<String>();
+        for (String p : sysPkgs) if (!essential.contains(p)) cand.add(p);
+        final List<String> optional = checkedFirst(cand, checked, labels);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -1163,26 +1169,6 @@ public class SettingsActivity extends Activity {
 
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
-
-        TextView essTitle = new TextView(this);
-        essTitle.setText(getString(R.string.keep_extra_essential, essential.size()));
-        essTitle.setTextSize(12);
-        essTitle.setTextColor(secColor);
-        essTitle.setPadding(0, dp(8), 0, dp(2));
-        list.addView(essTitle);
-        TextView essText = new TextView(this);
-        StringBuilder sb = new StringBuilder();
-        for (String p : essential) {
-            if (sb.length() > 0) sb.append(" · ");
-            String lb = labels.get(p);
-            sb.append(lb == null ? p : lb);
-        }
-        essText.setText(sb.toString());
-        essText.setTextSize(13);
-        essText.setTextColor(secColor);
-        essText.setAlpha(0.55f);
-        essText.setPadding(dp(4), dp(2), dp(4), dp(2));
-        list.addView(essText);
 
         TextView optTitle = new TextView(this);
         optTitle.setText(R.string.uninstall_optional);
@@ -1315,22 +1301,20 @@ public class SettingsActivity extends Activity {
                 labels.put(pkg, String.valueOf(ri.loadLabel(pm)));
             } catch (Throwable ignored) { }
         }
-        // 默认预装里没有桌面入口的（GMS / WebView / 解析器）单包查一次名字
+        // 默认预装里没有桌面入口的（WebView / 部分解析器）单包查一次名字。
+        // 只收系统应用：第三方浏览器/看图不走预装，随克隆带进空间。
         for (String p : defaults) {
             if (labels.containsKey(p)) continue;
             try {
                 ApplicationInfo ai = pm.getApplicationInfo(p, 0);
+                if ((ai.flags & (ApplicationInfo.FLAG_SYSTEM
+                        | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) == 0) continue;
                 labels.put(p, String.valueOf(ai.loadLabel(pm)));
             } catch (Throwable ignored) { }
         }
-        final List<String> all = new ArrayList<String>(labels.keySet());
-        Collections.sort(all, new Comparator<String>() {
-            public int compare(String a, String b) {
-                String la = labels.get(a), lb = labels.get(b);
-                return (la == null ? a : la).compareToIgnoreCase(lb == null ? b : lb);
-            }
-        });
         final Set<String> on = CloneStore.preinstallOn(this);
+        on.retainAll(labels.keySet());      // 历史保存里混进的第三方应用不再显示/预装
+        final List<String> all = checkedFirst(labels.keySet(), on, labels);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -1423,6 +1407,21 @@ public class SettingsActivity extends Activity {
         });
     }
 
+    /** 清单排序：已经勾选的排最前，同组按显示名 —— 进来先看见「启用的有哪些」。 */
+    private List<String> checkedFirst(java.util.Collection<String> src, final Set<String> checked,
+                                      final Map<String, String> labels) {
+        List<String> out = new ArrayList<String>(src);
+        Collections.sort(out, new Comparator<String>() {
+            public int compare(String a, String b) {
+                boolean ca = checked.contains(a), cb = checked.contains(b);
+                if (ca != cb) return ca ? -1 : 1;
+                String la = labels.get(a), lb = labels.get(b);
+                return (la == null ? a : la).compareToIgnoreCase(lb == null ? b : lb);
+            }
+        });
+        return out;
+    }
+
     /** 隐藏名单（配置清单）：勾选要隐藏的主空间系统应用（保持启用、只不显示），取消勾选即恢复 */
     private void showHiddenSys() {
         PackageManager pm = getPackageManager();
@@ -1444,9 +1443,8 @@ public class SettingsActivity extends Activity {
             } catch (Throwable ignored) { continue; }
             sysPkgs.add(pkg);
         }
-        Collections.sort(sysPkgs);
-
         final Set<String> checked = CloneStore.hideList();
+        final List<String> ordered = checkedFirst(sysPkgs, checked, labels);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -1470,7 +1468,7 @@ public class SettingsActivity extends Activity {
         final Map<String, CheckBox> checks = new HashMap<String, CheckBox>();
         final Set<String> inUninstall = CloneStore.extraUninstall(this);
         final Set<String> inDisable = CloneStore.extraDisable(this);
-        for (String p : sysPkgs) {
+        for (String p : ordered) {
             if (inUninstall.contains(p) || inDisable.contains(p)) continue;   // 已进更高优先级清单 → 末尾置灰
             CheckBox cb = new CheckBox(this);
             String lb = labels.get(p);

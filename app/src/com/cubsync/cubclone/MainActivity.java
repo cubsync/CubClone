@@ -159,6 +159,8 @@ public class MainActivity extends Activity {
     private View tabUserLine, tabSysLine;
     /** 系统应用单独放一档，默认不掺进用户列表 */
     private final Set<String> sysApps = new HashSet<String>();
+    /** 没有桌面入口的包（「显示无图标应用」打开时才收）；列表里不受「显示全部」控制 */
+    private final Set<String> noIconPkgs = new HashSet<String>();
 
     /** 显示范围开关：主界面和设置页共用同一个 show_all */
     private final android.widget.CompoundButton.OnCheckedChangeListener scopeListener =
@@ -262,8 +264,8 @@ public class MainActivity extends Activity {
         new Thread(new Runnable() {
             public void run() {
                 Shell.checkRoot();
-                // 老空间补齐 telecom：缺了它一启动空间就会把 system_server 带走（软重启）
-                CloneStore.ensureTelecomAll();
+                // 老空间补齐 telecom / NFC：缺了会在启动空间或开机时把框架带崩（软重启）
+                CloneStore.ensureSystemAll();
                 loadAppMetaQuick();   // 分类 + 真实名字（图标走异步懒加载，首屏不阻塞）
                 runOnUiThread(new Runnable() {
                     public void run() {
@@ -817,6 +819,7 @@ public class MainActivity extends Activity {
         // 原来每次进这个函数都 evictAll，等于把最贵的那段又跑一次。改为按 lastUpdateTime
         // 同步指纹（这个值 ResolveInfo 里就有，零额外 Binder），只有应用真的升级/换图标才失效。
         labelCache.clear();
+        noIconPkgs.clear();
         userApps.clear();
         CloneStore.THIRD = new HashSet<String>();
         sysApps.clear();
@@ -834,6 +837,25 @@ public class MainActivity extends Activity {
                 CloneStore.THIRD.add(pkg);
             } else {
                 sysApps.add(pkg);
+            }
+        }
+        // 「显示无图标应用」：把没有桌面入口的包也补进清单（设置里开，默认关）。
+        // 系统服务、提供者这类应用进不了桌面，但用户要能看到/克隆它们。
+        if (sp().getBoolean("grid_show_noicon", false)) {
+            for (String pkg : CloneStore.allPkgNames()) {
+                if (pkg.equals(getPackageName()) || labelCache.containsKey(pkg)) continue;
+                try {
+                    ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+                    labelCache.put(pkg, String.valueOf(ai.loadLabel(pm)));
+                    noIconPkgs.add(pkg);
+                    if ((ai.flags & (ApplicationInfo.FLAG_SYSTEM
+                            | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) == 0) {
+                        userApps.add(pkg);
+                        CloneStore.THIRD.add(pkg);
+                    } else {
+                        sysApps.add(pkg);
+                    }
+                } catch (Throwable ignored) { }
             }
         }
         // 图标缓存按 lastUpdateTime 对账（后台线程做，304 次 getPackageInfo 约几十毫秒）：
@@ -1306,6 +1328,8 @@ public class MainActivity extends Activity {
             }
         });
         boolean showAll = sp().getBoolean("show_all", false);
+        // 「显示无图标应用」是独立开关：开了就一直列出来，不受主页「显示全部」影响
+        boolean showNoIcon = sp().getBoolean("grid_show_noicon", false);
         final boolean grid = gridMode();
         boolean showPrimary = sp().getBoolean("grid_show_primary", false);
         shownGroups.clear();
@@ -1317,7 +1341,8 @@ public class MainActivity extends Activity {
             boolean isUser = userApps.contains(g.pkg) || !sysApps.contains(g.pkg);
             if (!searching && (tab == 0) != isUser) continue;
             // 默认只列已经开过分身的应用；多选批量创建时列全部，否则勾不到还没开过的
-            if (!searching && !multi && !showAll && g.clones.isEmpty()) continue;
+            if (!searching && !multi && !showAll && g.clones.isEmpty()
+                    && !(showNoIcon && noIconPkgs.contains(g.pkg))) continue;
             if (kw.length() > 0
                     && !g.label.toLowerCase().contains(kw)
                     && !g.pkg.toLowerCase().contains(kw)) {

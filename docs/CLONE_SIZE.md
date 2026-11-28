@@ -26,20 +26,20 @@ apk: 3051355 bytes (2.91 Mb)
 显示与判定都用 **`data - cache`**，即「用户数据」。
 
 系统的 `dataBytes` 含缓存，`cacheBytes` 是其中缓存部分，两者相减才是 Settings 里
-「用户数据」那一行。实测 u10 芝麻粒 `data=143360`、`cache=139264` → **4096 B（4 KB）**，
+「用户数据」那一行。例如 `data=143360`、`cache=139264` → **4096 B（4 KB）**，
 和「应用信息」页面上的数字对得上。
 
 判定「无数据」= 结果恰好 0。刚克隆、一次没启动的应用就是这个值（系统给它建的
 `cache`、`code_cache` 都是 0 字节）。
 
-实测（Android 16 机型，2026-11-22）：
+示例：
 
 | 空间 | 应用 | data | cache | 判定 |
 |---|---|---|---|---|
-| u10 | 应用 A | 143,360 | 139,264 | 4 KB（有数据） |
-| u10 | 应用 B | 10,219,520 | 557,056 | 9.2 MB（有数据） |
-| u11 | 刚克隆的应用 | 0 | 0 | 无数据 |
-| u11 | 聊天类应用 | 3,538,157,568 | 33,817,600 | 3.3 GB（有数据） |
+| 空间 A | 应用 A | 143,360 | 139,264 | 4 KB（有数据） |
+| 空间 A | 应用 B | 10,219,520 | 557,056 | 9.2 MB（有数据） |
+| 空间 B | 刚克隆的应用 | 0 | 0 | 无数据 |
+| 空间 B | 聊天类应用 | 3,538,157,568 | 33,817,600 | 3.3 GB（有数据） |
 
 ## 为什么不直接调 `StorageStatsManager`
 
@@ -49,7 +49,7 @@ volume 试过 `private`、`primary_physical`、真实卷 UUID）结果都一样�
 
 ```
 应用 A u0 data=0 cache=0 app=17151488  (2ms)
-应用 B u10 data=0 cache=0 app=890611712 (5ms)
+应用 B  space=A  data=0 cache=0 app=890611712 (5ms)
 ```
 
 `app` 有值、`data`/`cache` 恒 0、耗时 0–5 ms —— quota 路径返回空。换 shell 身份调用同样是 0，
@@ -63,10 +63,10 @@ volume 试过 `private`、`primary_physical`、真实卷 UUID）结果都一样�
 
 一个包一次调用约 40 ms，成本与**应用个数**成正比（这点和读文件不同）：
 
-| 场景 | 实测 |
+| 场景 | 耗时 |
 |---|---|
 | 单个包 | 40 ms |
-| 6 个包（空间 10 全部） | 0.30 s |
+| 6 个包（一个空间全部） | 0.30 s |
 | 400 个包（按 40 一批） | 约 16 s，后台 |
 
 所以加了缓存，不每次打开都扫：
@@ -78,7 +78,7 @@ volume 试过 `private`、`primary_physical`、真实卷 UUID）结果都一样�
 - 排序菜单里「重新统计体积」可手动强制重扫。
 - 统计线程用 `THREAD_PRIORITY_BACKGROUND`。
 
-实测：首次 247 ms 出界面（统计在后台继续），二次 228 ms 且缓存文件未被改写。
+首次 247 ms 出界面（统计在后台继续），二次 228 ms 且缓存文件未被改写。
 
 ## 与 root 的关系
 
@@ -88,11 +88,11 @@ volume 试过 `private`、`primary_physical`、真实卷 UUID）结果都一样�
 - 删除：`pm uninstall --user <U> <包>`
 - 体积：`cmd package get-package-storage-stats --user <U> <包>`
 
-三者都是 shell 能力，Shizuku 就够。实测（uid 2000 = shell = Shizuku 身份）：
+三者都是 shell 能力，Shizuku 就够。以 shell 身份（Shizuku 同身份）执行：
 
 ```
-pm list packages -3 --user 11        → 正常列出
-pm uninstall --user 11 <不存在包>     → Failure [not installed for 11]   ← 权限检查通过
+pm list packages -3 --user <U>        → 正常列出
+pm uninstall --user <U> <不存在包>     → Failure [not installed for <U>]  ← 权限检查通过
 cmd package get-package-storage-stats --user 10 <包> → data/cache 有值
 ```
 

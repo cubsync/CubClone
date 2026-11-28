@@ -81,7 +81,7 @@ merged into `main`, tagged `v<version>`, then deleted. Pre-releases carry a
 
 ## Status
 
-Actively developed and used daily by the author. Verified on Android 13–16 devices,
+Actively developed and used daily. Verified on Android 13–16 devices,
 both near-AOSP and vendor ROMs.
 
 ## License

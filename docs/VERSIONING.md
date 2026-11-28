@@ -10,7 +10,7 @@ Semantic Versioning，`MAJOR.MINOR.PATCH`，当前处于 `0.x`：
 | 只修 bug | PATCH | 0.6.52 → 0.6.53 |
 | 不兼容的接口/数据变更 | MAJOR（0.x 阶段允许 Breaking 走 MINOR） | 1.0.0 |
 
-**开发期不动版本号**：`versionName` 保持上一个已发布版本，改代码、构建、装真机都沿用；
+**开发期不动版本号**：`versionName` 保持上一个已发布版本，改代码、构建、装测试机都沿用；
 收版时才写新号。未验证的改动不占版本号。
 
 ## 测试版
@@ -93,10 +93,10 @@ release 点成正式。
 ## 发布
 
 1. 收版时才改 `AndroidManifest.xml` 的 `versionName`，构建一次确认 `versionCode` 推导正确。
-2. 装真机，等验证通过。
+2. 装测试机，等验证通过。
 3. 验证通过后：`CHANGELOG.md` 补条目 → 提交 → `git checkout -b release/<版本号>` → 打 tag
    `v<版本号>` → `gh release create v<版本号> --prerelease --notes-file <说明>`。
-4. 真机确认没问题后，把 pre-release 转正式：
+4. 测试确认没问题后，把 pre-release 转正式：
    `gh release edit v<版本号> --prerelease=false --latest`。
 5. `release/<版本号>` 合回 `main`（快进即可），然后**删掉这条分支**，远端只剩 `main`。
 

@@ -43,11 +43,11 @@
    不认这些 inode，之后应用 `ftruncate` / 新建一律 `EPERM` / `ENOENT`。
 2. **属主必须让 MediaProvider 改得动**。纯 FUSE 下读写全由它代理，它只是个进程：文件
    属主是 `media_rw`(1023) 且组不是它的时候，它只有 other 读权限，写就是 EPERM。现场
-   表现是应用侧 `SQLITE_IOERR_SHMOPEN`、界面一直转圈。属主落在 MediaProvider（本机
-   `u0_a161`）、组 `media_rw`、664/2775 才是它能写、应用也能通过它写的形态。
+   表现是应用侧 `SQLITE_IOERR_SHMOPEN`、界面一直转圈。属主落在 MediaProvider
+  自己的 uid、组 `media_rw`、664/2775 才是它能写、应用也能通过它写的形态。
 
 属主/权限一律在**底层路径**上改（`/data/media/…`）：`/storage` 是 FUSE，root 在那边
-`chown` 会静默失败（实测改完再看还是原值）。在底层只动元数据、不动 inode，MediaProvider
+`chown` 会静默失败（改完复读仍是原值）。在底层只动元数据、不动 inode，MediaProvider
 不会因此「不认识」这些文件。落权后逐项 `stat` 校验顶层属主，不符就报「外部目录属主没落对」
 而不是照常报成功。
 
@@ -58,7 +58,7 @@
 运行期由 root 释放到 `/data/local/tmp/cubclone/zstd`——Android 10 起不允许应用在自己的数据目录里执行文件）。
 不可用时按 `gzip → bzip2 → 纯打包` 降级。
 
-级别实测（100 MB 真实应用数据：DB + XML + JSON，arm64 手机，全核心）：
+级别对比（100 MB 应用数据：DB + XML + JSON，全核心）：
 
 | 级别 | 体积 | 耗时 | 相对默认 3 |
 |---|---|---|---|

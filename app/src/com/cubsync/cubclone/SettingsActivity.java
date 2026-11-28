@@ -1690,29 +1690,26 @@ public class SettingsActivity extends Activity {
             spaceWarn.setVisibility(View.GONE);
             return;
         }
-        if (st != 2) {                       // 1 = 内核对 sdcardfs 有驱动，可能有兼容问题
-            // 不是错误、更不是本机故障：很多机型（G7 实测）用着完全正常，
-            // 只有相册/文件真出问题时才需要处理，所以按普通提示的次要色显示
-            spaceWarn.setText(R.string.space_storage_broken);
-            // 品牌青绿：红/橙/绿已经都被状态占用了（坏、可升级、已修好），
-            // 这条只是「可能不兼容，可点处理」，用品牌色区分，同时不至于像出错
-            spaceWarn.setTextColor(Theme.teal(this));
-            spaceWarn.setVisibility(View.VISIBLE);
-            return;
-        }
-        // st == 2：内核对 sdcardfs 有驱动但已经走 FUSE —— 只能是修复模块干的。
-        // 再确认这个模块是不是应用内置的这一版；不是就提示重刷。
+        // 内核带 sdcardfs 时以设备上装的模块版本为准。
+        // 3.0 起模块不改挂载方式（sdcardfs 照旧挂着），不能再拿 mount 里有没有 sdcardfs
+        // 判断模块装没装 —— 否则装了新版也永远显示「去生成模块」。
         if (moduleCode >= 0 && moduleCode < CloneStore.MODULE_CODE) {
             spaceWarn.setText(getString(R.string.space_storage_updatable,
                     moduleVer, CloneStore.MODULE_VERSION));
             spaceWarn.setTextColor(Theme.warn(this));
         } else if (moduleCode < 0) {
-            // 读不到版本标记 = 2.3 及更早（那两版还不写这个标记）
-            spaceWarn.setText(getString(R.string.space_storage_outdated,
-                    CloneStore.MODULE_VERSION));
-            spaceWarn.setTextColor(Theme.warn(this));
+            // 读不到版本标记：挂载还走 sdcardfs ＝ 没装（或 2.x 没生效）；
+            // 已走纯 FUSE ＝ 2.3 及更早（那几版不写标记）
+            if (st == 2) {
+                spaceWarn.setText(getString(R.string.space_storage_outdated,
+                        CloneStore.MODULE_VERSION));
+                spaceWarn.setTextColor(Theme.warn(this));
+            } else {
+                spaceWarn.setText(R.string.space_storage_broken);
+                spaceWarn.setTextColor(Theme.teal(this));
+            }
         } else {
-            spaceWarn.setText(R.string.space_storage_fixed);
+            spaceWarn.setText(getString(R.string.space_storage_fixed, moduleVer));
             spaceWarn.setTextColor(Theme.green(this));
         }
         spaceWarn.setVisibility(View.VISIBLE);

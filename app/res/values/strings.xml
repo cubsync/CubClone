@@ -575,7 +575,7 @@
     <string name="ime_pick_empty">主空间没有输入法</string>
     <string name="ime_pick_saved">已保存，新建空间时生效</string>
     <string name="space_storage_broken">分身里相册或文件为空？部分机型的 sdcardfs 与分身不兼容，点这里生成修复模块（大多数机型无需处理）</string>
-    <string name="space_storage_fixed">分身共享存储可用 · 点这里可重新生成修复模块</string>
+    <string name="space_storage_fixed">修复模块 %1$s 已安装 · 点这里可重新生成</string>
     <string name="space_storage_updatable">修复模块有更新（已装 %1$s，最新 %2$s）· 点这里生成后刷入</string>
     <string name="space_storage_outdated">修复模块不是最新（读不到版本标记，即 2.3 或更早）· 点这里生成 %1$s 后刷入</string>
     <string name="fix_module_state">设备上已装：%1$s　本版内置：%2$s</string>

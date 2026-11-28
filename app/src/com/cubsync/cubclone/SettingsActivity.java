@@ -1125,6 +1125,9 @@ public class SettingsActivity extends Activity {
                             if (e.getValue().isChecked()) saved.add(e.getKey());
                         }
                         sp().edit().putStringSet("disable_extra", saved).apply();
+                        if (dropListConflicts("disable_extra", saved)) {
+                            toast(getString(R.string.list_conflict_dropped));
+                        }
                         CloneStore.dirty = true;
                     }
                 })
@@ -1265,6 +1268,9 @@ public class SettingsActivity extends Activity {
                             if (e.getValue().isChecked()) saved.add(e.getKey());
                         }
                         sp().edit().putStringSet("uninstall_extra", saved).apply();
+                        if (dropListConflicts("uninstall_extra", saved)) {
+                            toast(getString(R.string.list_conflict_dropped));
+                        }
                         CloneStore.dirty = true;
                     }
                 })
@@ -1286,6 +1292,26 @@ public class SettingsActivity extends Activity {
                 }
             }
         });
+    }
+
+    /**
+     * 四份清单互斥：同一个应用不能既预装、又被禁用/不装/隐藏。
+     * 最后保存的那份说了算，从其它清单里剔除重叠项；返回是否真的剔过。
+     */
+    private boolean dropListConflicts(String savedKey, Set<String> saved) {
+        boolean cut = false;
+        if (saved == null || saved.isEmpty()) return false;
+        for (String k : new String[]{"preinstall_extra", "disable_extra",
+                "uninstall_extra", "hide_list"}) {
+            if (k.equals(savedKey)) continue;
+            Set<String> other = sp().getStringSet(k, null);
+            if (other == null || other.isEmpty()) continue;
+            Set<String> rest = new HashSet<String>(other);
+            if (!rest.removeAll(saved)) continue;
+            sp().edit().putStringSet(k, rest).apply();
+            cut = true;
+        }
+        return cut;
     }
 
     /**
@@ -1398,6 +1424,9 @@ public class SettingsActivity extends Activity {
                             if (e.getValue().isChecked()) saved.add(e.getKey());
                         }
                         sp().edit().putStringSet("preinstall_extra", saved).apply();
+                        if (dropListConflicts("preinstall_extra", saved)) {
+                            toast(getString(R.string.list_conflict_dropped));
+                        }
                         CloneStore.dirty = true;
                     }
                 })
@@ -1522,6 +1551,9 @@ public class SettingsActivity extends Activity {
                             if (e.getValue().isChecked()) saved.add(e.getKey());
                         }
                         sp().edit().putStringSet("hide_list", saved).apply();
+                        if (dropListConflicts("hide_list", saved)) {
+                            toast(getString(R.string.list_conflict_dropped));
+                        }
                         // 只改配置，不立即隐藏：建空间时才把清单固化进「已隐藏」结果
                     }
                 })

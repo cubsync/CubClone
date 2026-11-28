@@ -200,7 +200,7 @@ Owner data is not touched.</string>
     <string name="refresh">Refresh</string>
     <string name="refreshing">Refreshing…</string>
     <string name="label_keep_sys">Preprocess system apps for new spaces</string>
-    <string name="hint_keep_sys">Master switch: when creating a space, preprocess system apps by the uninstall, disable and hide lists; turn off to skip all three</string>
+    <string name="hint_keep_sys">Master switch: when creating a space, preprocess system apps by the preinstall, uninstall, disable and hide lists; turn off to skip them all</string>
     <string name="keep_extra_title">Disable list</string>
     <string name="keep_extra_hint">Apps in the disable list are disabled when creating a space; can be enabled anytime</string>
     <string name="keep_extra_essential">Essential · cannot be disabled (%1$d)</string>
@@ -216,6 +216,7 @@ Owner data is not touched.</string>
     <string name="preinstall_hint">Apps every new space gets: the essential set cannot be removed; check more system apps to include them</string>
     <string name="preinstall_essential">Essential · locked (%1$d, keeps a space usable)</string>
     <string name="preinstall_optional">Extra preinstall · checked = also install in new spaces</string>
+    <string name="list_conflict_dropped">Overlapping apps were removed from the other lists</string>
     <string name="uninstall_optional">Optional · check to uninstall</string>
     <string name="in_uninstall_list">In uninstall list</string>
     <string name="in_disable_list">In disable list</string>
@@ -550,9 +551,9 @@ Every time you clone app data, the destination’s existing data is packed here 
     <string name="space_storage_updatable">Fix module update available (%1$s installed, %2$s latest) · Tap to generate and flash</string>
     <string name="space_storage_outdated">Fix module is not the latest (no version marker, 2.3 or older) · Tap to generate %1$s and flash</string>
     <string name="fix_module_state">Installed: %1$s　Bundled: %2$s</string>
-    <string name="fix_module_state_none">Installed: no version marker (2.3 or older, or not installed)　Bundled: %1$s</string>
+    <string name="fix_module_state_none">Installed: no version marker　Bundled: %1$s</string>
     <string name="fix_module_title">Generate fix module</string>
-    <string name="fix_module_msg">A zip named cubclone-sdcardfs-fix.zip will be written to the Download folder (an existing one is overwritten). Flash it in APatch / KernelSU / Magisk and reboot.\n\nThe module does one thing: it takes over the setgroups call made by zygote and appends the per-user derived group of each self-created space (uid x 100000 + 9997) to the media provider process at startup. On devices whose kernel has sdcardfs that group owns /data/media/uid; without it the whole volume rolls back to unmountable and the space has no external storage at all.\n\nIt does not change the mount strategy, does not touch external_storage.sdcardfs.enabled and does not modify any file; only the media provider process gets the extra groups, every other process passes through unchanged.\n\nUpgrading from 2.x: same module id, flashing replaces it in place; the old disable-sdcardfs behaviour is gone. On the first boot the owners of media files changed by the old module are restored to media_rw.\n\nNote: ROM OTA updates usually require re-flashing the module.</string>
+    <string name="fix_module_msg">A zip named cubclone-sdcardfs-fix.zip is written to Download (an existing one is overwritten). Flash it in APatch / KernelSU / Magisk, then reboot.\n\nFixes: no photos or files visible inside a space on some devices.\n\nNote: re-flash the module after a ROM OTA update.</string>
     <string name="fix_module_working">Generating…</string>
     <string name="fix_module_done">Generated: %1$s</string>
     <string name="fix_module_failed">Failed to generate</string>

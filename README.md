@@ -41,7 +41,9 @@ Elevation comes from **Shizuku** or **root**, whichever the device has.
 - Handles the kernel `sdcardfs` conflict that leaves clone storage unmountable on
   some ROMs: a one-tap module (APatch / KernelSU / Magisk) restores shared storage so
   spaces and the owner share the same gallery and files; if the module is not
-  installed, new spaces fall back to separate storage instead of having none
+  installed, new spaces fall back to separate storage instead of having none.
+  The generated module ships every supported ABI, so one zip can be reused on
+  another device
 - Theme: system / light / dark / pure black (AMOLED); English and Chinese UI
 
 ## Build

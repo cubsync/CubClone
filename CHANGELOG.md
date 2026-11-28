@@ -16,6 +16,9 @@
 - **模块 zip 内容换成 `module.prop` + `service.sh` + `uninstall.sh` + `customize.sh` + `zygisk/<abi>.so`**，
   不再下发 `post-fs-data.sh` / `system.prop`。id 仍是 `cubclone_sdcardfs_fix`，versionCode 8 → 9，
   管理器按同一个模块升级替换，不会并存。
+- **生成的模块 zip 带全部可用的 ABI**：以前只按本机主 ABI 打一份，包拿到别的架构机器上刷入会
+  加载不到 zygisk 库；现在 assets 里有几个 ABI 就打几个（单架构包仍一份，通用包四份齐全），
+  一个 zip 通吃 arm64 / armv7 / x86_64 / x86。实测 G7 用通用包生成的 zip 含 `zygisk/` 四份 so。
 - **2.x 迁移**：首次开机把老模块 chown 成媒体服务 uid 的媒体文件改回 `media_rw(1023)`
   （只动属主，不碰 `Android/data`、`Android/obb`，也不动内容与位置），执行记录写
   `/data/adb/cubclone_sdcardfs_fix.log`，完成后留标记只跑一次。合成样本实测：`10155` → `1023:1023`。
@@ -30,7 +33,7 @@
   `INVALID_PACKAGE_NAME`——`mCurMethodId` 有值、`mCurId` 为 null、键盘不弹。现在对我们自己的空间放行；
   同时 `bindServiceAsUser` **所有重载**都挂上（原来只挂第一个，IMS 实际用的那个没挂到）。
   G7 实测：`mHaveConnection=true`、`mInputShown=true`，空间内文件管理器搜索框输入 `abc123` 成功，
-  候选条来自主空间微信输入法。
+  候选条来自主空间的输入法。
 - **输入法 / 文件选择器不再绑死方法签名**：两个钩子改成候选链——按方法名 + 参数形状匹配，
   userId 在运行期按「值命中我们空间」定位并锁定，换 Android 版本加参数也不会静默失效。
   G7 实测文件选择器 `hook.pick=hit:1`，前台 `u0 PickActivity` 列出主空间文件，长按选中→确定，
@@ -40,14 +43,18 @@
 - **设置里增加「预装清单」**：列出每个新空间一定会装的应用（底线，不可取消，少一个分身就起不来），
   其余系统应用可以额外勾选一起预装。底线取自 `CloneStore.essentialPkgs()`，按包名特征探测，
   换 ROM 不会漏（Flyme 的文件选择器叫 `com.meizu.picker`，AOSP 叫 `documentsui`）。
+- **预装清单排到另外三份清单之前，四份清单互斥**：预装与禁用 / 不装 / 隐藏不能同时选中，
+  后保存的那份说了算，重叠项自动从其它清单移除并提示；建空间时预装（含底线）一律不卸、不禁用，
+  不会「刚装好又被清掉」。实测：预装勾图库后再去禁用清单保存同一应用，`preinstall_extra` 变空；
+  反向操作后 `disable_extra` 变空。
 
 ### 新增（增强插件，仅 root + LSPosed）
 - **空间里不装输入法也能打字**：把三处 AOSP 入口重定向到主用户——
   `InputMethodUtils$InputMethodSettings.isCurrentProfile`（放行）、
   `InputMethodManagerService.queryInputMethodServicesInternal`（按主用户取输入法清单）、
   `ContextImpl.bindServiceAsUser`（绑定到主用户）。G7 实测：空间 11 里
-  `pm list packages --user 11 | grep -c inputmethod` = 0，芝麻粒点输入框弹出主空间的
-  `com.tencent.wetype`（进程 `USER=u0_a214`），`mCurClient` 是空间应用。
+  `pm list packages --user 11 | grep -c inputmethod` = 0，点输入框弹出主空间的第三方输入法，
+  `mCurClient` 是空间应用。
   主应用据此不再往新空间装输入法包（`CloneStore.imeRedirectReady()` 读三个诊断 prop），
   插件缺失或没 root 时仍走原来的装包路径，Shizuku 用户不受影响。
 - **空间能用自己的共享存储了（仅 root + APatch/Magisk，需装原生模块 `cubclone-native`）**：
@@ -76,7 +83,7 @@
 - **没有「最近打开」时顶部留一条空白**：ListView 的表头即使设成 GONE 仍按上次量到的高度占位。
   现在表头常驻，只隐藏标题和内容行，没内容时高度自然为 0。
 - **批量/单个创建时状态行提前跳回「root 就绪」**：状态行的常驻提示没有锁，后台刷新一结束就被
-  `settle()` 覆盖。现在常驻提示期间不回落；批量安装按「正在安装 1/3：微信」逐条刷新，
+  `settle()` 覆盖。现在常驻提示期间不回落；批量安装按「正在安装 1/3：应用名」逐条刷新，
   单应用创建补「空间 N 已建，正在配置输入法」「正在把 X 装进空间 N」两步。
 - **最近任务里空间应用的图标和名字消失**：`LauncherProfileHook` 以前 hook
   `UserManagerService.getProfileIds()`，按「调用者是桌面」把我们的 uid 从 profile 列表里剔除。
@@ -254,7 +261,7 @@
   一步进主空间；两条路都没有时才退回 `startActivity`。
 - 批量任务冷启动（从最近任务/通知直接进来）时没探过提权，`isRunning` 会把在跑的应用判成没跑，
   「备份后重开」整批漏掉；现在开工前先探一次。
-- 「备份后重开」以前只判进程，推送/自启常驻的后台应用（微信、支付宝这类带 `:push` 子进程的）
+- 「备份后重开」以前只判进程，推送/自启常驻的后台应用（带 `:push` 子进程的那类）
   也算「在运行」，备份完一次弹出十几个界面、手机直接卡住。现在要求**进程活着且有 ActivityRecord**，
   只重开用户真的打开过的应用；判断在开工前抓一次快照，不会把备份过程中被 stop 的当成没跑。
 - 还原后也走同一条「恢复运行的应用」逻辑（以前只对备份生效）：还原会 force-stop 目标空间的应用，
@@ -456,7 +463,7 @@
   没有 root 时页面顶部直接说明原因，而不是让列表空着。
 - 「数据备份」改名为「克隆前数据备份」（英文 Pre-clone backups），名字与它的实际来源一致。
 - 修 2.3 引入的分身迁移错误：分身里 `Android/media/<包>` 顶层目录被套成了**主空间**的 uid，
-  分身里的应用（实测支付宝、XRadiant）连自己的存储目录都进不去，表现为打不开、保存失败。
+  分身里的应用（实测第三方支付类应用）连自己的存储目录都进不去，表现为打不开、保存失败。
   现在按 `appId + 用户 id * 100000` 计算，并把分身目录的权限放开到主空间形态（2775 / 664）。
   模块升到 2.4，迁移标记改名，刷入重启后会重跑一次把已有的错属主修回来。
 ### 修复

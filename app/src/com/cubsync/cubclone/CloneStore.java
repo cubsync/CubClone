@@ -748,10 +748,17 @@ public final class CloneStore {
         keep.addAll(defaultKeep(c));   // Play/GMS 默认保留，但可加卸载清单卸载
         StringBuilder kp = new StringBuilder(" ");
         for (String p : keep) kp.append(p).append(' ');
+        // 预装（含底线）以「装进去」为准：历史清单里即使有重叠，也不卸、不禁用
+        Set<String> pre = essentialPkgs(c);
+        pre.addAll(preinstallExtra(c));
+        Set<String> ulSet = extraUninstall(c);
+        Set<String> diSet = extraDisable(c);
+        ulSet.removeAll(pre);
+        diSet.removeAll(pre);
         StringBuilder ul = new StringBuilder(" ");   // 不装清单（老空间补卸）：新空间建号时已经没装
-        if (!fresh) for (String p : extraUninstall(c)) ul.append(p).append(' ');
+        if (!fresh) for (String p : ulSet) ul.append(p).append(' ');
         StringBuilder di = new StringBuilder(" ");   // 禁用清单：禁用（不可用，先于保留）
-        for (String p : extraDisable(c)) di.append(p).append(' ');
+        for (String p : diSet) di.append(p).append(' ');
         String q = String.valueOf((char) 34);      // "
         final String ESS = "*.documentsui|*.camera*|*contacts*|*dialer*"
                 + "|*messaging*|*providers.media*";
@@ -1602,11 +1609,16 @@ public final class CloneStore {
             putEntry(zos, "uninstall.sh", MODULE_UNINSTALL);
             putEntry(zos, "customize.sh", MODULE_CUSTOMIZE);
             putEntry(zos, "README.txt", MODULE_README);
-            // Zygisk 本体：按本机主 ABI 取一份，assets 里是 zygisk-<abi>.so
-            String abi = android.os.Build.SUPPORTED_ABIS[0];
-            byte[] so = readAsset("zygisk-" + abi + ".so");
-            if (so == null || so.length == 0) return null;
-            putEntry(zos, "zygisk/" + abi + ".so", so);
+            // Zygisk 本体：assets 里有几个 ABI 就打几个。单架构包只有本机那份；
+            // universal 包四份都在，生成的 zip 拿到别的架构机器上也能加载。
+            int abis = 0;
+            for (String abi : new String[]{"arm64-v8a", "armeabi-v7a", "x86_64", "x86"}) {
+                byte[] so = readAsset("zygisk-" + abi + ".so");
+                if (so == null || so.length == 0) continue;
+                putEntry(zos, "zygisk/" + abi + ".so", so);
+                abis++;
+            }
+            if (abis == 0) return null;
             zos.finish();
             zos.close();
             zos = null;

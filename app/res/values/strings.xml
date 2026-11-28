@@ -200,7 +200,7 @@
     <string name="refresh">刷新</string>
     <string name="refreshing">正在刷新列表…</string>
     <string name="label_keep_sys">新建空间预处理系统应用</string>
-    <string name="hint_keep_sys">总开关：新建空间时按不装、禁用、隐藏三个清单预处理系统应用；关闭则三个清单都不执行</string>
+    <string name="hint_keep_sys">总开关：新建空间时按预装、不装、禁用、隐藏四份清单预处理系统应用；关闭则清单都不执行</string>
     <string name="keep_extra_title">禁用清单</string>
     <string name="keep_extra_hint">禁用清单里的应用建空间后禁用（不可用）；可随时启用装回</string>
     <string name="keep_extra_essential">必需 · 不可禁用（%1$d 个，保证分身可用）</string>
@@ -216,6 +216,7 @@
     <string name="preinstall_hint">新空间一定会装的应用：底线项不可取消，可额外勾选其它系统应用一起装</string>
     <string name="preinstall_essential">底线 · 不可取消（%1$d 个，保证分身可用）</string>
     <string name="preinstall_optional">额外预装 · 勾选后新空间也装</string>
+    <string name="list_conflict_dropped">已从其它清单移除重叠的应用</string>
     <string name="uninstall_optional">可选 · 勾选不安装</string>
     <string name="in_uninstall_list">已在不装清单</string>
     <string name="in_disable_list">已在禁用清单</string>
@@ -550,9 +551,9 @@
     <string name="space_storage_updatable">修复模块有更新（已装 %1$s，最新 %2$s）· 点这里生成后刷入</string>
     <string name="space_storage_outdated">修复模块不是最新（读不到版本标记，即 2.3 或更早）· 点这里生成 %1$s 后刷入</string>
     <string name="fix_module_state">设备上已装：%1$s　本版内置：%2$s</string>
-    <string name="fix_module_state_none">设备上已装：无版本标记（2.3 或更早，也可能没装）　本版内置：%1$s</string>
+    <string name="fix_module_state_none">设备上已装：无版本标记　本版内置：%1$s</string>
     <string name="fix_module_title">生成修复模块</string>
-    <string name="fix_module_msg">会生成 cubclone-sdcardfs-fix.zip 到 Download 目录（同名文件直接覆盖）。用 APatch / KernelSU / Magisk 刷入后重启。\n\n模块只做一件事：接管 zygote 的 setgroups，在媒体存储进程启动时把自建空间的每用户派生组（编号 uid×100000+9997）并进附加组。内核带 sdcardfs 的机型上这个组是 /data/media/uid 的属组，缺了它整卷会回滚成 unmountable，分身里就没有外部存储。\n\n不改挂载方式、不改 external_storage.sdcardfs.enabled、不动文件内容，只给媒体存储进程加组，其它进程一律原样透传。\n\n从 2.x 升级：同一个 id 刷入即替换，老模块「关闭 sdcardfs」的行为不再保留；首次开机会把老模块改过的媒体文件属主改回 media_rw。\n\n注意：ROM OTA 升级后模块通常要重刷一次。</string>
+    <string name="fix_module_msg">会生成 cubclone-sdcardfs-fix.zip 到 Download 目录（同名覆盖）。用 APatch / KernelSU / Magisk 刷入后重启。\n\n解决：部分机型上分身里看不到相册和文件。\n\n注意：ROM OTA 升级后需要重刷一次。</string>
     <string name="fix_module_working">正在生成…</string>
     <string name="fix_module_done">已生成：%1$s</string>
     <string name="fix_module_failed">生成失败</string>

@@ -147,14 +147,14 @@ static bool hook_func(void *target, void *replace, void **backup) {
                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (tramp2 == MAP_FAILED) return false;
 #if defined(__x86_64__)
-    memcpy(tramp2, target, 12);
-    uint8_t *t2 = tramp2 + 12;
+    memcpy(tramp2, target, 14);
+    uint8_t *t2 = tramp2 + 14;
     t2[0] = 0xFF; t2[1] = 0x25; t2[2] = t2[3] = t2[4] = t2[5] = 0;
-    *(uint64_t *) (t2 + 6) = (uint64_t) ((uint8_t *) target + 12);
-    uint8_t patch2[12] = {0xFF, 0x25, 0, 0, 0, 0};
+    *(uint64_t *) (t2 + 6) = (uint64_t) ((uint8_t *) target + 14);
+    uint8_t patch2[14] = {0xFF, 0x25, 0, 0, 0, 0};
     *(uint64_t *) (patch2 + 6) = (uint64_t) replace;
-    memcpy(target, patch2, 12);
-    __builtin___clear_cache((char *) target, (char *) target + 12);
+    memcpy(target, patch2, 14);
+    __builtin___clear_cache((char *) target, (char *) target + 14);
 #elif defined(__i386__)
     memcpy(tramp2, target, 5);
     tramp2[5] = 0xE9;

@@ -155,14 +155,45 @@ public final class CubClone {
         // 那时属性里没有这个 uid 的话，桌面照样会摆出分身应用（G7 实测）。
         addHookSpace(uid);
         markOwned(uid);
-        // 存储授权必须在 start-user 之前：卷是首次 start 时挂的，挂的时候媒体进程就要能
-        // 穿过 /data/media/<uid>，晚了这一轮就只能是 unmountable，只能等下轮。
-        provisionStorage(uid);
+        // 附加组在进程启动时定死，新空间晚于媒体进程存在，必须让它重起一次才能带上
+        // 这个用户的派生组。不做这一步，卷必然 unmountable（ACL / chgrp 都替代不了，
+        // 2026-11-28 实测）。
+        reloadMediaProvider();
         sh("am", "start-user", String.valueOf(uid));
         // 建号只花 1 秒，等存储最长 25 秒。以前在这里死等，界面就一直是「创建中」，
         // 用户以为卡住会反复点（G7 上一次连建 5 个）。现在建完立刻返回，
         // 等存储交给 settle 子命令，App 在后台跑。
         say("MODE=pending");
+    }
+
+    /**
+     * 让媒体存储进程重起一次，重新读 {@code persist.sys.cubclone.spaces}，
+     * 把新空间的派生组并进附加组。用 SIGTERM 让它自己退出，系统会重新拉起；
+     * 不走 force-stop（那会把主空间的 FUSE 一起弄断）。
+     */
+    private static void reloadMediaProvider() {
+        String fs = "";
+        try {
+            fs = new String(java.nio.file.Files.readAllBytes(
+                    java.nio.file.Paths.get("/proc/filesystems")));
+        } catch (Throwable ignored) {
+        }
+        if (!fs.contains("sdcardfs")) return;
+        String pids = sh("pidof", "com.android.providers.media.module");
+        if (pids.isEmpty()) pids = sh("pidof", "com.android.providers.media");
+        if (pids.isEmpty()) { say("WARN 找不到媒体进程，跳过重起"); return; }
+        String first = pids.trim().split(" ")[0];
+        sh("su", "-c", "kill -TERM " + first);
+        for (int i = 0; i < 20; i++) {
+            try { Thread.sleep(250); } catch (InterruptedException e) { break; }
+            String now = sh("pidof", "com.android.providers.media.module");
+            if (now.isEmpty()) now = sh("pidof", "com.android.providers.media");
+            if (!now.isEmpty() && !now.trim().equals(first)) {
+                say("MEDIA reloaded " + first + " -> " + now.trim().split(" ")[0]);
+                return;
+            }
+        }
+        say("WARN 媒体进程未在 5 秒内回来，继续（存储可能仍不可用）");
     }
 
     /**

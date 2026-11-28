@@ -3,4 +3,4 @@ name=CubClone 存储放行
 version=3.0.0
 versionCode=9
 author=cubsync
-description=让自建分身的共享存储可以挂载：给媒体存储进程补上分身的每用户派生组（setgroups），并接管 AOSP 的 FUSE 跨用户放行判定。不改挂载方式、不改任何数据。
+description=让自建分身的共享存储可以挂载：接管 zygote 的 setgroups，给媒体存储进程补上分身的每用户派生组（Zygisk PLT 钩，arm64/armv7/x86_64/x86 通用）。不改挂载方式、不改文件、不碰主空间数据。从 2.x 升级时自动把老模块改过的媒体文件属主改回 media_rw，老模块的「关闭 sdcardfs」行为不再保留。

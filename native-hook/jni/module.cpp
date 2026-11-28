@@ -141,42 +141,11 @@ static bool relocatable(const uint32_t *insn, int n) {
 static bool hook_func(void *target, void *replace, void **backup) {
     if (!target || !replace || !backup) return false;
 #if !defined(__aarch64__)
-    const size_t pg2 = (size_t) sysconf(_SC_PAGESIZE);
-    uintptr_t ps2 = (uintptr_t) target & ~(pg2 - 1);
-    if (mprotect((void *) ps2, pg2 * 2, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) return false;
-    uint8_t *tramp2 = (uint8_t *) mmap(nullptr, 256, PROT_READ | PROT_WRITE | PROT_EXEC,
-                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (tramp2 == MAP_FAILED) return false;
-#if defined(__x86_64__)
-    memcpy(tramp2, target, 14);
-    uint8_t *t2 = tramp2 + 14;
-    t2[0] = 0xFF; t2[1] = 0x25; t2[2] = t2[3] = t2[4] = t2[5] = 0;
-    *(uint64_t *) (t2 + 6) = (uint64_t) ((uint8_t *) target + 14);
-    uint8_t patch2[14] = {0xFF, 0x25, 0, 0, 0, 0};
-    *(uint64_t *) (patch2 + 6) = (uint64_t) replace;
-    memcpy(target, patch2, 14);
-    __builtin___clear_cache((char *) target, (char *) target + 14);
-#elif defined(__i386__)
-    memcpy(tramp2, target, 5);
-    tramp2[5] = 0xE9;
-    *(int32_t *) (tramp2 + 6) = (int32_t) (((uint8_t *) target + 5) - (tramp2 + 10));
-    uint8_t *p8 = (uint8_t *) target;
-    p8[0] = 0xE9;
-    *(int32_t *) (p8 + 1) = (int32_t) ((uint8_t *) replace - (p8 + 5));
-    __builtin___clear_cache((char *) target, (char *) target + 5);
-#elif defined(__arm__)
-    memcpy(tramp2, target, 8);
-    ((uint32_t *) tramp2)[2] = 0xE51FF004u;                 // ldr pc, [pc, #-4]
-    ((uint32_t *) tramp2)[3] = (uint32_t) ((uint8_t *) target + 8);
-    ((uint32_t *) target)[0] = 0xE51FF004u;
-    ((uint32_t *) target)[1] = (uint32_t) replace;
-    __builtin___clear_cache((char *) target, (char *) target + 8);
-#else
-    logi("hook_func: unknown ABI, skip");
+    // 非 arm64 不做内联补丁：各架构的指令长度与可重定位性都不同，没有实机验证过的
+    // 编码不进产品（写错一位就是随机崩溃）。存储修复走 Zygisk 的 PLT 钩，与架构无关；
+    // 这里的两处 mediaprovider 符号补丁只在 arm64 上装。
+    logi("inline hook skipped on this ABI (PLT path still active)");
     return false;
-#endif
-    *backup = tramp2;
-    return true;
 #endif
     const size_t page = (size_t) sysconf(_SC_PAGESIZE);
     uintptr_t pageStart = (uintptr_t) target & ~(page - 1);

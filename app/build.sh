@@ -46,6 +46,18 @@ if [ "$ABI" != universal ]; then
   [ -f "$OUT/assets/zstd-$ABI" ] || { echo "assets 里没有 zstd-$ABI"; exit 1; }
 fi
 
+# Zygisk 模块本体（应用内「生成存储模块」时打进 zip）。按 ABI 取一份：
+# 只有媒体存储进程需要它，而那个进程在本机上就是主 ABI，别的架构带上也加载不到。
+NG=../native-hook/zygisk
+if [ "$ABI" = universal ]; then
+  for a in arm64-v8a armeabi-v7a x86_64 x86; do
+    [ -f "$NG/$a.so" ] && cp -f "$NG/$a.so" "$OUT/assets/zygisk-$a.so"
+  done
+else
+  [ -f "$NG/$ABI.so" ] || { echo "缺 native-hook/zygisk/$ABI.so（先编原生模块）"; exit 1; }
+  cp -f "$NG/$ABI.so" "$OUT/assets/zygisk-$ABI.so"
+fi
+
 echo "[0/7] 自检：UI 配色 + 中英资源"
 # 背景色由应用自己按深浅色画，系统主题给的 Button/CheckBox 默认色不会跟着变；
 # 这类「深色下按钮变黑字」的问题反复出现，编译前直接拦住（tools/check-ui-colors.py）。

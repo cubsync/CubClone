@@ -1424,227 +1424,129 @@ public final class CloneStore {
      * 模块版本：应用内置的这一份就是「最新」。模块内容有任何改动，必须同时把 code 加一，
      * 否则用户刷了新版也会被判成「已是最新」。
      */
-    public static final String MODULE_VERSION = "2.5";
-    public static final int MODULE_CODE = 8;
+    public static final String MODULE_VERSION = "3.0.0";
+    public static final int MODULE_CODE = 9;
 
     // id 与 name 都是模块在用户设备上的身份，1.x 发出去之后就不再动：换 id 会变成两个模块并存，
     // 换 name 会让用户在管理器里看到模块「改名」。只有 version / versionCode 可以前进。
     private static final String MODULE_PROP =
             "id=cubclone_sdcardfs_fix\n"
-            + "name=CubClone 分身存储修复\n"
+            + "name=CubClone 存储放行\n"
             + "version=" + MODULE_VERSION + "\n"
             + "versionCode=" + MODULE_CODE + "\n"
             + "author=cubsync\n"
-            + "description=内核带 sdcardfs 的机型上，让 vold/MediaProvider 走纯 FUSE，"
-            + "恢复分身空间与主空间共用的存储（相册、文件同一份）。切到 FUSE 后文件由 "
-            + "MediaProvider 代理读写，sdcardfs 时代留下的属主会让它改不动这些文件，"
-            + "模块会把这些属主一次性迁成 FUSE 形态。只改属主，不动文件内容和位置。"
-            + "仅适用于内核带 sdcardfs 的设备；不含该驱动的机型会被拒绝安装。\n";
+            + "description=让自建分身的共享存储可以挂载：接管 zygote 的 setgroups，给媒体存储进程"
+            + "补上分身的每用户派生组（Zygisk PLT 钩，四个 ABI 同一套实现）。不改挂载方式、"
+            + "不改文件、不碰主空间数据。从 2.x 升级时自动把老模块改过的媒体文件属主改回 media_rw，"
+            + "老模块「关闭 sdcardfs」的行为不再保留。\n";
 
     /**
-     * 管理器若在更早阶段应用 system.prop，这里也备一份，双保险（内容与脚本一致）。
-     * 后两行是版本标记：应用用 getprop 就能读到模块装没装、是不是最新，
-     * 不需要 root，也不用碰 /data/adb（普通应用进不去）。
-     */
-    private static final String MODULE_SYSPROP =
-            "external_storage.sdcardfs.enabled=false\n"
-            + "sys.cubclone.module.code=" + MODULE_CODE + "\n"
-            + "sys.cubclone.module.version=" + MODULE_VERSION + "\n";
-
-    /**
-     * post-fs-data.sh：只做属性（必须在 vold 启动前），顺带尝试一次属主迁移。
-     * resetprop 路径按 APatch → KernelSU → Magisk 依次探测。
-     */
-    private static final String MODULE_PFD =
-            "#!/system/bin/sh\n"
-            + "# CubClone 分身共享存储：让 vold 走纯 FUSE（clone 卷才挂得上）\n"
-            + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
-            + "NOW=$(date '+%F %T')\n"
-            + "say() { echo \"$NOW [pfd] $*\" >> \"$LOG\"; }\n"
-            + "\n"
-            + "RP=\"\"\n"
-            + "for p in /data/adb/ap/bin/resetprop /data/adb/ksu/bin/resetprop /data/adb/magisk/resetprop; do\n"
-            + "  if [ -x \"$p\" ]; then RP=\"$p\"; break; fi\n"
-            + "done\n"
-            + "[ -z \"$RP\" ] && RP=$(command -v resetprop 2>/dev/null)\n"
-            + "if [ -z \"$RP\" ]; then say '跳过：找不到 resetprop，未做任何改动'; exit 0; fi\n"
-            + "\n"
-            + "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then\n"
-            + "  say '本机内核没有 sdcardfs 驱动，跳过，未做任何改动'; exit 0\n"
-            + "fi\n"
-            + "\n"
-            // 版本标记：system.prop 在部分管理器上不生效时这里兜一次，应用零权限 getprop 可读
-            + "\"$RP\" sys.cubclone.module.code " + MODULE_CODE + "\n"
-            + "\"$RP\" sys.cubclone.module.version " + MODULE_VERSION + "\n"
-            + "BEFORE=$(\"$RP\" external_storage.sdcardfs.enabled 2>/dev/null)\n"
-            + "\"$RP\" external_storage.sdcardfs.enabled false\n"
-            + "AFTER=$(\"$RP\" external_storage.sdcardfs.enabled 2>/dev/null)\n"
-            + "say \"external_storage.sdcardfs.enabled: [$BEFORE] -> [$AFTER]\"\n";
-
-    /**
-     * service.sh：把 sdcardfs 时代的属主迁成 FUSE 形态，并且**每次开机都复查一遍**。
+     * service.sh：只做一件事——从 2.x 升级上来时，把老模块改过的媒体文件属主改回 media_rw。
      *
-     * 纯 FUSE 下所有文件读写都由 MediaProvider 进程代理，它必须能改这些文件。原生 FUSE
-     * 机型上文件属主本来就是它（8A 实测：DCIM 里的照片、Android/media/&lt;包&gt; 里的库，
-     * 属主都是 com.android.providers.media.module 的 uid）；sdcardfs 时代是 media_rw(1023)，
-     * MediaProvider 只是 other，ftruncate 直接 EPERM，SQLite 报 4618 打不开库；现场表现是
-     * 应用界面一直转圈（XRadiant 的库就放在 Android/media 里）。
+     * <p>2.x 的做法是 resetprop external_storage.sdcardfs.enabled=false 让 vold 走纯 FUSE，
+     * 再把 /data/media 下原本属于 media_rw(1023) 的文件 chown 成媒体存储进程的 uid。新版不再
+     * 关 sdcardfs，撤掉老模块后那些文件属主不对，sdcardfs 视图下应用读写会被拒。这里只做属主
+     * 回迁，不动内容、不动位置、不碰 Android/data 与 Android/obb。
      *
-     * 规则（与原生 FUSE 机型一致，不按应用猜归属）：
-     *   ① Android/media/&lt;包&gt; 顶层目录 → 该包 uid（scoped storage 的隔离边界），升级后修一次
-     *   ② 目录里残留的 media_rw(1023) 内容 → MediaProvider 的 uid，每次开机都查
-     * ② 必须每次开机跑：1023 属主会被「不是这个应用」的 root 写入重新带回来（备份恢复、
-     * 脚本、别的模块都会），只迁一次就是修一次又被弄坏一次。只挑 -user media_rw，
-     * 应用自己建的文件、自己设的权限一律不动。
+     * <p>只在「内核带 sdcardfs」且「跑过老模块（老日志在）」的机器上执行一次，其余写标记退出。
      */
     private static final String MODULE_SVC =
             "#!/system/bin/sh\n"
-            + "# CubClone 分身共享存储：把 sdcardfs 时代的属主迁成 FUSE 形态（顶层一次 + 内容每次开机）\n"
-            + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
-            + "say() { echo \"$(date '+%F %T') [svc] $*\" >> \"$LOG\"; }\n"
+            + "# 一次性迁移：把老模块（2.x，关 sdcardfs 走纯 FUSE）改过的媒体文件属主改回 media_rw。\n"
+            + "#\n"
+            + "# 老模块的做法是 resetprop external_storage.sdcardfs.enabled=false，再把 /data/media 下\n"
+            + "# 原本属于 media_rw(1023) 的文件 chown 成媒体存储进程的 uid。新版不再关 sdcardfs，\n"
+            + "# 撤掉老模块后那些文件属主不对，sdcardfs 视图下应用读写会被拒。这里只做属主回迁，\n"
+            + "# 不动内容、不动位置、不碰 Android/data 与 Android/obb（那是各应用自己的数据目录）。\n"
+            + "#\n"
+            + "# 只在「内核带 sdcardfs」且「跑过老模块」的机器上执行一次，其余情况直接写标记退出。\n"
             + "\n"
-            + "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then exit 0; fi\n"
+            + "LOG=/data/adb/cubclone_sdcardfs_fix.log\n"
+            + "MARK=/data/adb/cubclone_sdcardfs_fix.reverted\n"
+            + "say() { echo \"$(date '+%F %T') [migrate] $*\" >> \"$LOG\"; }\n"
             + "\n"
-            + "FLAG=/data/adb/cubclone-sdcardfs-fix.migrated3\n"
-            + "PKGLIST=/data/system/packages.list\n"
-            + "# 等用户 0 的共享存储可用。\n"
-            + "# 这里没有可订阅的事件：解锁改的是挂载与权限，Android/media 这个目录项早就存在\n"
-            + "# （实测 mtime 一直没变），inotify 收不到任何 create；模块也没法注入 init 的\n"
-            + "# on property:sys.user.0.ce_available 触发器（只支持 sh 与 sepolicy.rule）。\n"
-            + "# 所以只能检查，且必须低频：前 60 秒每 2 秒（解锁通常紧跟开机），之后每 15 秒。\n"
-            + "# 每次只是一次 stat，命中 dentry 缓存、不落盘；24 小时仍不解锁就放弃本次。\n"
-            + "i=0\n"
-            + "while [ ! -d /data/media/0/Android/media ]; do\n"
-            + "  if [ $i -lt 30 ]; then sleep 2; else sleep 15; fi\n"
-            + "  i=$((i+1))\n"
-            + "  [ $i -gt 6000 ] && { say 'wait: 24 小时仍未解锁，放弃本次'; exit 0; }\n"
-            + "  if [ $((i % 20)) -eq 0 ]; then say \"wait: 已检查 $i 次\"; fi\n"
+            + "# 版本标记：应用零权限 getprop 就能判断模块装没装、是不是最新\n"
+            + "RP=\"\"\n"
+            + "for p in /data/adb/ap/bin/resetprop /data/adb/ksu/bin/resetprop /data/adb/magisk/resetprop; do\n"
+            + "  [ -x \"$p\" ] && { RP=\"$p\"; break; }\n"
             + "done\n"
-            + "\n"
-            // Android 10+ 是 com.android.providers.media.module；9 及以下是 com.android.providers.media。
-            // 两个都认，否则在老 sdcardfs 机型上会直接「找不到 MediaProvider」而整个跳过。
-            + "MP=$(awk '$1==\"com.android.providers.media.module\"{m=$2; exit} $1==\"com.android.providers.media\"{o=$2} END{if(m!=\"\")print m; else if(o!=\"\")print o}' \"$PKGLIST\" 2>/dev/null)\n"
-            + "[ -n \"$MP\" ] || { say '找不到 MediaProvider 的 uid，跳过'; exit 0; }\n"
-            + "\n"
-            // ① 顶层目录：只在升级后修一次（2.3 把分身的包目录套成了主空间 uid）
-            + "if [ ! -f \"$FLAG\" ]; then\n"
-            + "  n=0\n"
-            + "  for BASE in /data/media/*; do\n"
-            + "    U=${BASE##*/}\n"
-            + "    case \"$U\" in ''|*[!0-9]*) continue;; esac\n"
-            + "    [ -d \"$BASE/Android/media\" ] || continue\n"
-            + "    OMODE=$(stat -c %a \"$BASE\" 2>/dev/null)\n"
-            + "    chmod 2775 \"$BASE\" 2>/dev/null\n"
-            + "    for d in \"$BASE\"/Android/media/*; do\n"
-            + "      [ -d \"$d\" ] || continue\n"
-            + "      pkg=${d##*/}\n"
-            // 分身里该包的真实 uid：优先读系统自己建的数据目录属主（换 ROM / 换设备都准），
-            // 读不到才退回 AOSP 的 UserHandle.PER_USER_RANGE 公式 appId + user*100000
-            + "      duid=$(stat -c %u \"/data/user/$U/$pkg\" 2>/dev/null)\n"
-            + "      if [ -z \"$duid\" ]; then\n"
-            + "        puid=$(awk -v p=\"$pkg\" '$1==p{print $2; exit}' \"$PKGLIST\" 2>/dev/null)\n"
-            + "        [ -n \"$puid\" ] && duid=$((puid + U * 100000))\n"
-            + "      fi\n"
-            + "      [ -n \"$duid\" ] && chown \"$duid:1023\" \"$d\" 2>/dev/null && n=$((n+1))\n"
-            + "    done\n"
-            + "    [ -n \"$OMODE\" ] && chmod \"$OMODE\" \"$BASE\" 2>/dev/null\n"
-            + "  done\n"
-            + "  say \"migrate: 顶层目录已修 $n 个\"\n"
-            + "  touch \"$FLAG\"\n"
+            + "[ -z \"$RP\" ] && RP=$(command -v resetprop 2>/dev/null)\n"
+            + "if [ -n \"$RP\" ]; then\n"
+            + "  \"$RP\" sys.cubclone.module.code 9\n"
+            + "  \"$RP\" sys.cubclone.module.version 3.0.0\n"
+            + "else\n"
+            + "  setprop sys.cubclone.module.code 9 2>/dev/null\n"
+            + "  setprop sys.cubclone.module.version 3.0.0 2>/dev/null\n"
             + "fi\n"
             + "\n"
-            // ② 内容：每次开机只挑残留的 media_rw(1023)，别的属主不动（借主空间 MediaProvider
-            //    身份写文件的应用——XRadiant——属主本来就是 MP，改成别的反而不写）
-            + "c=0\n"
-            + "for BASE in /data/media/*; do\n"
-            + "  U=${BASE##*/}\n"
-            + "  case \"$U\" in ''|*[!0-9]*) continue;; esac\n"
-            + "  [ -d \"$BASE/Android/media\" ] || continue\n"
-            + "  OMODE=$(stat -c %a \"$BASE\" 2>/dev/null)\n"
-            + "  chmod 2775 \"$BASE\" 2>/dev/null\n"
-            + "  for d in \"$BASE\"/Android/media/*; do\n"
-            + "    [ -d \"$d\" ] || continue\n"
-            + "    one=$(find \"$d\" -mindepth 1 -user media_rw 2>/dev/null | head -1)\n"
-            + "    [ -n \"$one\" ] || continue\n"
-            + "    find \"$d\" -mindepth 1 -user media_rw -exec chown \"$MP\" {} + 2>/dev/null\n"
-            + "    c=$((c+1))\n"
-            + "    say \"heal: ${d##*/} 的 media_rw 属主已改成 MediaProvider($MP)\"\n"
-            + "  done\n"
-            + "  [ -n \"$OMODE\" ] && chmod \"$OMODE\" \"$BASE\" 2>/dev/null\n"
+            + "[ -f \"$MARK\" ] && exit 0\n"
+            + "\n"
+            + "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then\n"
+            + "  say \"无 sdcardfs，无需回迁\"\n"
+            + "  touch \"$MARK\"\n"
+            + "  exit 0\n"
+            + "fi\n"
+            + "\n"
+            + "if [ ! -f /data/adb/cubclone-sdcardfs-fix.log ]; then\n"
+            + "  say \"未见老模块痕迹，无需回迁\"\n"
+            + "  touch \"$MARK\"\n"
+            + "  exit 0\n"
+            + "fi\n"
+            + "\n"
+            + "n=0\n"
+            + "for d in /data/media/*/; do\n"
+            + "  [ -d \"$d\" ] || continue\n"
+            + "  u=$(basename \"$d\")\n"
+            + "  case \"$u\" in ''|*[!0-9]*) continue;; esac\n"
+            + "  mp=$((u * 100000 + 10155))          # 该用户的媒体存储进程 uid\n"
+            + "  c=$(find \"$d\" -mindepth 1 \\\n"
+            + "        \\( -path \"$d/Android/data\" -o -path \"$d/Android/obb\" \\) -prune -o \\\n"
+            + "        -user \"$mp\" -print 2>/dev/null | wc -l)\n"
+            + "  [ \"$c\" -eq 0 ] && continue\n"
+            + "  find \"$d\" -mindepth 1 \\\n"
+            + "        \\( -path \"$d/Android/data\" -o -path \"$d/Android/obb\" \\) -prune -o \\\n"
+            + "        -user \"$mp\" -exec chown 1023:1023 {} + 2>/dev/null\n"
+            + "  say \"用户 $u 回迁 $c 项\"\n"
+            + "  n=$((n + c))\n"
             + "done\n"
-            + "[ \"$c\" -gt 0 ] && say \"heal done, 涉及 $c 个包目录\"\n"
-            + "exit 0\n";
+            + "\n"
+            + "say \"完成，共 $n 项\"\n"
+            + "touch \"$MARK\"\n"
+            + "";
 
-    /** 卸载只记一行：属性只改内存，重启回原值；属主不回滚（迁回 sdcardfs 形态反而会坏） */
+    /** 卸载：清标记，让重新刷入时再走一遍回迁（幂等，已迁的不会再动） */
     private static final String MODULE_UNINSTALL =
             "#!/system/bin/sh\n"
-            + "LOG=/data/adb/cubclone-sdcardfs-fix.log\n"
-            + "echo \"$(date '+%F %T') [uninstall] 模块已卸载；"
-            + "external_storage.sdcardfs.enabled 只改内存，重启后自动恢复原值\" >> \"$LOG\"\n"
-            + "# 清迁移标记：重新刷入时会再走一遍（幂等，已迁的不会再动）\n"
-            + "rm -f /data/adb/cubclone-sdcardfs-fix.migrated /data/adb/cubclone-sdcardfs-fix.migrated2 /data/adb/cubclone-sdcardfs-fix.migrated3\n";
+            + "rm -f /data/adb/cubclone_sdcardfs_fix.reverted\n";
 
-    /** 安装阶段把特征检查做完：不符条件直接 abort，模块不落地 */
+    /** 安装阶段只做文件权限，不对机型设限：本模块在所有 Android 11+ 上都是安全的 */
     private static final String MODULE_CUSTOMIZE =
-            "# 刷入前检查：本机不符合条件就直接拒绝安装，不在设备上留下任何东西\n"
-            + "if ! command -v ui_print >/dev/null 2>&1; then ui_print() { echo \"$1\"; }; fi\n"
-            + "if ! command -v abort >/dev/null 2>&1; then abort() { echo \"! $1\"; exit 1; }; fi\n"
-            + "\n"
-            + "ui_print \"- CubClone 分身共享存储：检查本机特征\"\n"
-            + "if ! grep -q sdcardfs /proc/filesystems 2>/dev/null; then\n"
-            + "  abort \"! 本机内核没有 sdcardfs 驱动，分身存储不走这条路径，不需要此模块（未做任何改动）\"\n"
-            + "fi\n"
-            + "ui_print \"- 内核带 sdcardfs，继续安装\"\n"
-            // 这个开关是 Android 11（SDK 30）才有的，更老的系统上装了也不会生效
-            + "SDK=$(getprop ro.build.version.sdk 2>/dev/null)\n"
-            + "case \"$SDK\" in ''|*[!0-9]*) SDK=0;; esac\n"
-            + "if [ \"$SDK\" -gt 0 ] && [ \"$SDK\" -lt 30 ]; then\n"
-            + "  abort \"! 本机 Android $SDK（低于 11）：external_storage.sdcardfs.enabled 从 Android 11 才有，装了不会生效（未做任何改动）\"\n"
-            + "fi\n"
-            + "if command -v set_perm >/dev/null 2>&1; then\n"
-            + "  set_perm $MODPATH/post-fs-data.sh 0 0 0755\n"
-            + "  set_perm $MODPATH/service.sh 0 0 0755\n"
-            + "  set_perm $MODPATH/uninstall.sh 0 0 0755\n"
-            + "else\n"
-            + "  chmod 0755 $MODPATH/post-fs-data.sh $MODPATH/service.sh $MODPATH/uninstall.sh\n"
-            + "fi\n"
-            + "ui_print \"- 安装完成，重启后分身空间与主空间共用同一份存储\"\n";
+            "if ! command -v ui_print >/dev/null 2>&1; then ui_print() { echo \"$1\"; }; fi\n"
+            + "ui_print \"- CubClone 存储放行\"\n"
+            + "chmod 0755 $MODPATH/service.sh $MODPATH/uninstall.sh 2>/dev/null\n"
+            + "for f in $MODPATH/zygisk/*.so; do chmod 0644 \"$f\" 2>/dev/null; done\n"
+            + "ui_print \"- 安装完成，重启后新建的分身空间即可挂载共享存储\"\n";
 
     private static final String MODULE_README =
-            "CubClone 分身共享存储模块\n"
+            "CubClone 存储放行模块\n"
             + "\n"
             + "它做什么：\n"
-            + "  1. 把 external_storage.sdcardfs.enabled 报成 false，让 vold / MediaProvider 走纯 FUSE\n"
-            + "     （和内核没有 sdcardfs 驱动的机型同一条分支）。内核带 sdcardfs 时，vold 给分身\n"
-            + "     用户 bind Android/data 会被 FUSE 拒掉（EACCES），整卷回滚成 unmountable，\n"
-            + "     分身里根本没有外部存储。关掉后分身卷正常挂上，且与主空间共用同一份文件。\n"
-            + "  2. 把 sdcardfs 时代留下的文件属主迁成 FUSE 形态（顶层一次，内容每次开机复查）。\n"
-            + "     纯 FUSE 下所有读写都由 MediaProvider 进程代理，它操作底层文件时受 POSIX 约束：\n"
-            + "     属主是 media_rw(1023) 的文件它只是 other，改不动，于是 SQLite 报 4618\n"
-            + "     SQLITE_IOERR_SHMOPEN，应用打不开自己的库（导出 0 字节、导入报错、界面一直加载中）。\n"
-            + "     原生 FUSE 机型上这些文件属主本来就是 MediaProvider 自己，所以没这个问题。\n"
-            + "     迁移规则（与原生 FUSE 机型一致，不按应用猜归属）：\n"
-            + "       · Android/media/<包名> 顶层目录 -> 该包在这个空间里自己的 uid\n"
-            + "       · 里面只改 sdcardfs 遗留的 media_rw(1023) -> 本机 MediaProvider 的 uid\n"
-            + "       · 应用自己建的文件（包括属主是主空间 MediaProvider 的那种）和权限一律不动\n"
-            + "       · Android/data、Android/obb 完全不动（它们是直挂，不走 FUSE）\n"
+            + "  接管 zygote 的 setgroups，在媒体存储进程启动时把自建空间的每用户派生组\n"
+            + "  (<uid>09997) 并进附加组。sdcardfs 机型上该组是 /data/media/<uid> 的属组，\n"
+            + "  缺了它，媒体存储自己 lstat 分身目录就 EACCES，vold 绑 Android/data 失败，\n"
+            + "  整卷回滚成 unmountable——分身里根本没有外部存储。\n"
             + "\n"
-            + "不做什么：不改文件内容、不搬动、不删除，只改属主。\n"
+            + "不做什么：不改挂载方式、不改 external_storage.sdcardfs.enabled、不动文件内容、\n"
+            + "  不给其它进程加组（只有媒体存储进程会带上这些组）。\n"
             + "\n"
-            + "刷入时就会检查，不满足直接拒绝安装、不留任何东西：\n"
-            + "  内核没有 sdcardfs 驱动 -> 拒绝：本机不需要\n"
-            + "  Android 低于 11 -> 拒绝：模块依赖的 external_storage.sdcardfs.enabled 从 11 才有\n"
+            + "从 2.x 升级：本模块沿用同一个 id（cubclone_sdcardfs_fix），刷入即替换老模块；\n"
+            + "  老模块的 post-fs-data.sh / system.prop 不再随包下发，重启后 sdcardfs 分支自动恢复。\n"
+            + "  首次开机把老模块改过的媒体文件属主改回 media_rw(1023)，记录写在\n"
+            + "  /data/adb/cubclone_sdcardfs_fix.log。\n"
             + "\n"
-            + "用法：在 APatch / KernelSU / Magisk 里刷入本 zip，重启手机即可。\n"
-            + "  顶层目录只在升级后修一次（/data/adb/cubclone-sdcardfs-fix.migrated3 留标记）；\n"
-            + "  残留的 media_rw(1023) 属主每次开机都复查一遍——备份恢复、脚本、别的模块都会把它带回来；\n"
-            + "  执行记录在 /data/adb/cubclone-sdcardfs-fix.log，每条动作都会写进去。\n"
-            + "\n"
-            + "卸载：管理器里移除模块，重启即恢复 sdcardfs 分支。属性只改内存；\n"
-            + "  已迁的属主不回滚（迁回 media_rw 反而会让应用重新打不开库，且属主本来就不影响\n"
-            + "  sdcardfs 分支的读写）。\n"
-            + "\n"
-            + "注意：ROM OTA 升级后 Magisk/APatch 模块通常要重刷一次。\n";
+            + "用法：在 APatch / KernelSU / Magisk（含 ZygiskNext）里刷入本 zip，重启手机即可。\n"
+            + "注意：ROM OTA 升级后模块通常要重刷一次。\n";
+
 
     /**
      * 现场生成模块 zip 到公共 Download 目录（走 MediaStore，不需要存储权限）。
@@ -1696,12 +1598,15 @@ public final class CloneStore {
         try {
             zos = new java.util.zip.ZipOutputStream(bos);
             putEntry(zos, "module.prop", MODULE_PROP);
-            putEntry(zos, "system.prop", MODULE_SYSPROP);
-            putEntry(zos, "post-fs-data.sh", MODULE_PFD);
             putEntry(zos, "service.sh", MODULE_SVC);
             putEntry(zos, "uninstall.sh", MODULE_UNINSTALL);
             putEntry(zos, "customize.sh", MODULE_CUSTOMIZE);
             putEntry(zos, "README.txt", MODULE_README);
+            // Zygisk 本体：按本机主 ABI 取一份，assets 里是 zygisk-<abi>.so
+            String abi = android.os.Build.SUPPORTED_ABIS[0];
+            byte[] so = readAsset("zygisk-" + abi + ".so");
+            if (so == null || so.length == 0) return null;
+            putEntry(zos, "zygisk/" + abi + ".so", so);
             zos.finish();
             zos.close();
             zos = null;
@@ -1713,11 +1618,32 @@ public final class CloneStore {
         }
     }
 
-    private static void putEntry(java.util.zip.ZipOutputStream zos, String name, String body)
+    private static byte[] readAsset(String name) {
+        java.io.InputStream in = null;
+        try {
+            in = appCtx.getAssets().open(name);
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            return out.toByteArray();
+        } catch (Throwable t) {
+            return null;
+        } finally {
+            if (in != null) try { in.close(); } catch (Throwable ignored) { }
+        }
+    }
+
+    private static void putEntry(java.util.zip.ZipOutputStream zos, String name, byte[] body)
             throws java.io.IOException {
         zos.putNextEntry(new java.util.zip.ZipEntry(name));
-        zos.write(body.getBytes("UTF-8"));
+        zos.write(body);
         zos.closeEntry();
+    }
+
+    private static void putEntry(java.util.zip.ZipOutputStream zos, String name, String body)
+            throws java.io.IOException {
+        putEntry(zos, name, body.getBytes("UTF-8"));
     }
 
 

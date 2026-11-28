@@ -6,6 +6,36 @@
 
 ## [Unreleased]
 
+### 变更（存储模块升到 3.0.0，2.x 用户刷入即升级）
+- **接管 `setgroups` 改用 Zygisk 自带 PLT 钩**：不再自己写每架构指令补丁，改用 Zygisk API v5 的
+  `pltHookRegister` 挂 `libandroid_runtime.so` 的 PLT（zygote 的 `SetGids()` 在那里调用 libc），
+  由 Zygisk 实现，arm64 / armv7 / x86_64 / x86 同一套。G7（arm64）与模拟器（x86_64 / Android 15）
+  实测均打日志 `setgroups hooked via PLT in /system/lib64/libandroid_runtime.so`、`setgroups N -> N+k`。
+- **只有媒体存储进程带上这些组**：在 `preAppSpecialize` 置位，其它进程原样透传，
+  不再给所有进程加空间派生组（此前是无条件追加，权限面偏大）。
+- **模块 zip 内容换成 `module.prop` + `service.sh` + `uninstall.sh` + `customize.sh` + `zygisk/<abi>.so`**，
+  不再下发 `post-fs-data.sh` / `system.prop`。id 仍是 `cubclone_sdcardfs_fix`，versionCode 8 → 9，
+  管理器按同一个模块升级替换，不会并存。
+- **2.x 迁移**：首次开机把老模块 chown 成媒体服务 uid 的媒体文件改回 `media_rw(1023)`
+  （只动属主，不碰 `Android/data`、`Android/obb`，也不动内容与位置），执行记录写
+  `/data/adb/cubclone_sdcardfs_fix.log`，完成后留标记只跑一次。合成样本实测：`10155` → `1023:1023`。
+- **`pidof` 多实例导致重启错进程**：媒体存储每个用户一份，旧代码只杀第一个（常是新空间自己那份），
+  主用户那份还带着旧组，卷仍 `unmountable`。现在按 `/proc/<pid>/status` 的 Uid 精确挑主用户那份，
+  杀完按「Groups 里真的出现目标组」核对；`settle` 增加自愈：先确保用户真的启动，未就绪再重启一次。
+  G7 实测：连续新建两个空间（12、14）均 `state=MOUNTED`、`settle` 返回 `MODE=shared`。
+
+### 修复
+- **空间里输入法只解析不绑定**：`startInputUncheckedLocked` 在绑定前还要校验「客户端 uid 是否拥有该输入法包」
+  （`InputMethodUtils.checkIfPackageBelongsToUid`），空间里没有主空间的输入法包，校验失败直接返回
+  `INVALID_PACKAGE_NAME`——`mCurMethodId` 有值、`mCurId` 为 null、键盘不弹。现在对我们自己的空间放行；
+  同时 `bindServiceAsUser` **所有重载**都挂上（原来只挂第一个，IMS 实际用的那个没挂到）。
+  G7 实测：`mHaveConnection=true`、`mInputShown=true`，空间内文件管理器搜索框输入 `abc123` 成功，
+  候选条来自主空间微信输入法。
+- **输入法 / 文件选择器不再绑死方法签名**：两个钩子改成候选链——按方法名 + 参数形状匹配，
+  userId 在运行期按「值命中我们空间」定位并锁定，换 Android 版本加参数也不会静默失效。
+  G7 实测文件选择器 `hook.pick=hit:1`，前台 `u0 PickActivity` 列出主空间文件，长按选中→确定，
+  空间内应用收到 `content://0@com.android.providers.media.documents/...` 并读取成功 8 字节。
+
 ### 新增
 - **设置里增加「预装清单」**：列出每个新空间一定会装的应用（底线，不可取消，少一个分身就起不来），
   其余系统应用可以额外勾选一起预装。底线取自 `CloneStore.essentialPkgs()`，按包名特征探测，

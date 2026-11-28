@@ -359,6 +359,10 @@ public final class CloneStore {
                     //   ToastUI.createContextAsUser(空间用户) 抛 Own package not found
                     //   → SystemUI 进程重启 → 重启后第一屏就是锁屏，用户看到「点一下就锁屏」
                     || p.equals("com.android.systemui")
+                    // ↓ 缺了它，第一次启动空间 system_server 就自杀（OP12 Android 15 实测）：
+                    //   USER_STARTING 广播里 TelecomSystem 要 createContextAsUser(空间用户)，
+                    //   抛 Own package not found → RuntimeException 带走 system_server，表现是软重启
+                    || p.equals("com.android.server.telecom")
                     || p.contains("launcher")             // 空间自己的桌面，退出应用有地方可回
                     ) {
                 out.add(p);
@@ -920,9 +924,62 @@ public final class CloneStore {
         return true; // 查不到就不折腾（多半是已删除的 stale uid）
     }
 
+    /**
+     * 空间里缺 com.android.server.telecom 时补装。
+     *
+     * system_server 的 TelecomSystem 收到 USER_STARTING 会 createContextAsUser(空间用户)，
+     * 这个包在空间里不存在就抛 IllegalStateException: Own package not found，
+     * 直接带走 system_server —— 用户看到的是「打开应用没多久就软重启」。
+     * 原生分身的号里是装着的；我们建空间时以前没带上，这里补。
+     */
+    static boolean ensureTelecom(int uid) {
+        if (uid <= 0) return true;
+        final String pkg = "com.android.server.telecom";
+        try {
+            if (!Shell.ready()) return false;
+            if (hasPackage(uid, pkg)) return true;
+            // 机身里根本没有这个包（精简 ROM）就无从补，也不该为此装个不存在的包
+            if (!hasPackage(0, pkg)) return true;
+            Shell.exec("pm install-existing --user " + uid + " " + pkg);
+            if (hasPackage(uid, pkg)) return true;
+            android.util.Log.w("CubClone", "telecom 补装失败 uid=" + uid);
+            return false;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** 进应用时把所有空间补一遍（老空间建号时还没有这条规则） */
+    static void ensureTelecomAll() {
+        try {
+            if (!Shell.ready()) return;
+            String csv = Shell.exec("getprop persist.sys.cubclone.spaces").trim();
+            for (String s : csv.split(",")) {
+                int u = 0;
+                try { u = Integer.parseInt(s.trim()); } catch (Throwable ignored) { }
+                if (u > 0) ensureTelecom(u);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 精确匹配包名：pm 的过滤器是子串，overlay 包会误命中 */
+    private static boolean hasPackage(int uid, String pkg) {
+        String out = Shell.exec("pm list packages --user " + uid + " " + pkg);
+        for (String line : out.split("\n")) {
+            if (line.trim().equals("package:" + pkg)) return true;
+        }
+        return false;
+    }
+
     /** 补 start 一个未初始化的空间并等它就绪。走 Shell.exec，Shizuku shell 身份即可，无需 root。 */
     static void startSpace(final int uid) {
         if (spaceReady(uid)) return;
+        // 补不上 telecom 就别启动：启动会直接带走 system_server（软重启），比「空间没起来」更糟
+        if (!ensureTelecom(uid)) {
+            android.util.Log.w("CubClone", "skip start-user " + uid + ": telecom 未就绪");
+            return;
+        }
         Shell.exec("am start-user " + uid);
         for (int i = 0; i < 20 && !spaceReady(uid); i++) {
             try { Thread.sleep(500); } catch (InterruptedException e) { break; }

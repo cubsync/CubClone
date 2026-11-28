@@ -119,34 +119,6 @@
         android:scrollbars="none"
         android:clipToPadding="false" />
 
-    <LinearLayout
-        android:id="@+id/not_find_app"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:visibility="gone">
-
-        <TextView
-            android:id="@+id/empty_title"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/no_clone_app_title"
-            android:textSize="16sp" />
-
-        <TextView
-            android:id="@+id/empty_hint"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:gravity="center"
-            android:paddingStart="40dp"
-            android:paddingEnd="40dp"
-            android:text="@string/no_clone_app_hint"
-            android:textSize="13sp" />
-    </LinearLayout>
-
     <TextView
         android:id="@+id/status"
         android:layout_width="match_parent"

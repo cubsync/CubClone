@@ -24,6 +24,7 @@ public final class Launcher {
     /** 被分身用户里启动一个应用 */
     public static boolean launch(Context ctx, int uid, String pkg) {
         if (!safe(uid) || !Shell.ready()) return false;
+        if (!CloneStore.ensureTelecom(uid)) return false;
         Shell.exec("am start-user " + uid);
 
         String comp = component(uid, pkg);
@@ -43,6 +44,7 @@ public final class Launcher {
      */
     public static boolean relaunch(int user, String pkg) {
         if (!Shell.ready()) return false;
+        if (user > 0 && !CloneStore.ensureTelecom(user)) return false;
         String comp = component(user, pkg);
         String out;
         if (comp != null) {

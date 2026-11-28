@@ -462,9 +462,13 @@ public final class HookMain extends XposedModule {
 
     static void mark(String key, String value) {
         try {
+            // 属性值上限 91 字节（PROP_VALUE_MAX 92，含结尾 0），超了整个 set 会被丢掉，
+            // 排查属性就变成「从来没写过」。宁可截断也要留下内容。
+            String v = value == null ? "" : value;
+            if (v.length() > 80) v = v.substring(0, 80);
             Class<?> sp = Class.forName("android.os.SystemProperties");
             Method set = sp.getMethod("set", String.class, String.class);
-            set.invoke(null, key, value);
+            set.invoke(null, key, v);
         } catch (Throwable ignored) {
         }
     }

@@ -148,8 +148,7 @@
     <string name="ready_root">root 就绪</string>
     <string name="ready_shizuku">Shizuku 就绪</string>
     <string name="empty_no_match">没有匹配「%1$s」的应用</string>
-    <string name="empty_no_clone">还没有分身。
-打开上面「显示全部可分身应用」，再给应用点「创建分身」</string>
+    <string name="empty_no_clone">还没有分身</string>
     <string name="empty_no_app">没有可分身的三方应用</string>
     <string name="creating_clone">正在为「%1$s」创建分身…</string>
     <string name="clone_created">「%1$s」的分身已就绪（uid %2$d）</string>
@@ -251,7 +250,7 @@
     <string name="menu_create_in">创建分身（选空间）</string>
     <string name="menu_app_info">应用信息</string>
     <string name="menu_remove_clones">删除分身</string>
-    <string name="menu_remove_clones_more">批量删除分身…</string>
+    <string name="menu_remove_clones_more">批量管理…</string>
     <string name="space_main">主空间</string>
     <string name="menu_remove_all">移除全部分身（%1$d 个）</string>
     <string name="menu_copy_data">克隆数据到…</string>
@@ -331,9 +330,9 @@
     <string name="dir_migrate_title">发现旧备份</string>
     <string name="dir_migrate_msg">默认目录里还有 %1$d 个备份，要搬到当前目录吗？</string>
     <string name="backup_dir_note">备份会直接打包到这个目录，恢复也从这里读；文件管理器能直接看、能拷走。</string>
-    <string name="rc_title">删除分身</string>
+    <string name="rc_title">批量管理</string>
     <string name="rc_need_shell">这一页要 Root 或 Shizuku 授权：列出分身、删除分身都用 shell 权限。授权后重新进入即可。</string>
-    <string name="rc_hint">默认不勾选任何分身。「仅无数据」只勾列表里显示「无数据」的；勾上有数据的会连数据一起删，不可撤销。</string>
+    <string name="rc_hint">默认不勾选任何分身。勾选后用下面的按钮删除 / 禁用 / 启用 / 备份；「仅无数据」只勾列表里显示「无数据」的，删除不可撤销。</string>
     <string name="rc_all_with_data">全选含数据</string>
     <string name="rc_all_data_warn_title">连有数据的一起选？</string>
     <string name="rc_all_data_warn">会把 %1$d 个有数据的分身一并勾上，合计 %2$s。删掉不可恢复。</string>
@@ -350,8 +349,8 @@
     <string name="rc_sort_name">名称</string>
     <string name="rc_search">搜索应用</string>
     <string name="rc_space_all">全部空间</string>
-    <string name="rc_title_count">删除分身  %1$d 个 · 已选 %2$d</string>
-    <string name="rc_empty">没有可删除的分身</string>
+    <string name="rc_title_count">批量管理  %1$d 个 · 已选 %2$d</string>
+    <string name="rc_empty">没有可管理的分身</string>
     <string name="rc_select_all">全选</string>
     <string name="rc_invert">反选</string>
     <string name="rc_only_light">仅无数据</string>
@@ -362,6 +361,25 @@
     <string name="rc_done">已删除 %1$d 个分身</string>
     <string name="rc_done_bad">已删除 %1$d 个，%2$d 个失败</string>
     <string name="rc_loading">正在统计各分身的数据体积…</string>
+    <string name="rc_type_none">未选类型</string>
+    <string name="rc_type_all">全部类型</string>
+    <string name="rc_type_title">按应用类型筛选</string>
+    <string name="rc_toggle_bad">完成 %1$d 个，%2$d 个失败</string>
+    <string name="rc_enabled">已启用 %1$d 个分身</string>
+    <string name="rc_disabled_n">已禁用 %1$d 个分身</string>
+    <string name="rc_disable_msg">将禁用 %1$d 个分身：图标消失、跑不起来，数据保留，随时可以启用。</string>
+    <string name="rc_disable_title">禁用选中的分身？</string>
+    <string name="rc_disabled">已禁用</string>
+    <string name="rc_cat_none">至少勾选「用户应用」或「系统应用」</string>
+    <string name="rc_cat_sys">系统应用</string>
+    <string name="rc_cat_user">用户应用</string>
+    <string name="rc_act_backup_n">备份 %1$d</string>
+    <string name="rc_act_enable_n">启用 %1$d</string>
+    <string name="rc_act_disable_n">禁用 %1$d</string>
+    <string name="rc_act_backup">备份</string>
+    <string name="rc_act_enable">启用</string>
+    <string name="rc_act_disable">禁用</string>
+    <string name="rc_act_delete">删除</string>
     <string name="notif_channel">备份与恢复</string>
     <string name="notif_channel_desc">显示进度和结果，不响铃、不振动</string>
     <string name="notif_done_ok">完成</string>

@@ -48,6 +48,10 @@ public class RemoveClonesActivity extends Activity {
          *  -1 = 还没量。 */
         long bytes = -1;
         boolean on;
+        /** 主身份里是系统应用 */
+        boolean sys;
+        /** 该空间里被 pm disable-user 停用了 */
+        boolean disabled;
 
         Row(String pkg, int uid, String label, String space) {
             this.pkg = pkg;
@@ -61,14 +65,17 @@ public class RemoveClonesActivity extends Activity {
     private final List<Row> shown = new ArrayList<Row>();
     /** 空间筛选，空 = 全部 */
     private final Set<Integer> filterUsers = new HashSet<Integer>();
+    /** 分类筛选：默认只看用户应用；系统分身应用要自己勾出来 */
+    private boolean showUser = true;
+    private boolean showSys = false;
 
     private ListView list;
     private TextView empty;
     private TextView title;
-    private TextView filter;
+    private TextView filter, typeFilter;
     private TextView hintTv;
     private TextView sortTv;
-    private Button btnRemove;
+    private Button btnRemove, btnEnable, btnDisable, btnBackup;
     private android.widget.EditText search;
     private String query = "";
     private int fg = Theme.FG_LIGHT;
@@ -180,6 +187,18 @@ public class RemoveClonesActivity extends Activity {
             public void onClick(View v) { pickFilter(); }
         });
         searchRow.addView(filter);
+
+        // 应用类型筛选：和「全部空间」同一套用法，点开多选；默认只看用户应用
+        showUser = sp().getBoolean("rc_show_user", true);
+        showSys = sp().getBoolean("rc_show_sys", false);
+        typeFilter = new TextView(this);
+        typeFilter.setTextSize(13);
+        typeFilter.setTextColor(sec);
+        typeFilter.setPadding(dp(10), dp(8), dp(4), dp(8));
+        typeFilter.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { pickType(); }
+        });
+        searchRow.addView(typeFilter);
         root.addView(searchRow);
 
         LinearLayout tools = new LinearLayout(this);
@@ -215,17 +234,34 @@ public class RemoveClonesActivity extends Activity {
         empty.setVisibility(View.GONE);
         root.addView(empty);
 
-        btnRemove = new Button(this);
-        btnRemove.setText(getString(R.string.rc_btn, 0));
-        btnRemove.setEnabled(false);
-        Theme.disabledPrimary(btnRemove, this);
+        // 底部动作条：同一个勾选集合，删除 / 禁用 / 启用 / 备份各走各的
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        alp.setMargins(dp(10), dp(6), dp(10), dp(10));
+
+        btnRemove = actionBtn(R.string.rc_act_delete);
         btnRemove.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { confirmDelete(); }
         });
-        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        blp.setMargins(dp(12), dp(6), dp(12), dp(10));
-        root.addView(btnRemove, blp);
+        btnDisable = actionBtn(R.string.rc_act_disable);
+        btnDisable.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { confirmToggle(false); }
+        });
+        btnEnable = actionBtn(R.string.rc_act_enable);
+        btnEnable.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { confirmToggle(true); }
+        });
+        btnBackup = actionBtn(R.string.rc_act_backup);
+        btnBackup.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { startBackup(); }
+        });
+        actions.addView(btnEnable);
+        actions.addView(btnDisable);
+        actions.addView(btnBackup);
+        actions.addView(btnRemove);
+        root.addView(actions, alp);
 
         setContentView(root);
     }
@@ -237,6 +273,20 @@ public class RemoveClonesActivity extends Activity {
         Theme.chip(t, accent);
         t.setOnClickListener(l);
         return t;
+    }
+
+    /** 底部动作按钮：四个等宽，避免在窄屏上挤成两行 */
+    private Button actionBtn(int text) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setTextSize(13);
+        b.setAllCaps(false);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(dp(2), 0, dp(2), 0);
+        b.setLayoutParams(lp);
+        Theme.disabledPrimary(b, this);
+        return b;
     }
 
     private void setAll(boolean on) {
@@ -285,13 +335,19 @@ public class RemoveClonesActivity extends Activity {
                         if (u2 > 0) usable.add(u2);
                     }
                 }
-                // 列表永远是全部分身：入口（多选工具条 / 长按菜单）都不再带预选
+                // 列表永远是全部分身：入口（多选工具条 / 长按菜单）都不再带预选。
+                // 系统应用也要列（批量启用/禁用/备份都要用到），默认分类只看用户应用。
+                final Set<String> sysSet = systemPkgs();
                 for (Integer u : usable) {
-                    Set<String> want = installedOf(u.intValue(), true);
+                    Set<String> want = installedOf(u.intValue(), false);
+                    Set<String> off = disabledOf(u.intValue());
                     for (String p : want) {
                         if ("com.cubsync.cubclone".equals(p)) continue;
-                        rows.add(new Row(p, u.intValue(), labelOf(p),
-                                RemoveClonesActivity.spaceName(RemoveClonesActivity.this, u.intValue())));
+                        Row r = new Row(p, u.intValue(), labelOf(p),
+                                RemoveClonesActivity.spaceName(RemoveClonesActivity.this, u.intValue()));
+                        r.sys = sysSet.contains(p);
+                        r.disabled = off.contains(p);
+                        rows.add(r);
                     }
                 }
                 readCache();
@@ -336,6 +392,26 @@ public class RemoveClonesActivity extends Activity {
         return s;
     }
 
+    /** 主身份里的系统包（分类标记用，一次查完） */
+    private Set<String> systemPkgs() {
+        Set<String> s = new HashSet<String>();
+        for (String line : Shell.exec("pm list packages -s").split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("package:")) s.add(t.substring(8));
+        }
+        return s;
+    }
+
+    /** 某空间里被停用的包：pm list packages -d --user U */
+    private Set<String> disabledOf(int uid) {
+        Set<String> s = new HashSet<String>();
+        for (String line : Shell.exec("pm list packages -d --user " + uid).split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("package:")) s.add(t.substring(8));
+        }
+        return s;
+    }
+
     /**
      * 量各分身的「用户数据」：**每个空间一条命令**，不是每个包一条。
      * 数据来源：`cmd package get-package-storage-stats --user <U> <包>`——这就是系统的
@@ -361,7 +437,7 @@ public class RemoveClonesActivity extends Activity {
             Long ts = cacheTs.get(u);
             boolean missing = false;
             for (Row r : rows) {
-                if (r.uid == U && !cacheSize.containsKey(U + "|" + r.pkg)) { missing = true; break; }
+                if (r.uid == U && inCategory(r) && !cacheSize.containsKey(U + "|" + r.pkg)) { missing = true; break; }
             }
             if (!force && !missing && ts != null
                     && System.currentTimeMillis() - ts.longValue() < SIZE_TTL_MS) {
@@ -373,7 +449,7 @@ public class RemoveClonesActivity extends Activity {
                 continue;
             }
             java.util.List<String> want = new java.util.ArrayList<String>();
-            for (Row r : rows) if (r.uid == U) want.add(r.pkg);
+            for (Row r : rows) if (r.uid == U && inCategory(r)) want.add(r.pkg);
 
             final java.util.HashMap<String, Long> sum = new java.util.HashMap<String, Long>();
             // 一条 shell 里循环；分块是为了不让单条命令长到被截断
@@ -596,6 +672,39 @@ public class RemoveClonesActivity extends Activity {
                 .show();
     }
 
+    /** 应用类型：和空间筛选一样多选，默认只勾用户应用 */
+    private void pickType() {
+        final String[] items = {getString(R.string.rc_cat_user), getString(R.string.rc_cat_sys)};
+        final boolean[] checked = {showUser, showSys};
+        Theme.dialog(this)
+                .setTitle(R.string.rc_type_title)
+                .setMultiChoiceItems(items, checked, new DialogInterface.OnMultiChoiceClickListener() {
+                    public void onClick(DialogInterface d, int which, boolean isChecked) {
+                        checked[which] = isChecked;
+                    }
+                })
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        showUser = checked[0];
+                        showSys = checked[1];
+                        sp().edit().putBoolean("rc_show_user", showUser)
+                                .putBoolean("rc_show_sys", showSys).apply();
+                        refresh();
+                    }
+                })
+                .setNeutralButton(R.string.rc_filter_reset, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) {
+                        showUser = true;
+                        showSys = false;
+                        sp().edit().putBoolean("rc_show_user", true)
+                                .putBoolean("rc_show_sys", false).apply();
+                        refresh();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     private void renderFilter() {
         StringBuilder sb = new StringBuilder();
         if (filterUsers.isEmpty()) {
@@ -609,19 +718,33 @@ public class RemoveClonesActivity extends Activity {
         sb.append(" ▾");
         filter.setText(sb.toString());
         filter.setTextColor(accent);
+        typeFilter.setText((showUser && showSys ? getString(R.string.rc_type_all)
+                : showUser ? getString(R.string.rc_cat_user)
+                : showSys ? getString(R.string.rc_cat_sys)
+                : getString(R.string.rc_type_none)) + " ▾");
+        typeFilter.setTextColor(accent);
         renderSort();
     }
 
     // ── 列表 ────────────────────────────────────────────────────────
+    /** 这一行是否在当前勾选的分类里（默认只有用户应用） */
+    private boolean inCategory(Row r) {
+        return r.sys ? showSys : showUser;
+    }
+
     private void refresh() {
         shown.clear();
         for (Row r : rows) {
             if (!filterUsers.isEmpty() && !filterUsers.contains(Integer.valueOf(r.uid))) continue;
+            if (!inCategory(r)) continue;
             if (query.length() > 0
                     && r.label.toLowerCase(java.util.Locale.US).indexOf(query) < 0
                     && r.pkg.toLowerCase(java.util.Locale.US).indexOf(query) < 0) continue;
             shown.add(r);
         }
+        // 筛掉的行不留勾选：否则点「删除」会把看不见的分身一起删掉
+        Set<Row> visibleSet = new HashSet<Row>(shown);
+        for (Row r : rows) if (r.on && !visibleSet.contains(r)) r.on = false;
         final String k = sortKey();
         final boolean desc = sortDesc();
         Collections.sort(shown, new Comparator<Row>() {
@@ -640,16 +763,12 @@ public class RemoveClonesActivity extends Activity {
                 return n != 0 ? n : a.pkg.compareTo(b.pkg);
             }
         });
-        int sel = 0;
-        for (Row r : rows) if (r.on) sel++;
-        btnRemove.setText(getString(R.string.rc_btn, sel));
-        btnRemove.setEnabled(sel > 0);
-        if (sel > 0) Theme.primary(btnRemove, this);
-        else Theme.disabledPrimary(btnRemove, this);
+        int sel = countSelected();
+        renderActions(sel);
         title.setText(loading ? getString(R.string.rc_loading)
-                : getString(R.string.rc_title_count, rows.size(), sel));
+                : getString(R.string.rc_title_count, shown.size(), sel));
         empty.setVisibility(shown.isEmpty() && !loading ? View.VISIBLE : View.GONE);
-        if (empty.getText().length() == 0) empty.setText(R.string.rc_empty);
+        empty.setText(!showUser && !showSys ? R.string.rc_cat_none : R.string.rc_empty);
         renderFilter();
         adapter.notifyDataSetChanged();
     }
@@ -697,15 +816,108 @@ public class RemoveClonesActivity extends Activity {
             cb.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
                 public void onCheckedChanged(android.widget.CompoundButton b, boolean on) {
                     r.on = on;
-                    int sel = 0;
-                    for (Row x : rows) if (x.on) sel++;
-                    btnRemove.setText(getString(R.string.rc_btn, sel));
-                    btnRemove.setEnabled(sel > 0);
+                    renderActions(countSelected());
                 }
             });
-            sub.setText(sizeText(r));
+            sub.setText(r.disabled
+                    ? getString(R.string.rc_disabled) + " · " + sizeText(r)
+                    : sizeText(r));
             return box;
         }
+    }
+
+    // ── 启用 / 禁用 / 备份 ───────────────────────────────────────────
+    private int countSelected() {
+        int n = 0;
+        for (Row r : rows) if (r.on) n++;
+        return n;
+    }
+
+    private void renderActions(int sel) {
+        btnRemove.setText(getString(R.string.rc_btn, sel));
+        btnDisable.setText(getString(R.string.rc_act_disable_n, sel));
+        btnEnable.setText(getString(R.string.rc_act_enable_n, sel));
+        btnBackup.setText(getString(R.string.rc_act_backup_n, sel));
+        for (Button b : new Button[]{btnRemove, btnDisable, btnEnable, btnBackup}) {
+            b.setEnabled(sel > 0);
+            if (sel > 0) Theme.primary(b, this);
+            else Theme.disabledPrimary(b, this);
+        }
+    }
+
+    private List<Row> selectedRows() {
+        List<Row> sel = new ArrayList<Row>();
+        for (Row r : rows) if (r.on) sel.add(r);
+        return sel;
+    }
+
+    /** 启用不弹确认；禁用会藏起图标，先问一句（数据都还在，可随时启用） */
+    private void confirmToggle(final boolean enable) {
+        final List<Row> sel = selectedRows();
+        if (sel.isEmpty()) return;
+        if (enable) {
+            applyToggle(sel, true);
+            return;
+        }
+        Theme.dialog(this)
+                .setTitle(R.string.rc_disable_title)
+                .setMessage(getString(R.string.rc_disable_msg, sel.size()))
+                .setPositiveButton(R.string.rc_act_disable, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) { applyToggle(sel, false); }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void applyToggle(final List<Row> sel, final boolean enable) {
+        btnRemove.setEnabled(false);
+        btnDisable.setEnabled(false);
+        btnEnable.setEnabled(false);
+        btnBackup.setEnabled(false);
+        title.setText(getString(R.string.rc_loading));
+        new Thread(new Runnable() {
+            public void run() {
+                int ok = 0, bad = 0;
+                for (Row r : sel) {
+                    String out = enable ? Launcher.enable(r.uid, r.pkg)
+                            : Launcher.disable(r.uid, r.pkg);
+                    if (out != null && !out.contains("Error") && !out.contains("Exception")) {
+                        ok++;
+                        r.disabled = !enable;
+                        r.on = false;
+                    } else {
+                        bad++;
+                    }
+                }
+                final int fok = ok, fbad = bad;
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        Toast.makeText(RemoveClonesActivity.this,
+                                fbad == 0 ? getString(enable ? R.string.rc_enabled : R.string.rc_disabled_n, fok)
+                                        : getString(R.string.rc_toggle_bad, fok, fbad),
+                                Toast.LENGTH_LONG).show();
+                        refresh();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    /** 备份：勾中的分身直接进批量备份，过程和「数据备份」页同一条链路 */
+    private void startBackup() {
+        final List<Row> sel = selectedRows();
+        if (sel.isEmpty()) return;
+        if (BatchJob.get() != null && BatchJob.get().running) {
+            toast(getString(R.string.batch_busy));
+            return;
+        }
+        List<String> items = new ArrayList<String>();
+        for (Row r : sel) items.add(r.uid + "|" + r.pkg);
+        android.content.Intent it = new android.content.Intent(this, BatchRunActivity.class);
+        it.putExtra(BatchRunActivity.EXTRA_MODE, BatchRunActivity.MODE_BACKUP);
+        it.putExtra(BatchRunActivity.EXTRA_ITEMS, items.toArray(new String[items.size()]));
+        startActivity(it);
+        finish();
     }
 
     // ── 删除 ────────────────────────────────────────────────────────

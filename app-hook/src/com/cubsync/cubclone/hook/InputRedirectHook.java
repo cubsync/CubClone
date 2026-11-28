@@ -122,9 +122,26 @@ final class InputRedirectHook {
      * <p>这里只对我们自己建的空间返回 true，其它一律走原实现。
      */
     private void hookCurrentProfile(ClassLoader cl) {
-        String cls = "com.android.server.inputmethod.InputMethodUtils$InputMethodSettings";
+        // Android 14 起 InputMethodSettings 从 InputMethodUtils 的内部类提成顶层类，
+        // 老名字在 14+ 直接 ClassNotFoundException（Android 16 实测）。两个名字都试。
+        Class<?> c = null;
+        String used = null;
+        for (String name : new String[]{
+                "com.android.server.inputmethod.InputMethodSettings",
+                "com.android.server.inputmethod.InputMethodUtils$InputMethodSettings"}) {
+            try {
+                c = Class.forName(name, false, cl);
+                used = name;
+                break;
+            } catch (Throwable ignored) {
+            }
+        }
+        if (c == null) {
+            HookMain.mark("sys.cubclone.hook.ime.cp", "no-class");
+            Log.w(TAG, "InputMethodSettings class not found");
+            return;
+        }
         try {
-            Class<?> c = Class.forName(cls, false, cl);
             Method m = null;
             for (Method x : c.getDeclaredMethods()) {
                 if ("isCurrentProfile".equals(x.getName())

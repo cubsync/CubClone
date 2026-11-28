@@ -87,7 +87,11 @@ public class MainActivity extends Activity {
         FlatItem(Group g, Clone c, int idx) { this.g = g; this.c = c; this.idx = idx; }
     }
 
-    private View emptyView;
+    // 空态是列表的第三个表头：ListView 的 setEmptyView 只看数据行数、不认表头，
+    // 数据行为 0 时会把整个列表（连页签和「最近打开」）一起藏掉
+    private View listEmpty;
+    private View listEmptyBody;
+    private TextView listEmptyTitle, listEmptyHint;
     private TextView status;
     private final android.os.Handler ui =
             new android.os.Handler(android.os.Looper.getMainLooper());
@@ -195,9 +199,7 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         appList = findViewById(R.id.app_list);
-        emptyView = findViewById(R.id.not_find_app);
         status = findViewById(R.id.status);
-        appList.setEmptyView(emptyView);   // 没有行时自动显示空态（不必再手动切可见性）
 
         search = findViewById(R.id.search);
         search.addTextChangedListener(new android.text.TextWatcher() {
@@ -232,6 +234,12 @@ public class MainActivity extends Activity {
         // 这次按压判成长按，弹出卡片菜单（网格模式 100% 复现）——refreshRecentHeader 已按签名短路。
         appList.addHeaderView(recentHeader, null, false);
         appList.addHeaderView(tabRow, null, false);
+        // 空态也走表头：数据行为 0 时页签和「最近打开」照旧留在原位，只在下面提示没有内容
+        listEmpty = LayoutInflater.from(this).inflate(R.layout.list_empty, null, false);
+        listEmptyBody = listEmpty.findViewById(R.id.list_empty_body);
+        listEmptyTitle = listEmpty.findViewById(R.id.empty_title);
+        listEmptyHint = listEmpty.findViewById(R.id.empty_hint);
+        appList.addHeaderView(listEmpty, null, false);
         appAdapter = new AppAdapter();
         appList.setAdapter(appAdapter);
         appList.setSelector(new android.graphics.drawable.ColorDrawable(0));   // 行自己带背景，别叠系统选中色
@@ -254,6 +262,8 @@ public class MainActivity extends Activity {
         new Thread(new Runnable() {
             public void run() {
                 Shell.checkRoot();
+                // 老空间补齐 telecom：缺了它一启动空间就会把 system_server 带走（软重启）
+                CloneStore.ensureTelecomAll();
                 loadAppMetaQuick();   // 分类 + 真实名字（图标走异步懒加载，首屏不阻塞）
                 runOnUiThread(new Runnable() {
                     public void run() {
@@ -443,8 +453,8 @@ public class MainActivity extends Activity {
 
         TextView mc = findViewById(R.id.multi_count);
         if (mc != null) mc.setTextColor(fg);
-        TextView eh0 = findViewById(R.id.empty_hint);
-        if (eh0 != null) eh0.setTextColor(sec);
+        if (listEmptyTitle != null) listEmptyTitle.setTextColor(fg);
+        if (listEmptyHint != null) listEmptyHint.setTextColor(sec);
 
         if (btnTheme != null) {
             int t = sp().getInt("theme", THEME_AUTO);
@@ -679,7 +689,7 @@ public class MainActivity extends Activity {
         if (appList == null) return;
         for (int i = 0; i < appList.getChildCount(); i++) {
             View c = appList.getChildAt(i);
-            if (c == null || c == recentHeader || c == tabRow) continue;
+            if (c == null || c == recentHeader || c == tabRow || c == listEmpty) continue;
             c.setTranslationX(dx);
         }
     }
@@ -689,7 +699,7 @@ public class MainActivity extends Activity {
         if (appList == null) return;
         for (int i = 0; i < appList.getChildCount(); i++) {
             View c = appList.getChildAt(i);
-            if (c == null || c == recentHeader || c == tabRow) continue;
+            if (c == null || c == recentHeader || c == tabRow || c == listEmpty) continue;
             if (anim) c.animate().translationX(0).setDuration(180).start();
             else c.setTranslationX(0);
         }
@@ -1341,14 +1351,19 @@ public class MainActivity extends Activity {
                 recentRow.setVisibility(hasRecent ? View.VISIBLE : View.GONE);
             }
         }
-        TextView et = findViewById(R.id.empty_title);
-        TextView eh = findViewById(R.id.empty_hint);
-        if (et != null) {
-            et.setText(kw.length() > 0 ? getString(R.string.empty_no_match, kw)
+        // 空态自己判：数据行 0 才显示，页签和「最近打开」不受影响
+        int rows = appAdapter == null ? 0 : appAdapter.getCount();
+        if (listEmptyBody != null) {
+            listEmptyBody.setVisibility(rows == 0 ? View.VISIBLE : View.GONE);
+        }
+        if (listEmptyTitle != null) {
+            listEmptyTitle.setText(kw.length() > 0 ? getString(R.string.empty_no_match, kw)
                     : !showAll ? getString(R.string.empty_no_clone)
                     : getString(R.string.empty_no_app));
         }
-        if (eh != null) eh.setVisibility(kw.length() > 0 ? View.GONE : View.VISIBLE);
+        if (listEmptyHint != null) {
+            listEmptyHint.setVisibility(kw.length() > 0 ? View.GONE : View.VISIBLE);
+        }
         // 格子高只在「影响它的参数」变了才重算（列/行数、横竖屏、屏幕尺寸）。
         // 每次 render 都算的话，第二次会从首帧的估算值换成实测值，照样跳一下。
         String gk = effCols() + "x" + effRows() + (landscape() ? "L" : "P")

@@ -2,3 +2,5 @@ system
 com.android.launcher
 com.oppo.launcher
 com.coloros.launcher
+com.android.providers.media
+com.android.providers.media.module

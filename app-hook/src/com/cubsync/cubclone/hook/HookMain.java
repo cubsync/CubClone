@@ -103,6 +103,12 @@ public final class HookMain extends XposedModule {
             "com.bbk.launcher2",                     // vivo
     };
 
+    /** 共享存储的宿主进程：A13 起在 APEX 里，旧版在 /system/priv-app */
+    private static boolean isMediaProvider(String pkg) {
+        return "com.google.android.providers.media.module".equals(pkg)
+                || "com.android.providers.media".equals(pkg);
+    }
+
     private static boolean isLauncher(String pkg) {
         if (pkg == null) {
             return false;
@@ -123,11 +129,17 @@ public final class HookMain extends XposedModule {
     public void onPackageLoaded(PackageLoadedParam param) {
         try {
             String pkg = param.getPackageName();
-            if (!isLauncher(pkg)) {
-                return;
-            }
             ClassLoader cl = param.getDefaultClassLoader();
             if (cl == null) {
+                return;
+            }
+            if (isMediaProvider(pkg)) {
+                int mh = new MediaUserHook(this).apply(cl);
+                Log.i(TAG, "media(" + pkg + "): hooks=" + mh);
+                mark("sys.cubclone.hook.media.ver", BuildVer.V);
+                return;
+            }
+            if (!isLauncher(pkg)) {
                 return;
             }
             int lw = new LauncherAddHook(this).apply(cl);

@@ -20,6 +20,10 @@
   `com.tencent.wetype`（进程 `USER=u0_a214`），`mCurClient` 是空间应用。
   主应用据此不再往新空间装输入法包（`CloneStore.imeRedirectReady()` 读三个诊断 prop），
   插件缺失或没 root 时仍走原来的装包路径，Shizuku 用户不受影响。
+- **（未生效）共享存储放行**：给 `MediaProvider.shouldAllowLookupForFuse` 加了 hook，
+  计划让空间访问自己的 `/storage/emulated/<uid>`。代码在 `MediaUserHook`，但 LSPosed 2.2.1
+  实测不注入 `com.android.providers.media.module`（包名已修正、scope 已写入、重启后
+  `/proc/<pid>/maps` 里 `lsposed` 0 次），所以这条**没有生效**，留着等 LSPosed 支持。
 - **空间里选文件直接用主空间那份选择器**：在
   `ActivityTaskManagerService.startActivityAsUser` 上把「发给自建空间的文件选择请求」的目标用户换成 0。
   G7 实测：空间里的测试应用点按钮，拉起 `com.android.documentsui`（`U=0`、进程 `u0a39`），

@@ -1723,6 +1723,24 @@ public final class CloneStore {
 
 
 
+    /**
+     * 插件是否已把输入法整条链路重定向到主用户。
+     *
+     * <p>三个 hook 各写一个诊断 prop，全部装成功才算可用：
+     * 空间有哪些输入法（查主用户）、空间是否算前台 profile、绑定时是否换成主用户。
+     * 任一缺失就走老路：把输入法包装进空间。没 root / 没装插件时恒为 false。
+     */
+    static boolean imeRedirectReady() {
+        return hookOk("sys.cubclone.hook.ime.q")
+                && hookOk("sys.cubclone.hook.ime.cp")
+                && hookOk("sys.cubclone.hook.ime");
+    }
+
+    private static boolean hookOk(String key) {
+        String v = Shell.raw("getprop", key).trim();
+        return v.length() > 0 && !v.startsWith("no-method") && !v.startsWith("fail");
+    }
+
     /** ensureIme 的结果：imes＝分身里真正可用的输入法个数，def＝写进去的默认输入法 */
     static final class ImeResult {
         final int imes;
@@ -1802,22 +1820,30 @@ public final class CloneStore {
         }
         if (want.isEmpty()) return new ImeResult(0, "", "主空间没有可用输入法");
         // ② 装进分身并启用（install-existing 幂等），最后一次列出分身里真正可用的包
-        StringBuilder sb = new StringBuilder();
+        //    插件可用时不装：它把「这个用户有哪些输入法」和「绑到哪个用户」都重定向到主用户，
+        //    空间里一个输入法包都不需要有，跟系统自带分身一个效果。
         List<String> pkgs = new ArrayList<String>();
         for (String comp : want) {
             String p = pkgOf(comp);
             if (p == null || pkgs.contains(p)) continue;
             pkgs.add(p);
-            sb.append("pm install-existing --user ").append(uid).append(' ').append(p)
-                    .append(" >/dev/null 2>&1; ")
-                    .append("pm enable --user ").append(uid).append(' ').append(p)
-                    .append(" >/dev/null 2>&1; ");
         }
-        sb.append("echo A:$(pm list packages --user ").append(uid)
-                .append(" -e | sed 's/^package://' | tr '\\n' ' ')");
         Set<String> avail = new HashSet<String>();
-        for (String s : tag(Shell.exec(sb.toString()), "A:").trim().split("\\s+")) {
-            if (s.length() > 0) avail.add(s);
+        if (imeRedirectReady()) {
+            avail.addAll(pkgs);
+        } else {
+            StringBuilder sb = new StringBuilder();
+            for (String p : pkgs) {
+                sb.append("pm install-existing --user ").append(uid).append(' ').append(p)
+                        .append(" >/dev/null 2>&1; ")
+                        .append("pm enable --user ").append(uid).append(' ').append(p)
+                        .append(" >/dev/null 2>&1; ");
+            }
+            sb.append("echo A:$(pm list packages --user ").append(uid)
+                    .append(" -e | sed 's/^package://' | tr '\\n' ' ')");
+            for (String s : tag(Shell.exec(sb.toString()), "A:").trim().split("\\s+")) {
+                if (s.length() > 0) avail.add(s);
+            }
         }
         // ③ 启用列表只留分身里真有的组件（顺序照主空间，重复去掉）
         StringBuilder enOut = new StringBuilder();

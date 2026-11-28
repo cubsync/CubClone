@@ -211,11 +211,18 @@ public final class HookMain extends XposedModule {
         } catch (Throwable t) {
             Log.w(TAG, "ime redirect hook failed: " + t);
         }
+        // 文件选择器重定向：空间发起的选文件请求用主用户那份，能看到主空间的相册和下载
+        int pick = 0;
+        try {
+            pick = new FilePickerRedirectHook(this).apply(cl);
+        } catch (Throwable t) {
+            Log.w(TAG, "file picker hook failed: " + t);
+        }
         // 「禁止补桌面图标」的钩子装在桌面进程里（见 onPackageLoaded）：
         // system_server 的 classloader 里没有 launcher 的类，这里不装。
         mark(PROP_APPLY, "ctor=" + ctors + ",m=" + methods + ",i=" + install
                 + ",u=" + cap + ",f=" + flyme + ",w=" + wm + ",l=" + lock + ",lp=" + lp
-                + ",la=" + la + ",ime=" + ime);
+                + ",la=" + la + ",ime=" + ime + ",pick=" + pick);
         if (ctors > 0 || methods > 0) {
             mark(PROP, "1");
         }

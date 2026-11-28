@@ -33,8 +33,11 @@ final class InputRedirectHook {
     private static final String TAG = "CubCloneHook";
     private static final String CONTEXT_IMPL = "android.app.ContextImpl";
     private static final String METHOD = "bindServiceAsUser";
-    /** InputMethodService.SERVICE_INTERFACE */
-    private static final String IME_ACTION = "android.inputmethodservice.InputMethodService";
+    /**
+     * AOSP 常量：{@code InputMethodInfo.SERVICE_INTERFACE} = "android.view.InputMethod"。
+     * 之前误写成 InputMethodService 的类名，导致绑定层 hook 一次都没匹配到。
+     */
+    private static final String IME_ACTION = "android.view.InputMethod";
 
     static final String PROP_HITS = "sys.cubclone.hook.ime.hits";
     static final String PROP_LAST = "sys.cubclone.hook.ime";
@@ -51,6 +54,7 @@ final class InputRedirectHook {
     int apply(ClassLoader cl) {
         hookCurrentProfile(cl);
         hookMethodMap(cl);
+        hookQueryImeServices(cl);
         Class<?> c;
         try {
             c = Class.forName(CONTEXT_IMPL, false, cl);
@@ -203,6 +207,59 @@ final class InputRedirectHook {
         } catch (Throwable t) {
             HookMain.mark("sys.cubclone.hook.ime.mm", "fail");
             Log.w(TAG, "method map hook failed: " + t);
+        }
+    }
+
+    /**
+     * AOSP 主线：{@code InputMethodManagerService.queryInputMethodServicesInternal(
+     * Context, int userId, ArrayMap, ArrayMap, ArrayList, int)} 是「某个用户有哪些输入法」的
+     * 唯一来源。空间里没装输入法包，按空间 userId 查出来就是空表，{@code mMethodMap} 空，
+     * 选中项被清空，后面绑定根本不会发起。
+     *
+     * <p>把 userId 换成 0 后，空间拿到的是主用户那套输入法清单；真正绑定时
+     * 再由 {@code bindServiceAsUser} 的 hook 把目标用户换成 0，服务就在主用户里跑起来。
+     * 输入法与应用的连接走 binder，不依赖同用户。
+     */
+    private void hookQueryImeServices(ClassLoader cl) {
+        String name = "sys.cubclone.hook.ime.q";
+        try {
+            Class<?> c = Class.forName("com.android.server.inputmethod.InputMethodManagerService", false, cl);
+            Method m = null;
+            for (Method x : c.getDeclaredMethods()) {
+                if (!"queryInputMethodServicesInternal".equals(x.getName())) continue;
+                Class<?>[] p = x.getParameterTypes();
+                if (p.length == 6 && p[0] == android.content.Context.class && p[1] == int.class) {
+                    m = x;
+                    break;
+                }
+            }
+            if (m == null) {
+                HookMain.mark(name, "no-method");
+                return;
+            }
+            try {
+                xp.deoptimize(m);
+            } catch (Throwable ignored) {
+            }
+            xp.hook(m)
+                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                    .intercept(chain -> {
+                        Object[] a = chain.getArgs().toArray();
+                        if (a.length == 6 && a[1] instanceof Integer) {
+                            int userId = ((Integer) a[1]).intValue();
+                            if (userId > 0 && WmVisibleHook.ours(userId)) {
+                                a[1] = Integer.valueOf(0);
+                                HookMain.mark(name, String.valueOf(userId));
+                                return chain.proceed(a);
+                            }
+                        }
+                        return chain.proceed();
+                    });
+            HookMain.mark(name, "hooked");
+            Log.i(TAG, "queryInputMethodServicesInternal hooked");
+        } catch (Throwable t) {
+            HookMain.mark(name, "fail");
+            Log.w(TAG, "query ime services hook failed: " + t);
         }
     }
 

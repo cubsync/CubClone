@@ -12,12 +12,19 @@
   换 ROM 不会漏（Flyme 的文件选择器叫 `com.meizu.picker`，AOSP 叫 `documentsui`）。
 
 ### 新增（增强插件，仅 root + LSPosed）
-- **空间应用能用输入法**：AOSP 的 IMS 会拒绝对「后台用户」的输入法请求
-  （`A background user is requesting window. Hiding IME.`），自建空间不在当前 profile 列表里，
-  于是点输入框没反应。插件现在 hook `InputMethodSettings.isCurrentProfile(int)` 放行我们自己的空间，
-  实测空间里的应用（含 DocumentsUI 搜索框）能正常弹出输入法、`mInputShown=true`。
-  另有两层 hook（`queryMethodMapForUser`、`bindServiceAsUser`）为「空间不装输入法、直接用主空间那份」准备，
-  目前只验证到第一层生效，后两层尚未打通，暂不当作已完成能力。
+- **空间里不装输入法也能打字**：把三处 AOSP 入口重定向到主用户——
+  `InputMethodUtils$InputMethodSettings.isCurrentProfile`（放行）、
+  `InputMethodManagerService.queryInputMethodServicesInternal`（按主用户取输入法清单）、
+  `ContextImpl.bindServiceAsUser`（绑定到主用户）。G7 实测：空间 11 里
+  `pm list packages --user 11 | grep -c inputmethod` = 0，芝麻粒点输入框弹出主空间的
+  `com.tencent.wetype`（进程 `USER=u0_a214`），`mCurClient` 是空间应用。
+  主应用据此不再往新空间装输入法包（`CloneStore.imeRedirectReady()` 读三个诊断 prop），
+  插件缺失或没 root 时仍走原来的装包路径，Shizuku 用户不受影响。
+- **空间里选文件直接用主空间那份选择器**：在
+  `ActivityTaskManagerService.startActivityAsUser` 上把「发给自建空间的文件选择请求」的目标用户换成 0。
+  G7 实测：空间里的测试应用点按钮，拉起 `com.android.documentsui`（`U=0`、进程 `u0a39`），
+  列出主空间根目录与 `DCIM/Camera` 的相机照片。不建软链、不 bind、不挂载，
+  空间自己的存储一个字节都不碰，卸载空间不会影响主空间数据。
 
 ### 修复
 - **共享存储检测误判**：`sm list-volumes` 报 `mounted` 不代表该用户的目录存在——sdcardfs 模式的
